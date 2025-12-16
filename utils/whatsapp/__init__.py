@@ -1,3 +1,3 @@
-from utils.whatsapp.app import WhatsappAPI
+from agno.os.interfaces.whatsapp.whatsapp import Whatsapp
 
-__all__ = ["WhatsappAPI"]
+__all__ = ["Whatsapp"]

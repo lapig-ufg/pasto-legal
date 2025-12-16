@@ -15,11 +15,12 @@ from agno.utils.whatsapp import get_media_async, send_image_message_async, typin
 from .security import validate_webhook_signature
 
 
-def get_async_router(agent: Optional[Agent] = None, team: Optional[Team] = None) -> APIRouter:
-    router = APIRouter()
-
+def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Optional[Team] = None) -> APIRouter:
     if agent is None and team is None:
         raise ValueError("Either agent or team must be provided.")
+
+    # Create WhatsApp tools instance once for reuse
+    whatsapp_tools = WhatsAppTools(async_mode=True)
 
     @router.get("/status")
     async def status():
@@ -86,25 +87,24 @@ def get_async_router(agent: Optional[Agent] = None, team: Optional[Team] = None)
             message_image = None
             message_video = None
             message_audio = None
-            message_location = None
             message_doc = None
 
             message_id = message.get("id")
             await typing_indicator_async(message_id)
-            log_info(f"RAW message: {message}")
+
             if message.get("type") == "text":
                 message_text = message["text"]["body"]
             elif message.get("type") == "image":
                 try:
                     message_text = message["image"]["caption"]
                 except Exception:
-                    message_text = "Avalie a imagem que o usuario enviou"
+                    message_text = "Describe the image"
                 message_image = message["image"]["id"]
             elif message.get("type") == "video":
                 try:
                     message_text = message["video"]["caption"]
                 except Exception:
-                    message_text = "Avalie o que o usuario pede no video"
+                    message_text = "Describe the video"
                 message_video = message["video"]["id"]
             elif message.get("type") == "audio":
                 message_text = "Reply to audio"
@@ -114,30 +114,28 @@ def get_async_router(agent: Optional[Agent] = None, team: Optional[Team] = None)
                 message_doc = message["document"]["id"]
             elif message.get("type") == "location":
                 message_text = f"Essa é minha localização: lat:{message['location']['latitude']}, lon:{message['location']['longitude']}"
-                
             else:
                 return
 
             phone_number = message["from"]
-            log_info(f"Processing message from (here) {phone_number}: {message_text}")
+            log_info(f"Processing message from {phone_number}: {message_text}")
 
             # Generate and send response
             if agent:
                 response = await agent.arun(
                     message_text,
                     user_id=phone_number,
-                    session_id=f"whatsapp_{phone_number}",
+                    session_id=f"wa:{phone_number}",
                     images=[Image(content=await get_media_async(message_image))] if message_image else None,
                     files=[File(content=await get_media_async(message_doc))] if message_doc else None,
                     videos=[Video(content=await get_media_async(message_video))] if message_video else None,
                     audio=[Audio(content=await get_media_async(message_audio))] if message_audio else None,
                 )
             elif team:
-                log_info(f"Processing message session: {phone_number} with team {team.name} and session_id: whatsapp_{phone_number}")
-                response = await team.arun(
+                response = await team.arun(  # type: ignore
                     message_text,
                     user_id=phone_number,
-                    session_id=f"whatsapp_{phone_number}",
+                    session_id=f"wa:{phone_number}",
                     files=[File(content=await get_media_async(message_doc))] if message_doc else None,
                     images=[Image(content=await get_media_async(message_image))] if message_image else None,
                     videos=[Video(content=await get_media_async(message_video))] if message_video else None,
@@ -174,9 +172,9 @@ def get_async_router(agent: Optional[Agent] = None, team: Optional[Team] = None)
                         log_warning(
                             f"Could not process image content for user {phone_number}. Type: {type(image_content)}"
                         )
-                        await _send_whatsapp_message(phone_number, response.content)  # Send text part if image fails
+                        await _send_whatsapp_message(phone_number, response.content)  # type: ignore
             else:
-                await _send_whatsapp_message(phone_number, response.content)
+                await _send_whatsapp_message(phone_number, response.content)  # type: ignore
 
         except Exception as e:
             log_error(f"Error processing message: {str(e)}")
@@ -193,9 +191,9 @@ def get_async_router(agent: Optional[Agent] = None, team: Optional[Team] = None)
             if italics:
                 # Handle multi-line messages by making each line italic
                 formatted_message = "\n".join([f"_{line}_" for line in message.split("\n")])
-                await WhatsAppTools().send_text_message_async(recipient=recipient, text=formatted_message)
+                await whatsapp_tools.send_text_message_async(recipient=recipient, text=formatted_message)
             else:
-                await WhatsAppTools().send_text_message_async(recipient=recipient, text=message)
+                await whatsapp_tools.send_text_message_async(recipient=recipient, text=message)
             return
 
         # Split message into batches of 4000 characters (WhatsApp message limit is 4096)
@@ -207,8 +205,8 @@ def get_async_router(agent: Optional[Agent] = None, team: Optional[Team] = None)
             if italics:
                 # Handle multi-line messages by making each line italic
                 formatted_batch = "\n".join([f"_{line}_" for line in batch_message.split("\n")])
-                await WhatsAppTools().send_text_message_async(recipient=recipient, text=formatted_batch)
+                await whatsapp_tools.send_text_message_async(recipient=recipient, text=formatted_batch)
             else:
-                await WhatsAppTools().send_text_message_async(recipient=recipient, text=batch_message)
+                await whatsapp_tools.send_text_message_async(recipient=recipient, text=batch_message)
 
     return router
