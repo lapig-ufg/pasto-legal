@@ -3,7 +3,7 @@ from agno.agent import Agent
 from agno.db.sqlite import SqliteDb
 from agno.models.google import Gemini
 from agno.os import AgentOS
-from agno.os.interfaces.whatsapp import Whatsapp
+from utils.whatsapp import Whatsapp
 
 from agno.run import RunContext
 from agno.team.team import Team
@@ -133,5 +133,5 @@ pasto_legal_os = AgentOS(
 app = pasto_legal_os.get_app()
 
 if __name__ == "__main__":
-    pasto_legal_os.serve(app="example_main:app", port=3000, reload=True) 
+    pasto_legal_os.serve(app="main:app", port=3000, reload=True) 
     
