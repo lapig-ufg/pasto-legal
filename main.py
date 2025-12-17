@@ -22,6 +22,9 @@ from rich.prompt import Prompt
 from rich import print
 from dotenv import load_dotenv
 
+load_dotenv()
+console = Console()
+
 class SICARTool(Toolkit):
 
     def __init__(self, **kwargs):
@@ -29,7 +32,10 @@ class SICARTool(Toolkit):
             self.sicar
         ]
 
-        instructions = "Recuperação do limite do cadastro ambiental rural (CAR) via serviço SICAR"
+        instructions = dedent("""\
+            This tool is specialized in retrieve data from rural properties (CAR, SICAR) in Brazil
+            via the service SICAR.
+        """)
         
         super().__init__(name="sicar_tool", tools=tools, instructions=instructions, **kwargs)
  
@@ -51,56 +57,33 @@ class SICARTool(Toolkit):
         
         return run_context.session_state['car']
 
-load_dotenv()
-console = Console()
+# agent_storage = SqliteStorage(table_name="whatsapp_sessions", db_file="tmp/memory.db")
+# memory_db = SqliteMemoryDb(table_name="memory", db_file="tmp/memory.db")
 
-app_db = SqliteDb(db_file="tmp/memory.db", memory_table="memory")
-mem_db = SqliteDb(db_file="tmp/memory.db", memory_table="agent_storage")
+session_db = SqliteDb(db_file="tmp/memory.db", memory_table="memory")
+agent_db = SqliteDb(db_file="tmp/memory.db", memory_table="agent_storage")
 
-memory = Agent(
-    model=Gemini(id="gemini-2.5-flash"),
-    db=mem_db,
-    instructions=dedent("""\
-        You are a helpful assistant that manages user memories.
-        Your goal is to store relevant information about the user to improve future interactions.
-        Always remember to keep the memories concise and relevant.
-        
-        Collect User's name,
-        Collect User phone number,
-        Collect Information about bad behaviours as a rudeness counter,
-        Collect Information about user gender,
-        Collect Information about user location,
-        Collect Information about user age,
-        Collect Information about user's passion and hobbies,
-        Collect Information about the users likes and dislikes
-    """),
-    # Give the Agent the ability to update memories
-    enable_agentic_memory=True,
-    # OR - Run the MemoryManager automatically after each response
-    enable_user_memories=True,
-    markdown=True,
-)
-
-pasto_legal = Agent(
-    name="Pasture Searcher",
+geo_agent = Agent(
+    name="Pasto Legal Geo-Agent",
     role="You can only answer questions related to the Pasture program in Brazil.",
-    model=Gemini(id="gemini-2.5-flash", search=True),
-    db=mem_db,
+    model=Gemini(id="gemini-2.5-flash", search=False),
+    db=agent_db,
     session_state={"car": None},
-    tools=[
-        SICARTool()
-    ],
     num_history_runs=5,
     markdown=False,
     instructions=dedent("""\
-         You are an specialized agent in the Pasture program in Brazil. Be simple, direct and objective.
-         Only answer questions related to the Pasture program in Brazil.    
-    """)
+         You are an specialized agent in the livestock, grassland, pasture and rural properties (CAR, SICAR) in Brazil. 
+         Be simple, direct and objective. Only answer questions related to the subjects that you are specialized.    
+    """),
+    tools=[
+        SICARTool()
+    ]
 )
 
-multi_language_team = Team(
-    db=app_db,
-    name="PastoLegal Team",
+
+pasto_legal_team = Team(
+    db=session_db,
+    name="Pasto Legal Team",
     model=Gemini(id="gemini-2.5-flash"),
     markdown=True,
     reasoning=False,
@@ -111,7 +94,7 @@ multi_language_team = Team(
     share_member_interactions=True,
     show_members_responses=False,
     members=[
-        pasto_legal
+        geo_agent
     ],
     debug_mode=False,
     description="You are a helpful assistant, very polite and happy. Given a topic, your goal is answer as best as possible maximizing the information.",
@@ -124,7 +107,7 @@ multi_language_team = Team(
        ** Never tell that the request need to be confirmed later, it is not possible in this app.**
        ** Never describe a video, instead, always transcribe the audio and answer based on the transcribed text.**
        If you receive a video, transcribe the Audio and answer the user based on the transcribed text.
-       ** If you receive a location, tell to the user where is the nearest CRAS and save this location into the memory.**
+       ** If you receive a location, use the location as argument to run the SICARtool in the Pasto Legal Geo-Agent**
        The name Parente is a reference to the Amazonian Brazilian traditional peoples, who are the guardians of the forest and the environment.
        
        If the user asks questions not directly related to: Pasture or Agriculture or if this message contains political questions answer this phrase: 
@@ -142,15 +125,13 @@ multi_language_team = Team(
         """)
 )
 
-agent_os = AgentOS(
-    teams=[multi_language_team],
-    interfaces=[
-        Whatsapp(team=multi_language_team)
-    ],
+pasto_legal_os = AgentOS(
+    teams=[pasto_legal_team],
+    interfaces=[Whatsapp(team=pasto_legal_team)],
 )
 
-app = agent_os.get_app()
+app = pasto_legal_os.get_app()
 
 if __name__ == "__main__":
-    agent_os.serve(app="example_main:app", port=3000, reload=True) 
+    pasto_legal_os.serve(app="example_main:app", port=3000, reload=True) 
     

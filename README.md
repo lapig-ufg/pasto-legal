@@ -13,25 +13,20 @@
    Create a `.env` file at the project root with the following content:
 
    ```
-   POSTGRES_HOST=your_host
-   POSTGRES_PORT=5432
-   POSTGRES_DBNAME=your_db
-   POSTGRES_USER=your_user
-   POSTGRES_PASSWORD=your_password
-   export WHATSAPP_ACCESS_TOKEN=<>
-   export WHATSAPP_VERIFY_TOKEN=<>
-   export WHATSAPP_WEBHOOK_URL=<>
-   export WHATSAPP_PHONE_NUMBER_ID=<>
-   export WHATSAPP_APP_SECRET=<>
-   export APP_ENV="development"
-   export GOOGLE_API_KEY=<>
+   WHATSAPP_ACCESS_TOKEN=<>
+   WHATSAPP_VERIFY_TOKEN=<>
+   WHATSAPP_WEBHOOK_URL=<>
+   WHATSAPP_PHONE_NUMBER_ID=<>
+   WHATSAPP_APP_SECRET=<>
+   APP_ENV="development"
+   GOOGLE_API_KEY=<>
 
    ```
 
 3. **To run with FastAPI Server:**
 
    ```bash
-   python example_main.py
+   python main.py
    ```
 
 4. **To run with Streamlit App :**
