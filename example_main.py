@@ -68,7 +68,7 @@ agentPastureSearcher = Agent(
 
 multi_language_team = Team(
     db=db,
-    name="PastoLegal Team",
+    name="PastoLegalTeam",
     model=Gemini(id="gemini-2.5-flash"),
     markdown=True,
     reasoning=False,
