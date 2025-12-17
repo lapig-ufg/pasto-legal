@@ -18,10 +18,13 @@
    POSTGRES_DBNAME=your_db
    POSTGRES_USER=your_user
    POSTGRES_PASSWORD=your_password
-   export WHATSAPP_ACCESS_TOKEN=your_access_token          # Access Token
-   export WHATSAPP_PHONE_NUMBER_ID=your_phone_number_id    # Phone Number ID
-   export WHATSAPP_RECIPIENT_WAID=your_recipient_waid      # Recipient WhatsApp ID (e.g. 1234567890)
-   export WHATSAPP_VERSION=your_whatsapp_version 
+   export WHATSAPP_ACCESS_TOKEN=<>
+   export WHATSAPP_VERIFY_TOKEN=<>
+   export WHATSAPP_WEBHOOK_URL=<>
+   export WHATSAPP_PHONE_NUMBER_ID=<>
+   export WHATSAPP_APP_SECRET=<>
+   export APP_ENV="development"
+   export GOOGLE_API_KEY=<>
 
    ```
 

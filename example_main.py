@@ -1,5 +1,4 @@
 import os
-os.environ['GOOGLE_API_KEY'] = 'AIzaSyBi-44oyKyi_bELSLVJAVr5cHNTJO_RRQs'
 from textwrap import dedent
 from agno.agent import Agent
 from agno.models.google import Gemini
@@ -54,7 +53,7 @@ memory = Agent(
 agentPastureSearcher = Agent(
     name="Pasture Searcher",
     role="You can only answer questions related to the Pasture program in Brazil.",
-    model=Gemini(id="gemini-2.5-flash-lite", search=True),
+    model=Gemini(id="gemini-2.5-flash", search=True),
     db=agent_memory,
     num_history_runs=5,
     markdown=False,
