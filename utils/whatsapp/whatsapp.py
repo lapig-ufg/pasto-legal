@@ -4,7 +4,7 @@ from fastapi.routing import APIRouter
 
 from agno.agent import Agent
 from agno.os.interfaces.base import BaseInterface
-from agno.os.interfaces.whatsapp.router import attach_routes
+from utils.whatsapp.router import attach_routes
 from agno.team import Team
 
 
@@ -24,7 +24,6 @@ class Whatsapp(BaseInterface):
         self.team = team
         self.prefix = prefix
         self.tags = tags or ["Whatsapp"]
-
         if not (self.agent or self.team):
             raise ValueError("Whatsapp requires an agent or a team")
 

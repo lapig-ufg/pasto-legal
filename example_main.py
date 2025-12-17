@@ -17,37 +17,8 @@ from rich import print
 console = Console()
 
 
-
-# agent_storage = SqliteStorage(table_name="whatsapp_sessions", db_file="tmp/memory.db")
-# memory_db = SqliteMemoryDb(table_name="memory", db_file="tmp/memory.db")
-
 db = SqliteDb(db_file="tmp/memory.db", memory_table="memory")
 agent_memory = SqliteDb(db_file="tmp/memory.db", memory_table="agent_storage")
-
-
-memory = Agent(
-    model=Gemini(id="gemini-2.5-flash"),
-    db=agent_memory,
-    instructions=dedent("""\
-        You are a helpful assistant that manages user memories.
-        Your goal is to store relevant information about the user to improve future interactions.
-        Always remember to keep the memories concise and relevant.
-        
-        Collect User's name,
-        Collect User phone number,
-        Collect Information about bad behaviours as a rudeness counter,
-        Collect Information about user gender,
-        Collect Information about user location,
-        Collect Information about user age,
-        Collect Information about user's passion and hobbies,
-        Collect Information about the users likes and dislikes
-    """),
-    # Give the Agent the ability to update memories
-    enable_agentic_memory=True,
-    # OR - Run the MemoryManager automatically after each response
-    enable_user_memories=True,
-    markdown=True,
-)
 
 
 agentPastureSearcher = Agent(
@@ -89,7 +60,7 @@ multi_language_team = Team(
        ** Never tell that the request need to be confirmed later, it is not possible in this app.**
        ** Never describe a video, instead, always transcribe the audio and answer based on the transcribed text.**
        If you receive a video, transcribe the Audio and answer the user based on the transcribed text.
-       ** If you receive a location, tell to the user where is the nearest CRAS and save this location into the memory.**
+       ** If you receive a location, save this location into the memory.**
        The name Parente is a reference to the Amazonian Brazilian traditional peoples, who are the guardians of the forest and the environment.
        
        If the user asks questions not directly related to: Pasture or Agriculture or if this message contains political questions answer this phrase: 

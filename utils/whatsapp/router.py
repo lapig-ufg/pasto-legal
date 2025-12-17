@@ -83,15 +83,16 @@ def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Option
 
     async def process_message(message: dict, agent: Optional[Agent], team: Optional[Team]):
         """Process a single WhatsApp message in the background"""
+        log_info(message)
         try:
             message_image = None
             message_video = None
             message_audio = None
             message_doc = None
-
+            
             message_id = message.get("id")
             await typing_indicator_async(message_id)
-
+            
             if message.get("type") == "text":
                 message_text = message["text"]["body"]
             elif message.get("type") == "image":
@@ -115,6 +116,7 @@ def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Option
             elif message.get("type") == "location":
                 message_text = f"Essa é minha localização: lat:{message['location']['latitude']}, lon:{message['location']['longitude']}"
             else:
+                
                 return
 
             phone_number = message["from"]
