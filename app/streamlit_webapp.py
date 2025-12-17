@@ -6,7 +6,7 @@ import json
 import websockets
 import asyncio
 
-st.title("🤖 Chat Box mais simples possivel")
+st.title("🤖 Chat Box Pasto Legal")
 
 # Initialize chat history and session_id in session state if they don't exist
 if "messages" not in st.session_state:
@@ -36,10 +36,11 @@ if user_query := st.chat_input("Ask me anything..."):
         full_response = ""
         
         # --- Call the FastAPI chatbot ---
-        api_url = "http://localhost:3000/pastolegal/runs?team_id=multi_language_team"
+        api_url = "http://localhost:3000/teams/pastolegalteam/runs"
         payload = {
             "message": user_query,
-            "session_id": st.session_state.session_id
+            "session_id": st.session_state.session_id,
+            "stream": False,
         }
         
         try:
