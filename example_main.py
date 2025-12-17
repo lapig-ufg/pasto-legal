@@ -1,11 +1,19 @@
-import os
-from textwrap import dedent
 from agno.agent import Agent
-from agno.models.google import Gemini
-from agno.team.team import Team
+#from agno.db.base import SessionType
 from agno.db.sqlite import SqliteDb
-from agno.os.app import AgentOS
+from agno.models.google import Gemini
+from agno.os import AgentOS
 from agno.os.interfaces.whatsapp import Whatsapp
+
+from agno.run import RunContext
+from agno.team.team import Team
+from agno.tools import Toolkit
+
+from textwrap import dedent
+from typing import List, Optional
+import json
+import os
+import requests
 
 from rich.console import Console
 from rich.json import JSON
@@ -14,21 +22,44 @@ from rich.prompt import Prompt
 from rich import print
 from dotenv import load_dotenv
 
+class SICARTool(Toolkit):
+
+    def __init__(self, **kwargs):
+        tools = [
+            self.sicar
+        ]
+
+        instructions = "Recuperação do limite do cadastro ambiental rural (CAR) via serviço SICAR"
+        
+        super().__init__(name="sicar_tool", tools=tools, instructions=instructions, **kwargs)
+ 
+    def sicar(self, lat: float, lon: float, run_context: RunContext) -> dict:
+
+        print(run_context.session_state)
+        
+        if run_context.session_state['car'] is None:
+        
+            sess = requests.Session()
+    
+            url = f'https://consultapublica.car.gov.br/publico/imoveis/getImovel?lat={lat}&lng={lon}'
+            sess.get("https://consultapublica.car.gov.br/publico/imoveis/index", verify=False)
+            r = sess.get(url, verify=False)
+            
+            car = json.loads(r.text)
+
+            run_context.session_state['car'] = car
+        
+        return run_context.session_state['car']
+
 load_dotenv()
 console = Console()
 
-
-
-# agent_storage = SqliteStorage(table_name="whatsapp_sessions", db_file="tmp/memory.db")
-# memory_db = SqliteMemoryDb(table_name="memory", db_file="tmp/memory.db")
-
-db = SqliteDb(db_file="tmp/memory.db", memory_table="memory")
-agent_memory = SqliteDb(db_file="tmp/memory.db", memory_table="agent_storage")
-
+app_db = SqliteDb(db_file="tmp/memory.db", memory_table="memory")
+mem_db = SqliteDb(db_file="tmp/memory.db", memory_table="agent_storage")
 
 memory = Agent(
     model=Gemini(id="gemini-2.5-flash"),
-    db=agent_memory,
+    db=mem_db,
     instructions=dedent("""\
         You are a helpful assistant that manages user memories.
         Your goal is to store relevant information about the user to improve future interactions.
@@ -50,24 +81,25 @@ memory = Agent(
     markdown=True,
 )
 
-
-agentPastureSearcher = Agent(
+pasto_legal = Agent(
     name="Pasture Searcher",
     role="You can only answer questions related to the Pasture program in Brazil.",
     model=Gemini(id="gemini-2.5-flash", search=True),
-    db=agent_memory,
+    db=mem_db,
+    session_state={"car": None},
+    tools=[
+        SICARTool()
+    ],
     num_history_runs=5,
     markdown=False,
     instructions=dedent("""\
          You are an specialized agent in the Pasture program in Brazil. Be simple, direct and objective.
          Only answer questions related to the Pasture program in Brazil.    
-    """),
-    tools=[]
+    """)
 )
 
-
 multi_language_team = Team(
-    db=db,
+    db=app_db,
     name="PastoLegal Team",
     model=Gemini(id="gemini-2.5-flash"),
     markdown=True,
@@ -78,12 +110,14 @@ multi_language_team = Team(
     num_history_runs=5,
     share_member_interactions=True,
     show_members_responses=False,
-    members=[agentPastureSearcher],
+    members=[
+        pasto_legal
+    ],
     debug_mode=False,
     description="You are a helpful assistant, very polite and happy. Given a topic, your goal is answer as best as possible maximizing the information.",
     instructions=dedent("""\
        Coordene os membros para completar a tarefa da melhor forma possível.
-       You default language is Portuguese never change it, but you can understand and answer in English, Spanish and French.
+       Your default language is Portuguese and remember to never change it, but if you cannot understand and ask the user the repeat the question.
        You are a helpful and polite assistant, always happy to help.
        ** Never tell the user that you are an AI, always say that you are a assistant**
        ** Never tell to the user that you is transfering the user to another agent, it should be transparent.**
@@ -108,10 +142,11 @@ multi_language_team = Team(
         """)
 )
 
-
 agent_os = AgentOS(
     teams=[multi_language_team],
-    interfaces=[Whatsapp(team=multi_language_team)],
+    interfaces=[
+        Whatsapp(team=multi_language_team)
+    ],
 )
 
 app = agent_os.get_app()
