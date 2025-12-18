@@ -1,0 +1,72 @@
+name: Build and Deploy in Pasto Legal
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      APPLICATION_NAME: ${{ steps.creat_env.outputs.APPLICATION_NAME }}
+      DOCKER_PATH: ${{ steps.creat_env.outputs.DOCKER_PATH }}
+      LAST_COMMIT_HASH: ${{ steps.creat_env.outputs.LAST_COMMIT_HASH }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Define environment variables
+        id: creat_env
+        run: |
+          # Função para definir variáveis no GITHUB_ENV e GITHUB_OUTPUT
+          set_var() {
+            echo "$1=$2" >> $GITHUB_ENV
+            echo "$1=$2" >> $GITHUB_OUTPUT
+          }
+          # Defina as variáveis
+          set_var "DOCKER_PATH" "prod"
+          set_var "APPLICATION_NAME" "app_pasto_legal"
+          set_var "LAST_COMMIT_HASH" "$(git log --pretty=format:%h -n 1)"
+        
+      - name: Create version.json
+        run: echo "{\"commitId\":\"$LAST_COMMIT_HASH\"}" > version.json
+
+      - name: Build Docker
+        run: |
+          docker build \
+          -t lapig/$APPLICATION_NAME:${DOCKER_PATH}_${LAST_COMMIT_HASH} \
+          -t lapig/$APPLICATION_NAME:${DOCKER_PATH}_latest  \
+          -f docker/$DOCKER_PATH/Dockerfile . --no-cache
+
+      - name: Login to Docker Registry
+        run: echo "${{ secrets.DOCKERHUB_PASS }}" | docker login -u "lapig" --password-stdin
+
+      - name: Push Image to Registry
+        run: |
+          docker push lapig/$APPLICATION_NAME:${DOCKER_PATH}_${LAST_COMMIT_HASH}
+          docker push lapig/$APPLICATION_NAME:${DOCKER_PATH}_latest
+
+      - name: Remove image locally
+        run: |
+          docker rmi lapig/$APPLICATION_NAME:${DOCKER_PATH}_${LAST_COMMIT_HASH}
+          docker rmi lapig/$APPLICATION_NAME:${DOCKER_PATH}_latest
+
+  deploy:
+    needs: build
+    runs-on: self-hosted
+     
+    steps:
+      - name: Pull Image on Server
+        run: |
+          docker pull lapig/${{ needs.build.outputs.APPLICATION_NAME }}:${{ needs.build.outputs.DOCKER_PATH }}_latest
+
+      - name: Restart Application
+        run: |
+          /compose/resetapp.sh --title "Pasto Legal" \
+          --container "app_pasto_legal" \
+          --file "api" \
+          --github "https://github.com/${{ github.repository }}" \
+          --commit "${{ needs.build.outputs.LAST_COMMIT_HASH }}" \
+          ${{ needs.build.outputs.APPLICATION_NAME }}
