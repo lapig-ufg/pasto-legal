@@ -4,6 +4,8 @@ from agno.models.google import Gemini
 from agno.os import AgentOS
 from agno.run import RunContext
 from agno.team.team import Team
+from agno.media import Image as AgnoImage
+from agno.tools.function import ToolResult
 
 from dataclasses import dataclass
 from dotenv import load_dotenv
@@ -22,12 +24,72 @@ import ee
 import json
 import os
 import requests
+from PIL import Image
+from io import BytesIO
 
 load_dotenv()
 console = Console()
 
 credentials = ee.ServiceAccountCredentials(os.getenv("GEE_SERVICE_ACCOUNT"), key_file=os.getenv("GEE_KEY_FILE"))
 ee.Initialize(credentials, project=os.getenv("GEE_PROJECT"))
+
+def view_farm(lat:float, lng:float) -> str:
+    """Gera uma imagem de satélite (Sentinel-2) para visualização da propriedade.
+
+      Args:
+            lat (float): Latitude.
+            lng (float): Longitude.
+    Returns:
+        img: Imagem da propriedade em PNG.
+    """
+    #Ano de Análise
+    year = (datetime.date.today().year) - 1
+    roi = ee.Geometry.Point([lng,lat]).buffer(5000).bounds()
+    sDate = ee.Date.fromYMD(year, 10, 1)
+    eDate= sDate.advance(2, 'month')
+    sateliteID = 'COPERNICUS/S2_SR_HARMONIZED'
+
+    sentinel = (ee.ImageCollection(sateliteID)
+          .filterBounds(roi)
+          .filterDate(sDate, eDate)
+          .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',10))
+          .median()
+    )
+
+    # Criar os parâmetros de visualização
+    vis_params = {"bands": ["B4","B3","B2"],"min": 0,"max": 3000}
+    sentinel = sentinel.visualize(**vis_params)
+
+    #Configurando o estilo do contorno da propriedade
+    empty = ee.Image().byte()
+    outline = empty.paint(ee.FeatureCollection([ee.Feature(roi)]), 1, 3)
+    outline = outline.updateMask(outline)
+    outline_rgb = outline.visualize(**{"palette":['FF0000']})
+
+    #Unificando os dados
+    final_image = sentinel.blend(outline_rgb).clip(roi)
+
+    #Gerando a url
+    url = final_image.getThumbURL({"dimensions": 1024,"format": "png"})
+    #print(url)
+    try:
+      # 5. Download e Conversão para Agno
+      resposta = requests.get(url, timeout=20)
+      resposta.raise_for_status()
+            
+      # Garantir que a imagem está no formato correto usando PIL
+      img_pil = Image.open(BytesIO(resposta.content))
+      buffer = BytesIO()
+      img_pil.save(buffer, format="PNG")
+            
+      return ToolResult(
+           content=f"Aqui está a imagem de satélite da área em {lat}, {lng}. O contorno vermelho indica a zona de amortecimento de 5km.",
+           images=[AgnoImage(content=buffer.getvalue())]
+      )
+
+    except Exception as e:
+            return ToolResult(content=f"Erro ao gerar imagem: {str(e)}")
+    
 
 def query_pasture(run_context: RunContext) -> dict:
     """
