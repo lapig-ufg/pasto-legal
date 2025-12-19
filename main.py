@@ -1,78 +1,53 @@
 from agno.agent import Agent
-#from agno.db.base import SessionType
 from agno.db.sqlite import SqliteDb
 from agno.models.google import Gemini
 from agno.os import AgentOS
-from utils.whatsapp import Whatsapp
-import datetime
-
 from agno.run import RunContext
 from agno.team.team import Team
-from agno.tools import Toolkit
 
-from textwrap import dedent
-from typing import List, Optional
-import json
-import os
-import requests
-
+from dataclasses import dataclass
+from dotenv import load_dotenv
+from rich import print
 from rich.console import Console
 from rich.json import JSON
 from rich.panel import Panel
 from rich.prompt import Prompt
-from rich import print
-from dotenv import load_dotenv
+from textwrap import dedent
+from typing import List, Optional
+
+from utils.whatsapp import Whatsapp
+
+import datetime
+import ee
+import json
+import os
+import requests
 
 load_dotenv()
 console = Console()
 
-from dataclasses import dataclass
-from agno.tools.toolkit import Toolkit
-
-import ee
-
 credentials = ee.ServiceAccountCredentials(os.getenv("GEE_SERVICE_ACCOUNT"), key_file=os.getenv("GEE_KEY_FILE"))
-ee.Initialize(credentials, project='global-pasture-watch')
+ee.Initialize(credentials, project=os.getenv("GEE_PROJECT"))
 
-class GEETool(Toolkit):
-  def __init__(self, **kwargs):
+def query_pasture(run_context: RunContext) -> dict:
+    """
+    Esta ferramenta é especializada no cálculo de área de pastagem,
+        vigor da pastagem, áreas de pastagem degradadas (baixo vigor), biomassa total e
+        a idade de uma área de pastagem/pastoreio/campo natural.
+    """
 
-    tools = [
-        self.zonal_stats
-    ]
-    
-    self.datasets = {
+    datasets = {
       'biomass': ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_biomass_v2'),
       'vigor': ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_vigor_v3'),
       'age': ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_age_v2')
       #'precipitation':ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY")
     }
 
-    self.aggregation_type = ee.Dictionary({
+    aggregation_type = ee.Dictionary({
       'precipitation':ee.Reducer.mean(),
       'biomass':ee.Reducer.sum()
     })
 
-    instructions = dedent("""\
-        Esta ferramenta é especializada no cálculo de área de pastagem,
-        vigor da pastagem, áreas de pastagem degradadas (baixo vigor), biomassa total e
-        a idade de uma área de pastagem/pastoreio/campo natural.
-    """)
-    
-    print(instructions)
-
-    super().__init__(name="GEETool", tools=tools, instructions=instructions, **kwargs)
-
-  def dt_aggregation(self, img:dict, roi:dict, scale:int) -> dict:
-    return img.reduceRegion(
-        reducer=ee.Reducer.sum().group(groupField=1,groupName='class'),
-        geometry=roi,
-        scale=scale,
-        maxPixels=1e13
-    )
-  
-  def zonal_stats(self, dummy:str, run_context: RunContext) -> list:
-    
     year = (datetime.date.today().year) - 1
 
     print(year, run_context.session_state['car'])
@@ -92,10 +67,10 @@ class GEETool(Toolkit):
 
     listData = []
 
-    for data in self.datasets:
+    for data in datasets:
 
-      selectedBand = self.datasets[data].bandNames().size().subtract(1)
-      last = self.datasets[data].select(selectedBand)
+      selectedBand = datasets[data].bandNames().size().subtract(1)
+      last = datasets[data].select(selectedBand)
 
       if data == 'age':
         last = last.subtract(200)
@@ -108,7 +83,7 @@ class GEETool(Toolkit):
           last = last
 
         yearDict = last.reduceRegion(
-                  reducer=self.aggregation_type.get(data),#ee.Reducer.sum(),
+                  reducer=aggregation_type.get(data),#ee.Reducer.sum(),
                   geometry=roi,
                   scale=30,
                   maxPixels=1e13
@@ -117,7 +92,12 @@ class GEETool(Toolkit):
       else:
         areaImg = ee.Image.pixelArea().divide(10000).addBands(last)
 
-        stats = self.dt_aggregation(areaImg,roi,30)
+        stats = areaImg.reduceRegion(
+            reducer=ee.Reducer.sum().group(groupField=1, groupName='class'),
+            geometry=roi,
+            scale=30,
+            maxPixels=1e13
+        )
         groups = ee.List(stats.get('groups'));
 
         totalArea = ee.Number(groups.iterate(
@@ -134,73 +114,45 @@ class GEETool(Toolkit):
               ee.Number(ee.Dictionary(group).get('sum')).divide(totalArea).multiply(100)
           ), initialDict
         ))
-      listData.append(dict({data:yearDict.getInfo()}))
+      listData.append(dict({
+        data:yearDict.getInfo()
+      }))
     
-    return listData
+    print(listData)
 
-  def getImage(self, lat:float, lng:float) -> str:
+    return {
+        'info': listData,
+        'car': run_context.session_state['car']
+    }
 
-    roi = ee.Geometry.Point([lng,lat]).buffer(5000).bounds()
-    sDate = ee.Date.fromYMD(2025, 10, 1)
-    eDate= sDate.advance(2, 'month')
-    sateliteID = 'COPERNICUS/S2_SR_HARMONIZED'
-    bandCloud = 'CLOUDY_PIXEL_PERCENTAGE'
-    c = 30
+def query_pasture_sicar(lat: float, lon: float, run_context: RunContext) -> list:
+    """
+     Esta ferramenta é especializada no cálculo de área de pastagem,
+        vigor da pastagem, áreas de pastagem degradadas (baixo vigor), biomassa total e
+        a idade de uma área de pastagem/pastoreio/campo natural considerando uma
+        coordenada geográfica para recuperação do limite de uma propriedade rural
+        do CAR
 
-    sentinel = ((ee.ImageCollection(sateliteID))
-              .filterBounds(roi)
-              .filterDate(sDate, eDate)
-              .filter(ee.Filter.lt(bandCloud,bandCloud))
-              .select(['B4', 'B3', 'B2'])
-              .median()
-              .clip(roi))
+    Args:
+        lat (float): Latitude in decimal degrees 
+        lon (float): Longitude in decimal degrees
+    """
 
-    image_rgb = sentinel.visualize({"bands": ['B4', 'B3', 'B2'], "min": 0, "max": 3000})
-
-    empty = ee.Image().byte()
-    outline = empty.paint(ee.FeatureCollection([ee.Feature(roi)]), 1, 3).updateMask(outline)
-    outline_rgb = outline.visualize({"palette" : ['FF0000']})
-
-    final_image = image_rgb.blend(outline_rgb).clip(roi)
-
-    urlData = final_image.getThumbURL({"dimensions": 1024, "format": "png"})
-
-    return urlData
-
-class SICARTool(Toolkit):
-
-    def __init__(self, **kwargs):
-        tools = [
-            self.sicar
-        ]
-
-        instructions = dedent("""\
-            This tool is specialized in retrieve data from rural properties (CAR, SICAR) in Brazil
-            via the service SICAR.
-        """)
-        
-        super().__init__(name="SICARTool", tools=tools, instructions=instructions, **kwargs)
- 
-    def sicar(self, lat: float, lon: float, run_context: RunContext) -> dict:
-
-        print(run_context.session_state)
-        
-        if run_context.session_state['car'] is None:
-        
-            sess = requests.Session()
+    print(run_context.session_state)
     
-            url = f'https://consultapublica.car.gov.br/publico/imoveis/getImovel?lat={lat}&lng={lon}'
-            sess.get("https://consultapublica.car.gov.br/publico/imoveis/index", verify=False)
-            r = sess.get(url, verify=False)
-            
-            car = json.loads(r.text)
+    if run_context.session_state['car'] is None:
+    
+        sess = requests.Session()
 
-            run_context.session_state['car'] = car
+        url = f'https://consultapublica.car.gov.br/publico/imoveis/getImovel?lat={lat}&lng={lon}'
+        sess.get("https://consultapublica.car.gov.br/publico/imoveis/index", verify=False)
+        r = sess.get(url, verify=False)
         
-        return run_context.session_state['car']
+        car = json.loads(r.text)
 
-# agent_storage = SqliteStorage(table_name="whatsapp_sessions", db_file="tmp/memory.db")
-# memory_db = SqliteMemoryDb(table_name="memory", db_file="tmp/memory.db")
+        run_context.session_state['car'] = car
+    
+    return query_pasture(run_context)
 
 session_db = SqliteDb(db_file="tmp/memory.db", memory_table="memory")
 agent_db = SqliteDb(db_file="tmp/memory.db", memory_table="agent_storage")
@@ -219,15 +171,15 @@ geo_agent = Agent(
         existentes para o Brasil produzidos pelo LAPIG no âmbito do MapBiomas e do Global Pasture Watch.
         Seja simples, direto e objetivo. Responda apenas a perguntas relacionadas aos assuntos em que você é especializado.
         
-        Ao receber questões sobre área de pastagem utilize a ferramenta GEETool para responder ao usuário.
+        Ao receber questões sobre área de pastagem utilize a ferramenta query_pasture para responder ao usuário.
 
-        Ao receber uma localização, utilize a ferramenta SICARTool para responder ao usuário.
+        Ao receber uma localização, utilize a ferramenta query_pasture_sicar para responder ao usuário.
 
         
     """),
     tools=[
-        SICARTool(),
-        GEETool()
+        query_pasture_sicar,
+        query_pasture
     ]
 )
 
@@ -258,8 +210,7 @@ pasto_legal_team = Team(
        ** Never tell that the request need to be confirmed later, it is not possible in this app.**
        ** Never describe a video, instead, always transcribe the audio and answer based on the transcribed text.**
        If you receive a video, transcribe the Audio and answer the user based on the transcribed text.
-       ** If you receive a location, use the location as argument to run the SICARtool in the Pasto Legal Geo-Agent**
-       The name Parente is a reference to the Amazonian Brazilian traditional peoples, who are the guardians of the forest and the environment.
+       ** If you receive a location, use the location as argument to run the query_sicar in the Pasto Legal Geo-Agent**
        
        If the user asks questions not directly related to: Pasture or Agriculture or if this message contains political questions answer this phrase: 
                         "Atualmente só posso lhe ajudar com questões relativas a eficiencia de pastagens. Se precisar de ajuda com esses temas, estou à disposição! Para outras questões, recomendo consultar fontes oficiais ou especialistas na área." 
