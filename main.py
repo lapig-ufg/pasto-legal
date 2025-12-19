@@ -33,18 +33,15 @@ console = Console()
 credentials = ee.ServiceAccountCredentials(os.getenv("GEE_SERVICE_ACCOUNT"), key_file=os.getenv("GEE_KEY_FILE"))
 ee.Initialize(credentials, project=os.getenv("GEE_PROJECT"))
 
-def view_farm(lat:float, lng:float) -> str:
-    """Gera uma imagem de satélite (Sentinel-2) para visualização da propriedade.
-
-      Args:
-            lat (float): Latitude.
-            lng (float): Longitude.
-    Returns:
-        img: Imagem da propriedade em PNG.
+def view_farm(run_context: RunContext) -> str:
+    """ Esta ferramenta é especializada em gerar uma imagem de satélite (Sentinel-2) para visualização da propriedade 
+    selecionada a partir das coordenadas inserida pelo usuário.
+      
     """
     #Ano de Análise
     year = (datetime.date.today().year) - 1
-    roi = ee.Geometry.Point([lng,lat]).buffer(5000).bounds()
+    car = run_context.session_state['car']
+    roi = ee.Feature(car['features'][0]).geometry()
     sDate = ee.Date.fromYMD(year, 10, 1)
     eDate= sDate.advance(2, 'month')
     sateliteID = 'COPERNICUS/S2_SR_HARMONIZED'
@@ -62,12 +59,12 @@ def view_farm(lat:float, lng:float) -> str:
 
     #Configurando o estilo do contorno da propriedade
     empty = ee.Image().byte()
-    outline = empty.paint(ee.FeatureCollection([ee.Feature(roi)]), 1, 3)
+    outline = empty.paint(ee.FeatureCollection(roi), 1, 3)
     outline = outline.updateMask(outline)
     outline_rgb = outline.visualize(**{"palette":['FF0000']})
 
     #Unificando os dados
-    final_image = sentinel.blend(outline_rgb).clip(roi)
+    final_image = sentinel.blend(outline_rgb).clip(ee.Feature(roi))
 
     #Gerando a url
     url = final_image.getThumbURL({"dimensions": 1024,"format": "png"})
@@ -83,7 +80,7 @@ def view_farm(lat:float, lng:float) -> str:
       img_pil.save(buffer, format="PNG")
             
       return ToolResult(
-           content=f"Aqui está a imagem de satélite da área em {lat}, {lng}. O contorno vermelho indica a zona de amortecimento de 5km.",
+           content=f"Aqui está a imagem de satélite da área. O contorno vermelho indica a zona de amortecimento de 5km.",
            images=[AgnoImage(content=buffer.getvalue())]
       )
 
@@ -97,12 +94,12 @@ def query_pasture(run_context: RunContext) -> dict:
         vigor da pastagem, áreas de pastagem degradadas (baixo vigor), biomassa total e
         a idade de uma área de pastagem/pastoreio/campo natural.
     """
-
+    
     datasets = {
       'biomass': ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_biomass_v2'),
       'vigor': ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_vigor_v3'),
       'age': ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_age_v2')
-      #'precipitation':ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY")
+      #'precipitation':ee.ImageCollection("UCSB-CHG/CHIRPS/DAILY").filterBounds(roi).filter(ee.Filter.calendarRange(year,year,'year')).sum()
     }
 
     aggregation_type = ee.Dictionary({
