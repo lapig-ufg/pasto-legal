@@ -2,6 +2,8 @@
 
 ## How to Run
 
+### Local
+
 1. **Install dependencies:**
 
    ```bash
@@ -46,3 +48,6 @@
    ngrok config add-authtoken <AUTH>
    ngrok http --url=joey-rational-escargot.ngrok-free.app 3000
    ```
+
+### Docker
+
