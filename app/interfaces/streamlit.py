@@ -1,4 +1,5 @@
 import os
+import uuid
 import tempfile
 import streamlit as st
 
@@ -9,23 +10,22 @@ from app.agents.main_agent import pasto_legal_team
 st.set_page_config(page_title="Pasto Legal", page_icon="🐂")
 st.title("🐂 Chat Box Pasto Legal")
 
-# Inicializa histórico
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+if "session_id" not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
+    st.session_state.messages = [] # Zera o visual do chat
+    print(f"🆕 Nova Sessão Iniciada: {st.session_state.session_id}")
 
-# Exibe mensagens anteriores
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Upload de arquivos
 files_uploaded = st.file_uploader(
     "Envie imagens/áudio (png, jpg, mp3, etc)",
     type=["png", "jpg", "jpeg", "webp", "wav", "mp3", "mp4"],
     accept_multiple_files=True,
 )
 
-# Função auxiliar para processar imagens para o Agno
+
 def process_uploaded_files(uploaded_files) -> List[str]:
     """Salva arquivos temporariamente e retorna os caminhos para o Agente."""
     file_paths = []
@@ -37,7 +37,6 @@ def process_uploaded_files(uploaded_files) -> List[str]:
                 file_paths.append(tmp_file.name)
     return file_paths
 
-# Input do usuário
 if user_query := st.chat_input("Pergunte sobre pastagem..."):
     st.session_state.messages.append({"role": "user", "content": user_query})
     with st.chat_message("user"):
@@ -50,11 +49,16 @@ if user_query := st.chat_input("Pergunte sobre pastagem..."):
         full_response = ""
         
         try:
-            run_kwargs = {"stream": True}
+            run_kwargs = {
+                "input": user_query,
+                "user_id": st.session_state.session_id,
+                "stream": True,
+            }
+
             if image_paths:
                 run_kwargs["images"] = image_paths 
 
-            response_stream = pasto_legal_team.run(user_query, **run_kwargs)
+            response_stream = pasto_legal_team.run(**run_kwargs)
             
             for chunk in response_stream:
                 content = chunk.content if hasattr(chunk, 'content') else str(chunk)

@@ -1,5 +1,6 @@
 import json
 import requests
+import textwrap
 
 from agno.tools import Toolkit, tool
 from agno.tools.function import ToolResult
@@ -11,11 +12,10 @@ from app.hooks.tool_hooks import continue_from_request
 # responsável por coletar, armazenar e organizar os dados e informações do usuário, coletados
 # ao longo da interação. Essas informações podem ser: localização, car, quantidade de animais...
 
-@tool(post_hook=continue_from_request)
+@tool(requires_confirmation=False)
 def annotate_car(latitude: float, longitude: float, run_context: RunContext):
     """
-    Consulta a API do Cadastro Ambiental Rural (CAR) para encontrar a propriedade rural
-    do usuário baseadas na latitude e longitude fornecidas.
+    Armazena os dados de localização do usuário.
 
     Args:
         latitude (float): Latitude in decimal degrees 
@@ -42,12 +42,13 @@ def annotate_car(latitude: float, longitude: float, run_context: RunContext):
             raise ValueError("O servidor retornou uma resposta inválida (não é JSON).")
 
         features = result.get("features", [])
+
         if not features:
-            return"""
+            return textwrap.dedent("""
                 Falha: Nenhuma propriedade rural (CAR) foi encontrada nestas coordenadas. 
                 Informe ao usuário que o local indicado não consta na base pública do CAR e 
                 peça para ele garantir que esta dentro da área da propriedade.
-            """
+            """).strip()
             
         run_context.session_state['car'] = result
 

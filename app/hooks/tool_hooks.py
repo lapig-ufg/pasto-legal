@@ -2,8 +2,8 @@ import textwrap
 
 from typing import Callable, Dict, Any
 
-
-def continue_from_request(function_name: str, function_call: Callable, arguments: Dict[str, Any]):
+# TODO: Corrigir. O comportamento deveria ser: Caso tenha algum serviço pendente (Não foi executado por falta de informação) executar, caso contrario proceguir.
+def continue_from_request(run_output):
     """
     Hook de continuação da análise após solicitação de coleta de informação.
     """

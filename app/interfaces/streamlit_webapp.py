@@ -2,9 +2,6 @@ import streamlit as st
 import time
 import requests
 import random
-import json
-import websockets
-import asyncio
 
 st.title("🐂 Chat Box Pasto Legal")
 

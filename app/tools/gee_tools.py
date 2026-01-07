@@ -1,3 +1,4 @@
+import os
 import datetime
 import ee
 import requests
@@ -12,9 +13,26 @@ from agno.run import RunContext
 
 from app.hooks.validation_hooks import validate_car_hook
 
-#TODO: Escrever ferramenta para visualização da área de pastagem do usuário.
+GEE_SERVICE_ACCOUNT = os.environ.get('GEE_SERVICE_ACCOUNT')
+GEE_KEY_FILE = os.environ.get('GEE_KEY_FILE')
+GEE_PROJECT = os.environ.get('GEE_PROJECT')
 
-@tool(pre_hook=validate_car_hook)
+if not GEE_SERVICE_ACCOUNT or not GEE_KEY_FILE:
+    raise ValueError("GEE_SERVICE_ACCOUNT and GEE_KEY_FILE environment variables must be set.")
+
+try:
+    credentials = ee.ServiceAccountCredentials(GEE_SERVICE_ACCOUNT, GEE_KEY_FILE)
+    
+    ee.Initialize(credentials, project=GEE_PROJECT)
+except Exception as e:
+    print(f"Authentication failed: {e}")
+
+
+# TODO: Escrever ferramenta para visualização da área de pastagem do usuário.
+
+# TODO: Deveria ter um buffer para as laterais da imagem não encostarem na região do poligono.
+# TODO: A imagem do satelite deveria estar inteira, e não cliped na região de interesse.
+@tool(tool_hooks=[validate_car_hook], requires_confirmation=False)
 def generate_property_image(run_context: RunContext) -> ToolResult:
     """
     Gera uma imagem de satélite da propriedade rural baseada nos dados do CAR do usuário
@@ -28,8 +46,7 @@ def generate_property_image(run_context: RunContext) -> ToolResult:
     Return:
         Retorna um objeto ToolResult contendo a imagem da propriedade do usuário em formato PNG e uma breve descrição.
     """
-    car = run_context.session_state['car']
-    roi = ee.Feature(car['features'][0]).geometry()
+    roi = ee.Feature(run_context.session_state['car']['features'][0]).geometry()
 
     # TODO: É mais adequado pegar uma imagem do ano ou dos ultimos 6 meses?
     year = (datetime.date.today().year) - 1
@@ -56,8 +73,6 @@ def generate_property_image(run_context: RunContext) -> ToolResult:
     final_image = sentinel.blend(outline_rgb).clip(ee.Feature(roi))
 
     url = final_image.getThumbURL({"dimensions": 1024,"format": "png"})
-
-    print("----------------------------> ", url)
 
     try:
         response = requests.get(url, timeout=20)
@@ -86,7 +101,6 @@ def query_pasture(run_context: RunContext) -> dict:
     Return:
         Dicionário contendo a área de pastagem, vigor da pastagem, áreas de pastagem degradadas (baixo vigor), biomassa total e a idade.
     """
-    
     DATASETS = {
         'age': ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_age_v2'),
         'vigor': ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_vigor_v3'),

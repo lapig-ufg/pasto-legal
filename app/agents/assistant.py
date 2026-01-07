@@ -6,7 +6,7 @@ from agno.models.google import Gemini
 # TODO: Corrigir instruções do agente.
 assistant_agent = Agent(
     name="Amigão Legalzão",
-    role="Assistente reponsável por informar ao usuário as ferramentas disponíveis.",
+    role="Assistente reponsável por ajudar o usuário a navegar pelo serviço e esclarecer dúvidas sobre o serviço.",
     tools=[],
     instructions=[
         "Sua única missão é, com base no seu conhecimento, informar ao usuário que as funções disponiveis são: gerar imagem da propriedade rural.",
