@@ -5,17 +5,18 @@ import PIL
 
 from io import BytesIO
 
-from agno.tools import Toolkit
+from agno.tools import Toolkit, tool
 from agno.tools.function import ToolResult
 from agno.media import Image
 
+from utils.hooks.validation_hooks import validate_car_hook
 
 #TODO: Escrever ferramenta para visualização da área de pastagem do usuário.
 #TODO: As ferramentas query_pasture_sicar, query_pasture e view_farm acessam a gemetria da propriedade 
 
 
-@tool(tool_hooks=[])
-def view_farm(run_context: RunContext) -> str:
+@tool(tool_hooks=[validate_car_hook])
+def generate_property_image(run_context: RunContext) -> ToolResult:
     """
     Gera uma imagem de satélite da propriedade rural baseada nos dados do CAR 
     armazenados na sessão. Esta função não requer parâmetros, pois recupera 
