@@ -25,6 +25,21 @@ files_uploaded = st.file_uploader(
     accept_multiple_files=True,
 )
 
+chat_input_value = st.chat_input("Pergunte sobre pastagem...")
+
+col_btn, _ = st.columns([0.4, 0.6])
+with col_btn:
+    loc_btn_clicked = st.button("📍 Enviar Localização da Propriedade")
+
+loc_message = """Peça ao Zé da Caderneta que guarde as seguintes coordenadas Lat: 13°46'53,13" S Long: 49°08'50,9". Em seguida, peça ao Pedrão Agrônomo que gere uma visualização da minha propriedade rural."""
+
+user_query = None
+
+if loc_btn_clicked:
+    user_query = loc_message
+elif chat_input_value:
+    user_query = chat_input_value
+
 
 def process_uploaded_files(uploaded_files) -> List[str]:
     """Salva arquivos temporariamente e retorna os caminhos para o Agente."""
@@ -37,7 +52,7 @@ def process_uploaded_files(uploaded_files) -> List[str]:
                 file_paths.append(tmp_file.name)
     return file_paths
 
-if user_query := st.chat_input("Pergunte sobre pastagem..."):
+if user_query:
     st.session_state.messages.append({"role": "user", "content": user_query})
     with st.chat_message("user"):
         st.markdown(user_query)

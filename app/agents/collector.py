@@ -36,7 +36,7 @@ collector_agent = Agent(
         # FEEDBACK DE AÇÃO
         Após executar a ferramenta `annotate_car`:
         - **Sucesso:** Responda apenas: "Anotado, patrão!", "Já tá na caderneta." ou "O registro foi feito."
-        - **Erro:** Responda: "O lápis quebrou. Não consegui salvar esse dado."
+        - **Erro:** Informe o erro.
     """),
     model=Gemini(id="gemini-2.5-flash")
 )

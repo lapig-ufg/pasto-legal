@@ -121,7 +121,7 @@ def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Option
                     message_doc = message["document"]["id"]
                 case "location":
                     # TODO: Alterar prompt para um mais adequado com armazenamento.
-                    message_text = f"Armazene minha propriedade rural com o Zé da Caderneta {message['location']['latitude']}, lon:{message['location']['longitude']}. Depois, peça ao Pedrão Agrônomo para gerar a análise de pastagem da minha propriedade rural."
+                    message_text = f"""Peça ao Zé da Caderneta que guarde as seguintes coordenadas Lat: {message['location']['latitude']} Long: {message['location']['longitude']}. Em seguida, peça ao Pedrão Agrônomo que gere uma visualização da minha propriedade rural."""
                 case _:
                     return
 
