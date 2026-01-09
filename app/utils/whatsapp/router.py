@@ -194,9 +194,13 @@ def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Option
     async def _send_whatsapp_message(recipient: str, message: str, italics: bool = False):
         message_batches = textwrap.wrap(message, width=4000, replace_whitespace=False, drop_whitespace=False)
 
-        batch_message = f"[{i}/{len(message_batches)}] {batch}" if len(message_batches) > 1 else f"{batch}"
-
         for i, batch in enumerate(message_batches, 1):
+            if len(message_batches) > 1:
+                batch_message = f"[{i}/{len(message_batches)}] {batch}"
+            else:
+                batch_message = f"{batch}"
+
+
             if italics:
                 # TODO: É possível que, caso o texto possua "\n\n", a menssagem gere um "__" literal.
                 formatted_batch = "\n".join([f"_{line}_" for line in batch_message.split("\n")])
