@@ -4,6 +4,8 @@ from typing import Callable, Dict, Any
 
 from agno.run import RunContext
 
+from app.utils.dummy_logger import log
+
 
 def validate_car_hook(run_context: RunContext, function_name: str, function_call: Callable, arguments: Dict[str, Any]) -> Any:
     """
@@ -11,7 +13,7 @@ def validate_car_hook(run_context: RunContext, function_name: str, function_call
     """
     session_state = run_context.session_state
 
-    print("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$", session_state)
+    log(obj=session_state)
 
     if session_state and 'car' in session_state:
         return function_call(**arguments)

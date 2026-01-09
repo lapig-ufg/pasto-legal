@@ -12,7 +12,9 @@ from app.agents.analyst import analyst_agent
 session_db = SqliteDb(db_file="tmp/memory.db", memory_table="memory")
 agent_db = SqliteDb(db_file="tmp/memory.db", memory_table="agent_storage")
 
+# TODO: Deveriamos mudar para o Gemini 3-flash? Talvez sim pois apesar de ser mais caro ele consome menos tokens e a resposta é melhor e mais rapida.
 # TODO: O Team não deveria ter memória, justamente para não confundir informações antigas. Um agente deveria ser responsável por isso. Dessa forma, teremos maior controle da informação armazenada.
+# TODO: Não deveria responder o usuário, apenas orquestrar. Pois, pode acabar respondendo sem saber se a resposta esta correta.
 pasto_legal_team = Team(
     db=session_db,
     name="Equipe Pasto Legal",

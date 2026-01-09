@@ -13,6 +13,8 @@ from agno.run import RunContext
 
 from app.hooks.validation_hooks import validate_car_hook
 
+from app.utils.dummy_logger import log
+
 GEE_SERVICE_ACCOUNT = os.environ.get('GEE_SERVICE_ACCOUNT')
 GEE_KEY_FILE = os.environ.get('GEE_KEY_FILE')
 GEE_PROJECT = os.environ.get('GEE_PROJECT')
@@ -73,6 +75,8 @@ def generate_property_image(run_context: RunContext) -> ToolResult:
     final_image = sentinel.blend(outline_rgb).clip(ee.Feature(roi))
 
     url = final_image.getThumbURL({"dimensions": 1024,"format": "png"})
+
+    log(message=url)
 
     try:
         response = requests.get(url, timeout=20)
