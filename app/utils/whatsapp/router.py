@@ -1,4 +1,6 @@
 import base64
+import textwrap
+
 from os import getenv
 from typing import Optional
 
@@ -12,14 +14,13 @@ from agno.tools.whatsapp import WhatsAppTools
 from agno.utils.log import log_error, log_info, log_warning
 from agno.utils.whatsapp import get_media_async, send_image_message_async, typing_indicator_async, upload_media_async
 
-from .security import validate_webhook_signature
+from utils.whatsapp.security import validate_webhook_signature
 
 
 def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Optional[Team] = None) -> APIRouter:
     if agent is None and team is None:
         raise ValueError("Either agent or team must be provided.")
 
-    # Create WhatsApp tools instance once for reuse
     whatsapp_tools = WhatsAppTools(async_mode=True)
 
     @router.get("/status")
@@ -84,7 +85,9 @@ def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Option
     async def process_message(message: dict, agent: Optional[Agent], team: Optional[Team]):
         """Process a single WhatsApp message in the background"""
         log_info(message)
+
         try:
+            message_text = ""
             message_image = None
             message_video = None
             message_audio = None
@@ -92,36 +95,40 @@ def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Option
             
             message_id = message.get("id")
             await typing_indicator_async(message_id)
-            
-            if message.get("type") == "text":
-                message_text = message["text"]["body"]
-            elif message.get("type") == "image":
-                try:
-                    message_text = message["image"]["caption"]
-                except Exception:
-                    message_text = "Describe the image"
-                message_image = message["image"]["id"]
-            elif message.get("type") == "video":
-                try:
-                    message_text = message["video"]["caption"]
-                except Exception:
-                    message_text = "Describe the video"
-                message_video = message["video"]["id"]
-            elif message.get("type") == "audio":
-                message_text = "Reply to audio"
-                message_audio = message["audio"]["id"]
-            elif message.get("type") == "document":
-                message_text = "Process the document"
-                message_doc = message["document"]["id"]
-            elif message.get("type") == "location":
-                message_text = f"Recupere o limite da minha propriedade rural (SICARTool) com a área de pastagem para a coordenada geográfica {message['location']['latitude']}, lon:{message['location']['longitude']}"
-            else:
-                
-                return
+
+            match message.get("type"):
+                case "text":
+                    message_text = message["text"]["body"]
+                case "image":
+                    try:
+                        message_text = message["image"]["caption"]
+                    except Exception:
+                        message_text = "Describe the image"
+                    finally:
+                        message_image = message["image"]["id"]
+                case "video":
+                    try:
+                        message_text = message["video"]["caption"]
+                    except Exception:
+                        message_text = "Describe the video"
+                    finally:
+                        message_video = message["video"]["id"]
+                case "audio":
+                    message_text = "Reply to audio"
+                    message_audio = message["audio"]["id"]
+                case "document":
+                    message_text = "Process the document"
+                    message_doc = message["document"]["id"]
+                case "location":
+                    # TODO: Alterar prompt para um mais adequado com armazenamento.
+                    message_text = f"""Peça ao Zé da Caderneta que guarde as seguintes coordenadas Lat: {message['location']['latitude']} Long: {message['location']['longitude']}. Em seguida, peça ao Pedrão Agrônomo que gere uma visualização da minha propriedade rural."""
+                case _:
+                    return
 
             phone_number = message["from"]
             log_info(f"Processing message from {phone_number}: {message_text}")
 
+            # TODO: Só temos Team, não precisa do agent.
             # Generate and send response
             if agent:
                 response = await agent.arun(
@@ -134,7 +141,7 @@ def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Option
                     audio=[Audio(content=await get_media_async(message_audio))] if message_audio else None,
                 )
             elif team:
-                response = await team.arun(  # type: ignore
+                response = await team.arun(
                     message_text,
                     user_id=phone_number,
                     session_id=f"wa:{phone_number}",
@@ -150,9 +157,11 @@ def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Option
             if response.images:
                 number_of_images = len(response.images)
                 log_info(f"images generated: f{number_of_images}")
+
                 for i in range(number_of_images):
-                    image_content = response.images[i].content
                     image_bytes = None
+                    image_content = response.images[i].content
+                    
                     if isinstance(image_content, bytes):
                         try:
                             decoded_string = image_content.decode("utf-8")
@@ -166,14 +175,10 @@ def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Option
                         log_error(f"Unexpected image content type: {type(image_content)} for user {phone_number}")
 
                     if image_bytes:
-                        media_id = await upload_media_async(
-                            media_data=image_bytes, mime_type="image/png", filename="image.png"
-                        )
+                        media_id = await upload_media_async(media_data=image_bytes, mime_type="image/png", filename="image.png")
                         await send_image_message_async(media_id=media_id, recipient=phone_number, text=response.content)
                     else:
-                        log_warning(
-                            f"Could not process image content for user {phone_number}. Type: {type(image_content)}"
-                        )
+                        log_warning(f"Could not process image content for user {phone_number}. Type: {type(image_content)}")
                         await _send_whatsapp_message(phone_number, response.content)  # type: ignore
             else:
                 await _send_whatsapp_message(phone_number, response.content)  # type: ignore
@@ -182,30 +187,18 @@ def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Option
             log_error(f"Error processing message: {str(e)}")
 
             try:
-                await _send_whatsapp_message(
-                    phone_number, "Sorry, there was an error processing your message. Please try again later."
-                )
+                await _send_whatsapp_message(phone_number, "Desculpe, ocorreu um erro ao processar sua mensagem. Por favor, tente novamente mais tarde.")
             except Exception as send_error:
                 log_error(f"Error sending error message: {str(send_error)}")
 
     async def _send_whatsapp_message(recipient: str, message: str, italics: bool = False):
-        if len(message) <= 4096:
-            if italics:
-                # Handle multi-line messages by making each line italic
-                formatted_message = "\n".join([f"_{line}_" for line in message.split("\n")])
-                await whatsapp_tools.send_text_message_async(recipient=recipient, text=formatted_message)
-            else:
-                await whatsapp_tools.send_text_message_async(recipient=recipient, text=message)
-            return
+        message_batches = textwrap.wrap(message, width=4000, replace_whitespace=False, drop_whitespace=False)
 
-        # Split message into batches of 4000 characters (WhatsApp message limit is 4096)
-        message_batches = [message[i : i + 4000] for i in range(0, len(message), 4000)]
+        batch_message = f"[{i}/{len(message_batches)}] {batch}" if len(message_batches) > 1 else f"{batch}"
 
-        # Add a prefix with the batch number
         for i, batch in enumerate(message_batches, 1):
-            batch_message = f"[{i}/{len(message_batches)}] {batch}"
             if italics:
-                # Handle multi-line messages by making each line italic
+                # TODO: É possível que, caso o texto possua "\n\n", a menssagem gere um "__" literal.
                 formatted_batch = "\n".join([f"_{line}_" for line in batch_message.split("\n")])
                 await whatsapp_tools.send_text_message_async(recipient=recipient, text=formatted_batch)
             else:

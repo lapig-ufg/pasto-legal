@@ -2,11 +2,11 @@ from typing import List, Optional
 
 from fastapi.routing import APIRouter
 
+from agno.team import Team
 from agno.agent import Agent
 from agno.os.interfaces.base import BaseInterface
-from utils.whatsapp.router import attach_routes
-from agno.team import Team
 
+from utils.whatsapp.router import attach_routes
 
 class Whatsapp(BaseInterface):
     type = "whatsapp"

@@ -20,3 +20,4 @@ pymongo
 pymongo[srv]
 fastembed
 qdrant-client
+earthengine-api==1.7.4
