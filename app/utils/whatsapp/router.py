@@ -16,7 +16,8 @@ from agno.utils.whatsapp import get_media_async, send_image_message_async, typin
 
 from app.utils.whatsapp.security import validate_webhook_signature
 
-
+# TODO: O contato de desenvolvimento só deve responder números conhecidos.
+# TODO: No primeiro contato o sistema deve enviar o termo de consentimento. Interface: vídeo, voz e texto.
 def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Optional[Team] = None) -> APIRouter:
     if agent is None and team is None:
         raise ValueError("Either agent or team must be provided.")
@@ -121,7 +122,7 @@ def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Option
                     message_doc = message["document"]["id"]
                 case "location":
                     # TODO: Alterar prompt para um mais adequado com armazenamento.
-                    message_text = f"""Peça ao Zé da Caderneta que guarde as seguintes coordenadas Lat: {message['location']['latitude']} Long: {message['location']['longitude']}. Em seguida, peça ao Pedrão Agrônomo que gere uma visualização da minha propriedade rural."""
+                    message_text = f"""Peça ao agente Coletor que guarde as seguintes coordenadas Lat: {message['location']['latitude']} Long: {message['location']['longitude']}. Em seguida, peça ao agente Analista que gere uma visualização da minha propriedade rural."""
                 case _:
                     return
 

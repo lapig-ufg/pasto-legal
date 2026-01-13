@@ -1,5 +1,7 @@
+import os
+
 from agno.team.team import Team
-from agno.db.sqlite import SqliteDb
+from agno.db.postgres import PostgresDb
 from agno.models.google import Gemini
 
 from textwrap import dedent
@@ -9,14 +11,30 @@ from app.agents.collector import collector_agent
 from app.agents.analyst import analyst_agent
 
 
-session_db = SqliteDb(db_file="tmp/memory.db", memory_table="memory")
-agent_db = SqliteDb(db_file="tmp/memory.db", memory_table="agent_storage")
+if not (POSTGRES_HOST := os.environ.get('POSTGRES_HOST')):
+    raise ValueError("POSTGRES_HOST environment variables must be set.")
+
+if not (POSTGRES_PORT := os.environ.get('POSTGRES_PORT')):
+    raise ValueError("POSTGRES_PORT environment variables must be set.")
+
+if not (POSTGRES_DBNAME := os.environ.get('POSTGRES_DBNAME')):
+    raise ValueError("POSTGRES_DBNAME environment variables must be set.")
+
+if not (POSTGRES_USER := os.environ.get('POSTGRES_USER')):
+    raise ValueError("POSTGRES_USER environment variables must be set.")
+
+if not (POSTGRES_PASSWORD := os.environ.get('POSTGRES_PASSWORD')):
+    raise ValueError("POSTGRES_PASSWORD environment variables must be set.")
+
+
+db_url = f"postgresql+psycopg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DBNAME}"
+db = PostgresDb(db_url=db_url)
 
 # TODO: Deveriamos mudar para o Gemini 3-flash? Talvez sim pois apesar de ser mais caro ele consome menos tokens e a resposta é melhor e mais rapida.
 # TODO: O Team não deveria ter memória, justamente para não confundir informações antigas. Um agente deveria ser responsável por isso. Dessa forma, teremos maior controle da informação armazenada.
 # TODO: Não deveria responder o usuário, apenas orquestrar. Pois, pode acabar respondendo sem saber se a resposta esta correta.
 pasto_legal_team = Team(
-    db=session_db,
+    db=db,
     name="Equipe Pasto Legal",
     model=Gemini(id="gemini-2.5-flash"),
     markdown=True,
@@ -55,8 +73,7 @@ pasto_legal_team = Team(
 
         ## Recebimento de Localização
         SE o usuário enviar a localização:
-        - **AÇÃO:** Chame imediatamente o agente **'Zé da Caderneta'** (collector_agent) para salvar essa informação.
-        - Não pergunte novamente, apenas confirme que foi recebido.
+        - **AÇÃO:** Chame imediatamente o agente **'Coletor'** para salvar essa informação.
 
         ## Recebimento de Vídeo/Áudio
         SE o usuário enviar um arquivo de vídeo:

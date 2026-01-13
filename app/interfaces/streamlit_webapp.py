@@ -31,7 +31,7 @@ col_btn, _ = st.columns([0.4, 0.6])
 with col_btn:
     loc_btn_clicked = st.button("📍 Enviar Localização da Propriedade")
 
-loc_message = """Peça ao Zé da Caderneta que guarde as seguintes coordenadas Lat: 13°46'53,13" S Long: 49°08'50,9". Em seguida, peça ao Pedrão Agrônomo que gere uma visualização da minha propriedade rural."""
+loc_message = """Peça ao agente Coletor que guarde as seguintes coordenadas Lat: 13°46'53,13" S Long: 49°08'50,9". Em seguida, peça ao agente Analista que gere uma visualização da minha propriedade rural."""
 
 user_query = None
 

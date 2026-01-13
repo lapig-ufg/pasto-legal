@@ -6,9 +6,9 @@ from agno.run import RunContext
 
 
 @tool
-def sing_tool(run_context: RunContext):
+def menino_da_porteira_tool(run_context: RunContext):
     """
-    Canta a música 'Menino da Porteira'.
+    Retorna a letra da música 'Menino da Porteira'.
 
     Return:
         A música 'Menino da Porteira'.

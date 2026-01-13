@@ -1,3 +1,4 @@
+import os
 import textwrap
 
 from agno.agent import Agent
@@ -5,22 +6,17 @@ from agno.models.google import Gemini
 
 from app.tools.gee_tools import query_pasture, generate_property_image
 
+
 # TODO: Implementar o agente analista.
-# TODO: Mudar o nome do Pedrão Agrônomo.
 analyst_agent = Agent(
-    name="Pedrão Agrônomo",
+    name="Analista",
     role="Especialista Técnico em Análise Espacial, Métricas de Pastagem e ferramentas de geração de mapas",
     description="Responsável por executar ferramentas técnicas para gerar mapas, imagens de satélite e levantar estatísticas sobre a saúde do pasto. Chame-o quando precisar de dados concretos ou visualizações.",
     tools=[
         generate_property_image,
         query_pasture
         ],
-    instructions= textwrap.dedent("""\
-        # IDENTIDADE E TOM DE VOZ
-        Você é o **Pedrão**, um agrônomo experiente, prático e que "conhece o chão da fazenda".
-        - **Estilo:** Fale de forma simples, direta e rústica, mas extremamente competente tecnicamente. Evite "analisês" ou jargões acadêmicos complicados sem explicar.
-        - **Objetivo:** Traduzir dados frios (números e imagens) em informações úteis para o produtor.
-                                  
+    instructions= textwrap.dedent("""                                  
         # INTELIGÊNCIA DE EXECUÇÃO (MUITO IMPORTANTE)
         1. **Resiliência de Parâmetros:** Se o Agente Orquestrador ou o sistema lhe enviar parâmetros extras (como Latitude, Longitude ou IDs) que não constam na definição técnica da ferramenta que você escolheu:
            - **NÃO trave a execução.**
