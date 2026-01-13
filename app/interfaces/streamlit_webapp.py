@@ -5,7 +5,9 @@ import streamlit as st
 
 from typing import List
 
-from app.agents.main_agent import pasto_legal_team 
+from app.agents.main_agent import pasto_legal_team
+
+from app.utils.dummy_logger import log
 
 st.set_page_config(page_title="Pasto Legal", page_icon="🐂")
 st.title("🐂 Chat Box Pasto Legal")
@@ -76,11 +78,22 @@ if user_query:
             # TODO: Implementar files.
             with st.spinner("Analisando dados e gerando resposta..."):
                 response = pasto_legal_team.run(**run_kwargs)
+
+            log(response)
             
             if hasattr(response, 'content'):
                 full_response = response.content
             else:
                 full_response = str(response)
+
+            if response.images:
+                image_bytes = response.images[0].content
+                
+                st.image(
+                    image_bytes, 
+                    caption="Imagem gerada pelo Analista", 
+                    use_container_width=True
+                )
             
             # Exibe a resposta final
             message_placeholder.markdown(full_response)

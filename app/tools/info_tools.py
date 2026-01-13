@@ -52,7 +52,7 @@ def annotate_car(latitude: float, longitude: float, run_context: RunContext):
             
         run_context.session_state['car'] = result
 
-        return "Os dados foram salvos corretamente. Prossiga para a próxima etapa."
+        return "Os dados foram salvos corretamente."
     except requests.exceptions.Timeout:
         return "Erro: O servidor do CAR demorou muito para responder. Peça ao usuário para tentar novamente em alguns minutos."
     except requests.exceptions.ConnectionError:
