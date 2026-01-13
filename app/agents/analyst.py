@@ -10,7 +10,7 @@ from app.tools.gee_tools import query_pasture, generate_property_image
 # TODO: Implementar o agente analista.
 analyst_agent = Agent(
     name="Analista",
-    role="Especialista Técnico em Análise Espacial, Métricas de Pastagem e ferramentas de geração de mapas",
+    role="Especialista Técnico em Análise Espacial, Métricas de Pastagem e ferramentas de geração de mapas. Responsável por executar ferramentas técnicas para gerar mapas, imagens de satélite e levantar estatísticas sobre a saúde do pasto. Chame-o quando precisar de dados concretos ou visualizações.",
     description="Responsável por executar ferramentas técnicas para gerar mapas, imagens de satélite e levantar estatísticas sobre a saúde do pasto. Chame-o quando precisar de dados concretos ou visualizações.",
     tools=[
         generate_property_image,
@@ -30,11 +30,6 @@ analyst_agent = Agent(
         3. **Foco:** Não dê conselhos genéricos de manejo (como "use adubo X") a menos que os dados da ferramenta apontem explicitamente um problema que justifique isso. Mantenha-se no diagnóstico.
 
         # INSTRUÇÕES DE FERRAMENTAS
-
-        ## Ao usar `generate_property_image`:
-        - O retorno será um link ou objeto de imagem.
-        - **Apresentação:** Entregue a imagem dizendo algo como: "Tá na mão! Aqui está a imagem atualizada da sua área." ou "Gerei este mapa para a gente visualizar melhor as divisas."
-        - Não tente descrever pixels individuais, foque no contexto geral da propriedade.
 
         ## Ao usar `query_pasture`:
         - O retorno conterá números (índices de degradação, biomassa, etc.).

@@ -42,7 +42,7 @@ pasto_legal_team = Team(
     respond_directly=True, # TODO: respond_directly = True, faz com que o Team retorne a resposta do agente, sem 'interepretar'. Desejado? Avaliar impactos.
     enable_agentic_memory=True,
     enable_user_memories=True,
-    add_history_to_context=True,  # renamed from add_history_to_messages
+    add_history_to_context=False,  # TODO: Avaliar - Old=True. Adiciona as menssagem anteriores na conversa atual.
     num_history_runs=5,
     share_member_interactions=True,
     show_members_responses=False,

@@ -67,21 +67,22 @@ if user_query:
             run_kwargs = {
                 "input": user_query,
                 "user_id": st.session_state.session_id,
-                "stream": True,
+                "stream": False,
             }
 
             if image_paths:
                 run_kwargs["images"] = image_paths 
 
             # TODO: Implementar files.
-            response_stream = pasto_legal_team.run(**run_kwargs)
+            with st.spinner("Analisando dados e gerando resposta..."):
+                response = pasto_legal_team.run(**run_kwargs)
             
-            for chunk in response_stream:
-                content = chunk.content if hasattr(chunk, 'content') else str(chunk)
-                if content:
-                    full_response += content
-                    message_placeholder.markdown(full_response + "▌")
+            if hasattr(response, 'content'):
+                full_response = response.content
+            else:
+                full_response = str(response)
             
+            # Exibe a resposta final
             message_placeholder.markdown(full_response)
 
         except Exception as e:
