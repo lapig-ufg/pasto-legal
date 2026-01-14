@@ -2,17 +2,16 @@ import json
 import requests
 import textwrap
 
+from requests.adapters import HTTPAdapter
+
 from agno.tools import Toolkit, tool
 from agno.tools.function import ToolResult
 from agno.run import RunContext
 
 from app.hooks.tool_hooks import continue_from_request
 
-# TODO: Esse toolkit deve ser implementado ao longo do desenvolvimento do agente. Ele será
-# responsável por coletar, armazenar e organizar os dados e informações do usuário, coletados
-# ao longo da interação. Essas informações podem ser: localização, car, quantidade de animais...
-
-@tool(requires_confirmation=False)
+# TODO: As vezes o request retorna 302 e 307 de redirecionamento. Garantir que não ira redirecionar com allow_redirects=False. Ou tentar conexão direta com a API.
+@tool
 def annotate_car(latitude: float, longitude: float, run_context: RunContext):
     """
     Armazena os dados de localização do usuário.
@@ -24,15 +23,20 @@ def annotate_car(latitude: float, longitude: float, run_context: RunContext):
     Returns:
         str: Uma mensagem instruindo o Agente sobre o sucesso ou falha da operação.
     """
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://consultapublica.car.gov.br/publico/imoveis/index'
+    }
+
     sess = requests.Session()
 
     base_url = "https://consultapublica.car.gov.br/publico/imoveis/index"
 
     try:
-        sess.get(base_url, verify=False, timeout=15)
+        sess.get(base_url, verify=False, headers=headers, timeout=5)
 
         url_api = f'https://consultapublica.car.gov.br/publico/imoveis/getImovel?lat={latitude}&lng={longitude}'
-        response = sess.get(url_api, verify=False, timeout=15)
+        response = sess.get(url_api, verify=False, headers=headers, timeout=5)
 
         response.raise_for_status()
 
@@ -61,7 +65,7 @@ def annotate_car(latitude: float, longitude: float, run_context: RunContext):
         status = e.response.status_code
 
         if status == 403:
-            return "Erro: Acesso negado pelo servidor (403). O sistema pode estar bloqueando robôs temporariamente."
+            return "Erro: Acesso negado pelo servidor."
         
         return f"Erro HTTP {status}: Ocorreu um problema técnico ao acessar a base do CAR."
     except Exception as e:
