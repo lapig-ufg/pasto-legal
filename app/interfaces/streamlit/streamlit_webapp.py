@@ -8,11 +8,10 @@ import requests
 
 from typing import List
 
-from app.utils.dummy_logger import log
+from app.agents.main_agent import pasto_legal_team
 
 st.set_page_config(page_title="Pasto Legal", page_icon="🐂")
 
-API_URL = "http://localhost:8000/teams/equipe-pasto-legal/"
 
 DB_FILE = "users_db.json"
 
@@ -169,7 +168,6 @@ if user_query:
         
         try:
             with st.spinner("Analisando dados e gerando resposta (via API)..."):
-                
                 # 1. Conexão com o Redis
                 try:
                     r = redis.Redis(host='redis_cache', port=6379, decode_responses=True)
@@ -178,14 +176,13 @@ if user_query:
                 except redis.ConnectionError as e:
                     print(f"Erro ao conectar no Redis: {e}")
 
-                if status and status == 'PAUSED':
-                    
-
-
-                payload = {
+                params = {
                     "input": user_query,
                     "user_id": st.session_state.session_id,
                 }
+
+                if not status:
+                    response = pasto_legal_team.run(**params)
 
                 # Preparação de arquivos para envio (Multipart)
                 files_to_send = []
