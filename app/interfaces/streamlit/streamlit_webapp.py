@@ -9,9 +9,9 @@ from typing import List
 
 from app.utils.dummy_logger import log
 
-st.set_page_config(page_title="Pasto Legal", page_icon="🐂")
+from app.agents.main_agent import pasto_legal_team
 
-API_URL = "http://localhost:8000/teams/equipe-pasto-legal/"
+st.set_page_config(page_title="Pasto Legal", page_icon="🐂")
 
 DB_FILE = "users_db.json"
 
@@ -177,30 +177,13 @@ if user_query:
                 files_to_send = []
                 open_files = [] # Lista para manter referências e fechar depois
 
-                if image_paths:
-                    for path in image_paths:
-                        f = open(path, "rb")
-                        open_files.append(f)
-                        # O nome do campo 'images' deve bater com o que seu FastAPI espera (ex: UploadFile)
-                        files_to_send.append(("images", (os.path.basename(path), f, "application/octet-stream")))
+                response = pasto_legal_team.run(**payload)
 
-                response = requests.post(
-                    API_URL, 
-                    data=payload, 
-                    files=files_to_send if files_to_send else None,
-                    timeout=120 # Timeout maior para agentes de IA
-                )
-
-                for f in open_files:
-                    f.close()
-
-                response.raise_for_status()
-                response_data = response.json()
-
-            full_response = response_data.get("content", "")
+            full_response = response.content
             
             # Renderiza imagens se houver (assumindo que vêm como base64 ou URLs)
-            returned_images = response_data.get("images", [])
+            returned_images = response.images
+
             if returned_images:
                 # Se for apenas uma imagem
                 st.image(
