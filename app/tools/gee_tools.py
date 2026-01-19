@@ -76,8 +76,6 @@ def generate_property_image(run_context: RunContext) -> ToolResult:
 
     url = final_image.getThumbURL({"dimensions": 1024,"format": "png"})
 
-    log(message=url)
-
     try:
         response = requests.get(url, timeout=20)
         response.raise_for_status()

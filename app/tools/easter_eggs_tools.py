@@ -13,7 +13,6 @@ def menino_da_porteira_tool(run_context: RunContext):
     Return:
         A música 'Menino da Porteira'.
     """
-    print(run_context)
 
     return ToolResult(content=textwrap.dedent("""
         Toda vez que eu viajava pela estrada de Ouro Fino
@@ -46,3 +45,15 @@ def menino_da_porteira_tool(run_context: RunContext):
         Nem que o meu gado estoure, que eu precise ir atrás
         Neste pedaço de chão berrante eu não toco mais
     """))
+
+
+@tool(requires_confirmation=True)
+def comecar_rodeio_tool():
+    """
+    Começar o reodeio.
+
+    Return:
+        Narração do locutor ao iniciar o rodeio.
+    """
+
+    return "Abre a porteira, solta o touro, que o peão é de ouro e o chão é de poeira!"

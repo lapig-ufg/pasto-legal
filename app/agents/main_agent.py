@@ -10,6 +10,8 @@ from app.agents.assistant import assistant_agent
 from app.agents.collector import collector_agent
 from app.agents.analyst import analyst_agent
 
+from app.tools.easter_eggs_tools import menino_da_porteira_tool, comecar_rodeio_tool
+
 
 if not (POSTGRES_HOST := os.environ.get('POSTGRES_HOST')):
     raise ValueError("POSTGRES_HOST environment variables must be set.")
@@ -26,9 +28,9 @@ if not (POSTGRES_USER := os.environ.get('POSTGRES_USER')):
 if not (POSTGRES_PASSWORD := os.environ.get('POSTGRES_PASSWORD')):
     raise ValueError("POSTGRES_PASSWORD environment variables must be set.")
 
-
 db_url = f"postgresql+psycopg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DBNAME}"
 db = PostgresDb(db_url=db_url)
+
 
 # TODO: Deveriamos mudar para o Gemini 3-flash? Talvez sim pois apesar de ser mais caro ele consome menos tokens e a resposta é melhor e mais rapida.
 # TODO: O Team não deveria ter memória, justamente para não confundir informações antigas. Um agente deveria ser responsável por isso. Dessa forma, teremos maior controle da informação armazenada.
@@ -50,7 +52,11 @@ pasto_legal_team = Team(
         assistant_agent,
         collector_agent,
         analyst_agent
-    ],
+        ],
+    tools=[
+        menino_da_porteira_tool,
+        comecar_rodeio_tool
+        ],
     debug_mode=True,
     description="Você é um coordenador de equipe de IA especializado em pecuária e agricultura, extremamente educado e focado em resolver problemas do produtor rural.",
     instructions=dedent("""\
@@ -92,6 +98,10 @@ pasto_legal_team = Team(
         # PLANO DE EXECUÇÃO (COMO PENSAR)
         1. **Analise:** Entenda a intenção do usuário.
         2. **Delegue:** Acione silenciosamente o membro correto da equipe.
+                        
+        # EATEREGGS
+        1. Se, e apenas se, o usuário disser EXATAMENTE 'Toque o berrante, seu moço' chame a função menino_da_porteira_tool.
+        2. Se, e apenas se, o usuário disser EXATAMENTE 'Solta o bicho!' chame a função comecar_rodeio_tool.
         """),
     introduction="Olá! Sou seu assistente do Pasto Legal. Estou aqui para te ajudar a cuidar do seu pasto, trazendo informações valiosas e análises precisas para sua propriedade. Como posso ajudar hoje? 🌱"
 )
