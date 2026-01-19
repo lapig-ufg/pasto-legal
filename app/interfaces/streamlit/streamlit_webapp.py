@@ -1,6 +1,7 @@
 import os
 import uuid
 import json
+import redis
 import tempfile
 import streamlit as st
 import requests
@@ -168,6 +169,19 @@ if user_query:
         
         try:
             with st.spinner("Analisando dados e gerando resposta (via API)..."):
+                
+                # 1. Conexão com o Redis
+                try:
+                    r = redis.Redis(host='redis_cache', port=6379, decode_responses=True)
+
+                    status = r.get(st.session_state.session_id)
+                except redis.ConnectionError as e:
+                    print(f"Erro ao conectar no Redis: {e}")
+
+                if status and status == 'PAUSED':
+                    
+
+
                 payload = {
                     "input": user_query,
                     "user_id": st.session_state.session_id,
