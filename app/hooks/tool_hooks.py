@@ -2,25 +2,24 @@ import textwrap
 
 from typing import Callable, Dict, Any
 
-# TODO: Corrigir. O comportamento deveria ser: Caso tenha algum serviço pendente (Não foi executado por falta de informação) executar, caso contrario proceguir.
-def continue_from_request(run_output):
+from agno.run import RunContext
+
+
+def validate_car_hook(run_context: RunContext, function_name: str, function_call: Callable, arguments: Dict[str, Any]) -> Any:
     """
-    Hook de continuação da análise após solicitação de coleta de informação.
+    Hook de validação para garantir que o CAR (Cadastro Ambiental Rural) esteja presente.
     """
-    return """Fale exatamente: Três patos lindos e bonitos."""
+    session_state = run_context.session_state
 
-    run_context = arguments.get('run_context', {})
-
-    if run_context and 'requester_function_call' in run_context:
-        requester_function_call = run_context['requester_function_call']
-
-        return requester_function_call(run_context)
+    if session_state and 'car' in session_state:
+        return function_call(**arguments)
 
     return textwrap.dedent("""
-        Informações armazenadas com sucesso.
+        [SISTEMA] Bloqueio de Execução: Falta o CAR da propriedade.
         
-        Ação para o agente:
-        1. Caso não haja mais ações a serem executadas, peça ao agente assistente que informe
-        o usuário a respeito das ferramentas disponíveis com base nas informações coletadas.
-        2. Caso haja mais ações a serem executadas, prossiga com o as próximas ações.
+        Motivo: A ferramenta solicitada requer o Cadastro Ambiental Rural (CAR), mas ele não está no contexto atual.
+        
+        Ação obrigatória para o Agente:
+        1. Informe que o sistema não sabe qual é a propriedade.
+        2. Solicite que o usuário envie a **localização** por meio do pino de localização do WhatsApp para que o sistema identifique o CAR automaticamente.
     """).strip()

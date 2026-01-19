@@ -11,7 +11,7 @@ from agno.tools.function import ToolResult
 from agno.media import Image
 from agno.run import RunContext
 
-from app.hooks.validation_hooks import validate_car_hook
+from app.hooks.tool_hooks import validate_car_hook
 
 from app.utils.dummy_logger import log
 

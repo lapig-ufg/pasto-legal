@@ -14,7 +14,7 @@ from agno.tools.whatsapp import WhatsAppTools
 from agno.utils.log import log_error, log_info, log_warning
 from agno.utils.whatsapp import get_media_async, send_image_message_async, typing_indicator_async, upload_media_async
 
-from app.utils.whatsapp.security import validate_webhook_signature
+from app.interfaces.whatsapp.security import validate_webhook_signature
 
 # TODO: O contato de desenvolvimento só deve responder números conhecidos.
 # TODO: No primeiro contato o sistema deve enviar o termo de consentimento. Interface: vídeo, voz e texto.

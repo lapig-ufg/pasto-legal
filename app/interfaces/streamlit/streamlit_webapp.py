@@ -3,14 +3,15 @@ import uuid
 import json
 import tempfile
 import streamlit as st
+import requests
 
 from typing import List
-
-from app.agents.main_agent import pasto_legal_team
 
 from app.utils.dummy_logger import log
 
 st.set_page_config(page_title="Pasto Legal", page_icon="🐂")
+
+API_URL = "http://localhost:8000/teams/equipe-pasto-legal/"
 
 DB_FILE = "users_db.json"
 
@@ -166,38 +167,56 @@ if user_query:
         full_response = ""
         
         try:
-            run_kwargs = {
-                "input": user_query,
-                "user_id": st.session_state.session_id,
-                "stream": False,
-            }
+            with st.spinner("Analisando dados e gerando resposta (via API)..."):
+                payload = {
+                    "input": user_query,
+                    "user_id": st.session_state.session_id,
+                }
 
-            if image_paths:
-                run_kwargs["images"] = image_paths 
+                # Preparação de arquivos para envio (Multipart)
+                files_to_send = []
+                open_files = [] # Lista para manter referências e fechar depois
 
-            with st.spinner("Analisando dados e gerando resposta..."):
-                response = pasto_legal_team.run(**run_kwargs)
+                if image_paths:
+                    for path in image_paths:
+                        f = open(path, "rb")
+                        open_files.append(f)
+                        # O nome do campo 'images' deve bater com o que seu FastAPI espera (ex: UploadFile)
+                        files_to_send.append(("images", (os.path.basename(path), f, "application/octet-stream")))
 
-            log(response)
+                response = requests.post(
+                    API_URL, 
+                    data=payload, 
+                    files=files_to_send if files_to_send else None,
+                    timeout=120 # Timeout maior para agentes de IA
+                )
+
+                for f in open_files:
+                    f.close()
+
+                response.raise_for_status()
+                response_data = response.json()
+
+            full_response = response_data.get("content", "")
             
-            if hasattr(response, 'content'):
-                full_response = response.content
-            else:
-                full_response = str(response)
-
-            if hasattr(response, 'images') and response.images:
-                image_bytes = response.images[0].content
+            # Renderiza imagens se houver (assumindo que vêm como base64 ou URLs)
+            returned_images = response_data.get("images", [])
+            if returned_images:
+                # Se for apenas uma imagem
                 st.image(
-                    image_bytes, 
+                    returned_images[0], # Pode ser URL ou bytes decodificados dependendo da sua API
                     caption="Imagem gerada pelo Analista", 
                     use_container_width=True
                 )
             
             message_placeholder.markdown(full_response)
 
+        except requests.exceptions.ConnectionError:
+            st.error(f"Erro de Conexão: Não foi possível conectar ao serviço em {API_URL}. Verifique se o container 'backend_service' está rodando.")
         except Exception as e:
             st.error(f"Erro ao processar: {e}")
         finally:
+            # Limpeza dos arquivos temporários locais
             for path in image_paths:
                 try:
                     os.remove(path)

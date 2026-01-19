@@ -6,7 +6,7 @@ from agno.team import Team
 from agno.agent import Agent
 from agno.os.interfaces.base import BaseInterface
 
-from app.utils.whatsapp.router import attach_routes
+from app.interfaces.whatsapp.router import attach_routes
 
 class Whatsapp(BaseInterface):
     type = "whatsapp"
@@ -24,6 +24,7 @@ class Whatsapp(BaseInterface):
         self.team = team
         self.prefix = prefix
         self.tags = tags or ["Whatsapp"]
+
         if not (self.agent or self.team):
             raise ValueError("Whatsapp requires an agent or a team")
 

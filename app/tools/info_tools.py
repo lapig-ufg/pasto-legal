@@ -8,7 +8,6 @@ from agno.tools import Toolkit, tool
 from agno.tools.function import ToolResult
 from agno.run import RunContext
 
-from app.hooks.tool_hooks import continue_from_request
 
 # TODO: As vezes o request retorna 302 e 307 de redirecionamento. Garantir que não ira redirecionar com allow_redirects=False. Ou tentar conexão direta com a API.
 @tool
