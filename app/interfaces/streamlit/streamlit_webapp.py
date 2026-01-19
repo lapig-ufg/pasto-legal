@@ -167,31 +167,36 @@ if user_query:
         full_response = ""
         
         try:
-            with st.spinner("Analisando dados e gerando resposta (via API)..."):
-                payload = {
-                    "input": user_query,
-                    "user_id": st.session_state.session_id,
-                }
+            run_kwargs = {
+                "input": user_query,
+                "user_id": st.session_state.session_id,
+                "stream": False,
+            }
 
-                # Preparação de arquivos para envio (Multipart)
-                files_to_send = []
-                open_files = [] # Lista para manter referências e fechar depois
+            if image_paths:
+                run_kwargs["images"] = image_paths 
 
-                response = pasto_legal_team.run(**payload)
+            # TODO: Implementar files.
+            with st.spinner("Analisando dados e gerando resposta..."):
+                response = pasto_legal_team.run(**run_kwargs)
 
-            full_response = response.content
+            log(response)
             
-            # Renderiza imagens se houver (assumindo que vêm como base64 ou URLs)
-            returned_images = response.images
+            if hasattr(response, 'content'):
+                full_response = response.content
+            else:
+                full_response = str(response)
 
-            if returned_images:
-                # Se for apenas uma imagem
+            if response.images:
+                image_bytes = response.images[0].content
+                
                 st.image(
-                    returned_images[0], # Pode ser URL ou bytes decodificados dependendo da sua API
+                    image_bytes, 
                     caption="Imagem gerada pelo Analista", 
                     use_container_width=True
                 )
             
+            # Exibe a resposta final
             message_placeholder.markdown(full_response)
 
         except requests.exceptions.ConnectionError:
