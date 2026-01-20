@@ -179,59 +179,53 @@ if user_query:
                 if not value_bytes:
                     run_response = easter_egg_agent.run(input=user_query, user_id=st.session_state.session_id)
 
+                    print("============= First ===============")
+                    print(run_response, flush=True)
+                    print('\n\n', flush=True)
+
                     if run_response.is_paused:
-                        dados_bytes = pickle.dumps({
-                            'run_id': run_response.run_id,
-                            'active_requirements': run_response.active_requirements,
-                            'requirements': run_response.requirements
-                            })
+                        dados_bytes = pickle.dumps({'run_response': run_response})
                         r.set(st.session_state.session_id, dados_bytes)
 
                         for tool in run_response.tools_requiring_confirmation:
-                            response = "Deseja confirmar"
-                            message_placeholder.markdown(response)
+                            content = {
+                                'comecar_rodeio_tool': "Esta pronto para começar o rodeio?"
+                            }[tool.tool_name]
 
                         for requirement in run_response.active_requirements:
                             if requirement.needs_user_input:
                                 input_schema: List[UserInputField] = requirement.user_input_schema
 
                                 for field in input_schema:
-                                    response = f"Qual o valor? \nField: {field.name} \nDescription: {field.description} \nType: {field.field_type}"
-                                
+                                    content = f"Qual o valor? \nField: {field.name} \nDescription: {field.description} \nType: {field.field_type}"
+                    else:
+                        content = run_response.content
+
                 elif value_bytes:
                     value = pickle.loads(value_bytes)
 
-                    run_id = value['run_id']
-                    requirements = value['requirements']
-                    active_requirements = value['active_requirements']
+                    run_response = value['run_response']
 
-                    print(active_requirements)
+                    for tool in run_response.tools_requiring_confirmation:
+                        tool.confirmed = user_query.lower() == "sim"
 
-                    for requirement in active_requirements:
-                        if requirement.needs_confirmation:
-                            requirement.confirmed = user_query.lower() == "sim"
+                    run_response = easter_egg_agent.continue_run(run_response=run_response)
 
-                    print('Iterou sobre active_requirements', flush=True)
-                    
-                    run_response = easter_egg_agent.continue_run(run_id=run_id, requirements=requirements)
+                    print("============= Second ===============")
+                    print(run_response, flush=True)
+                    print('\n\n', flush=True)
 
-                    print('Rodou o agente', flush=True)
-
-                    response = run_response.content
+                    content = run_response.content
                         
                     r.delete(st.session_state.session_id)
 
-            full_response = response
+            full_response = content
             
             message_placeholder.markdown(full_response)
 
         except Exception as e:
             st.error(f"Erro ao processar: {e}")
         finally:
-            for path in image_paths:
-                try:
-                    os.remove(path)
-                except:
-                    pass
+            pass
 
     st.session_state.messages.append({"role": "assistant", "content": full_response})
