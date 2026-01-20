@@ -98,10 +98,6 @@ pasto_legal_team = Team(
         # PLANO DE EXECUÇÃO (COMO PENSAR)
         1. **Analise:** Entenda a intenção do usuário.
         2. **Delegue:** Acione silenciosamente o membro correto da equipe.
-                        
-        # EATEREGGS
-        1. Se, e apenas se, o usuário disser EXATAMENTE 'Toque o berrante, seu moço' chame a função menino_da_porteira_tool.
-        2. Se, e apenas se, o usuário disser EXATAMENTE 'Solta o bicho!' chame a função comecar_rodeio_tool.
         """),
     introduction="Olá! Sou seu assistente do Pasto Legal. Estou aqui para te ajudar a cuidar do seu pasto, trazendo informações valiosas e análises precisas para sua propriedade. Como posso ajudar hoje? 🌱"
 )

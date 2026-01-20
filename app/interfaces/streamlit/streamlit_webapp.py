@@ -2,16 +2,19 @@ import os
 import uuid
 import json
 import redis
+import pickle
 import tempfile
 import streamlit as st
 import requests
 
 from typing import List
 
+from agno.tools.function import UserInputField
+
+from app.agents.easter_egg_agent import easter_egg_agent
 from app.agents.main_agent import pasto_legal_team
 
 st.set_page_config(page_title="Pasto Legal", page_icon="🐂")
-
 
 DB_FILE = "users_db.json"
 
@@ -169,65 +172,62 @@ if user_query:
         try:
             with st.spinner("Analisando dados e gerando resposta (via API)..."):
                 # 1. Conexão com o Redis
-                try:
-                    r = redis.Redis(host='redis_cache', port=6379, decode_responses=True)
+                r = redis.Redis(host='redis_cache', port=6379)
 
-                    status = r.get(st.session_state.session_id)
-                except redis.ConnectionError as e:
-                    print(f"Erro ao conectar no Redis: {e}")
+                value_bytes = r.get(st.session_state.session_id)
 
-                params = {
-                    "input": user_query,
-                    "user_id": st.session_state.session_id,
-                }
+                if not value_bytes:
+                    run_response = easter_egg_agent.run(input=user_query, user_id=st.session_state.session_id)
 
-                if not status:
-                    response = pasto_legal_team.run(**params)
+                    if run_response.is_paused:
+                        dados_bytes = pickle.dumps({
+                            'run_id': run_response.run_id,
+                            'active_requirements': run_response.active_requirements,
+                            'requirements': run_response.requirements
+                            })
+                        r.set(st.session_state.session_id, dados_bytes)
 
-                # Preparação de arquivos para envio (Multipart)
-                files_to_send = []
-                open_files = [] # Lista para manter referências e fechar depois
+                        for tool in run_response.tools_requiring_confirmation:
+                            response = "Deseja confirmar"
+                            message_placeholder.markdown(response)
 
-                if image_paths:
-                    for path in image_paths:
-                        f = open(path, "rb")
-                        open_files.append(f)
-                        # O nome do campo 'images' deve bater com o que seu FastAPI espera (ex: UploadFile)
-                        files_to_send.append(("images", (os.path.basename(path), f, "application/octet-stream")))
+                        for requirement in run_response.active_requirements:
+                            if requirement.needs_user_input:
+                                input_schema: List[UserInputField] = requirement.user_input_schema
 
-                response = requests.post(
-                    API_URL, 
-                    data=payload, 
-                    files=files_to_send if files_to_send else None,
-                    timeout=120 # Timeout maior para agentes de IA
-                )
+                                for field in input_schema:
+                                    response = f"Qual o valor? \nField: {field.name} \nDescription: {field.description} \nType: {field.field_type}"
+                                
+                elif value_bytes:
+                    value = pickle.loads(value_bytes)
 
-                for f in open_files:
-                    f.close()
+                    run_id = value['run_id']
+                    requirements = value['requirements']
+                    active_requirements = value['active_requirements']
 
-                response.raise_for_status()
-                response_data = response.json()
+                    print(active_requirements)
 
-            full_response = response_data.get("content", "")
-            
-            # Renderiza imagens se houver (assumindo que vêm como base64 ou URLs)
-            returned_images = response_data.get("images", [])
-            if returned_images:
-                # Se for apenas uma imagem
-                st.image(
-                    returned_images[0], # Pode ser URL ou bytes decodificados dependendo da sua API
-                    caption="Imagem gerada pelo Analista", 
-                    use_container_width=True
-                )
+                    for requirement in active_requirements:
+                        if requirement.needs_confirmation:
+                            requirement.confirmed = user_query.lower() == "sim"
+
+                    print('Iterou sobre active_requirements', flush=True)
+                    
+                    run_response = easter_egg_agent.continue_run(run_id=run_id, requirements=requirements)
+
+                    print('Rodou o agente', flush=True)
+
+                    response = run_response.content
+                        
+                    r.delete(st.session_state.session_id)
+
+            full_response = response
             
             message_placeholder.markdown(full_response)
 
-        except requests.exceptions.ConnectionError:
-            st.error(f"Erro de Conexão: Não foi possível conectar ao serviço em {API_URL}. Verifique se o container 'backend_service' está rodando.")
         except Exception as e:
             st.error(f"Erro ao processar: {e}")
         finally:
-            # Limpeza dos arquivos temporários locais
             for path in image_paths:
                 try:
                     os.remove(path)

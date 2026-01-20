@@ -57,3 +57,30 @@ def comecar_rodeio_tool():
     """
 
     return "Abre a porteira, solta o touro, que o peão é de ouro e o chão é de poeira!"
+
+
+@tool
+def registrar_no_rodeio_tool():
+    """
+    Registrar no reodeio.
+
+    Return:
+        Pergunta do locutor ao peão.
+    """
+
+    return "Mão na corda, coração no bico da bota... Tá pronto, bruto?"
+
+
+@tool(requires_user_input=True, user_input_fields=['quantidade_de_galinhas'])
+def comprar_galinha_tool(quantidade_de_galinhas: int):
+    """
+    Comprar galinhas.
+
+    Args:
+        quantidade_de_galinhas (int): Quantidade de galinhas a serem compradas. 
+
+    Returns:
+        str: Onomatopeia 'có-có-có' de quantidade igual a quantidade de galinhas compradas.
+    """
+
+    return 'có-có-có' * quantidade_de_galinhas

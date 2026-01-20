@@ -1,18 +1,4 @@
 services:
-  agnos_service:
-    build: .
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
-    volumes:
-      - .:/app
-      - /app/.venv
-    ports:
-      - 8000:8000
-    environment:
-      - PYTHONPATH=/app
-      - PYTHONDONTWRITEBYTECODE=1
-    env_file:
-      - .env
-
   redis_cache:
     image: redis:alpine
     container_name: meu_redis
@@ -30,7 +16,8 @@ services:
     environment:
       - PYTHONPATH=/app
       - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
     env_file:
       - .env
     depends_on:
-      - agnos_service
+      - redis_cache
