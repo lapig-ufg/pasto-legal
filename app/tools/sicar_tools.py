@@ -4,16 +4,13 @@ import textwrap
 
 from typing import Literal
 
-from requests.adapters import HTTPAdapter
-
-from agno.tools import Toolkit, tool
-from agno.tools.function import ToolResult
 from agno.run import RunContext
+from agno.tools import tool
+from agno.tools.function import ToolResult
 
+from app.utils.image_scripts import get_mosaic
+from app.utils.gee_scripts import retrieve_feature_image
 from app.utils.dummy_logger import log
-
-#TODO: Deletar
-from pathlib import Path
 
 
 # TODO: As vezes o request retorna 302 e 307 de redirecionamento. Garantir que não ira redirecionar com allow_redirects=False. Ou tentar conexão direta com a API.
@@ -63,7 +60,7 @@ def query_car(latitude: float, longitude: float, run_context: RunContext):
             
         run_context.session_state['car'] = result
 
-        return "A imagem contém 3 propriedades CAR distintas enúmeradas como A, B e C. Peça que o usuário escolha entre uma das opções."
+        return ToolResult(content= "A imagem contém 3 propriedades CAR distintas enúmeradas como A, B e C. Peça que o usuário escolha entre uma das opções.")
     except requests.exceptions.Timeout:
         return "Erro: O servidor do CAR demorou muito para responder. Peça ao usuário para tentar novamente em alguns minutos."
     except requests.exceptions.ConnectionError:
