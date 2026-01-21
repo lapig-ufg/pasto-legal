@@ -2,6 +2,8 @@ import json
 import requests
 import textwrap
 
+from io import BytesIO
+
 from typing import Literal
 
 from agno.run import RunContext
@@ -52,12 +54,24 @@ def query_car(latitude: float, longitude: float, run_context: RunContext):
         features = result.get("features", [])
 
         if not features:
-            return textwrap.dedent("""
-                Falha: Nenhuma propriedade rural (CAR) foi encontrada nestas coordenadas. 
-                Informe ao usuário que o local indicado não consta na base pública do CAR e 
-                peça para ele garantir que esta dentro da área da propriedade.
-            """).strip()
-            
+            return ToolResult(content=textwrap.dedent("""
+                [FALHA] Nenhuma propriedade rural (CAR) foi encontrada nestas coordenadas. 
+                                                      
+                # INTRUÇÕES
+                - Informe ao usuário que o local indicado não consta na base pública do CAR 
+            """).strip())
+        elif features and len(features) == 1:
+            img = retrieve_feature_image(features[0])
+            buffer = BytesIO()
+            img.save(buffer, format="PNG")
+
+            ToolResult(
+                content="A imagem contém 3 propriedades CAR distintas enúmeradas como A, B e C. Peça que o usuário escolha entre uma das opções."
+                images=[Image(content=buffer.getvalue())]
+                )
+        elif features and len(features) > 1:
+            pass
+          
         run_context.session_state['car'] = result
 
         return ToolResult(content= "A imagem contém 3 propriedades CAR distintas enúmeradas como A, B e C. Peça que o usuário escolha entre uma das opções.")
