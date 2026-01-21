@@ -1,24 +1,4 @@
 services:
-  agnos_service:
-    build: .
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
-    volumes:
-      - .:/app
-      - /app/.venv
-    ports:
-      - 8000:8000
-    environment:
-      - PYTHONPATH=/app
-      - PYTHONDONTWRITEBYTECODE=1
-    env_file:
-      - .env
-
-  redis_cache:
-    image: redis:alpine
-    container_name: meu_redis
-    ports:
-      - "6379:6379"
-
   streamlit_app:
     build: .
     command: uv run streamlit run ./app/interfaces/streamlit/streamlit_webapp.py --server.port 8080
@@ -30,7 +10,6 @@ services:
     environment:
       - PYTHONPATH=/app
       - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
     env_file:
       - .env
-    depends_on:
-      - agnos_service

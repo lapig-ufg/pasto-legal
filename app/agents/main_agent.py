@@ -7,10 +7,9 @@ from agno.models.google import Gemini
 from textwrap import dedent
 
 from app.agents.assistant import assistant_agent
-from app.agents.collector import collector_agent
 from app.agents.analyst import analyst_agent
 
-from app.tools.easter_eggs_tools import menino_da_porteira_tool, comecar_rodeio_tool
+from app.tools.sicar_tools import query_car, select_car
 
 
 if not (POSTGRES_HOST := os.environ.get('POSTGRES_HOST')):
@@ -44,18 +43,17 @@ pasto_legal_team = Team(
     respond_directly=True, # TODO: respond_directly = True, faz com que o Team retorne a resposta do agente, sem 'interepretar'. Desejado? Avaliar impactos.
     enable_agentic_memory=True,
     enable_user_memories=True,
-    add_history_to_context=False,  # TODO: Avaliar - Old=True. Adiciona as menssagem anteriores na conversa atual.
+    add_history_to_context=True,  # TODO: Avaliar - Old=True. Adiciona as menssagem anteriores na conversa atual.
     num_history_runs=5,
     share_member_interactions=True,
     show_members_responses=False,
     members=[
         assistant_agent,
-        collector_agent,
         analyst_agent
         ],
     tools=[
-        menino_da_porteira_tool,
-        comecar_rodeio_tool
+        query_car,
+        select_car
         ],
     debug_mode=True,
     description="Você é um coordenador de equipe de IA especializado em pecuária e agricultura, extremamente educado e focado em resolver problemas do produtor rural.",
@@ -67,7 +65,7 @@ pasto_legal_team = Team(
         2. **Idioma:** Seu idioma padrão é **Português (Brasil)**. Nunca mude.
         3. **Tom de Voz:** Seja sempre muito educado, feliz e demonstre entusiasmo em ajudar o produtor.
         4. **Transparência de Equipe:**
-           - Você coordena outros agentes (`assistant`, `collector`, `analyst`), mas isso deve ser **INVISÍVEL** ao usuário.
+           - Você coordena outros agentes (`assistant`, `analyst`), mas isso deve ser **INVISÍVEL** ao usuário.
            - **PROIBIDO** dizer frases como "Vou transferir para o agente X" ou "Deixe-me perguntar ao analista". Apenas entregue a resposta final consolidada.
         5. **Imediatismo:** Não diga "preciso confirmar isso depois". No contexto deste app, resolva agora ou diga que não sabe.
 
@@ -99,9 +97,10 @@ pasto_legal_team = Team(
         1. **Analise:** Entenda a intenção do usuário.
         2. **Delegue:** Acione silenciosamente o membro correto da equipe.
                         
-        # EATEREGGS
-        1. Se, e apenas se, o usuário disser EXATAMENTE 'Toque o berrante, seu moço' chame a função menino_da_porteira_tool.
-        2. Se, e apenas se, o usuário disser EXATAMENTE 'Solta o bicho!' chame a função comecar_rodeio_tool.
+        # ATIVIDADES
+        1. Se o usuário informar uma localização.
+            - Utiliza a ferramenta query_car para recuperar todos Cadastros Ambientais Rurais e peça que o usuário escolha entre as letras disponíveis.
+            - Quando o usuário responder com um das letras válidas, utilize a ferramenta select_car para armazenar a escolha do usuário.
         """),
     introduction="Olá! Sou seu assistente do Pasto Legal. Estou aqui para te ajudar a cuidar do seu pasto, trazendo informações valiosas e análises precisas para sua propriedade. Como posso ajudar hoje? 🌱"
 )

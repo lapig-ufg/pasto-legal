@@ -2,25 +2,33 @@ import json
 import requests
 import textwrap
 
+from typing import Literal
+
 from requests.adapters import HTTPAdapter
 
 from agno.tools import Toolkit, tool
 from agno.tools.function import ToolResult
 from agno.run import RunContext
 
+from app.utils.dummy_logger import log
+
+#TODO: Deletar
+from pathlib import Path
+
 
 # TODO: As vezes o request retorna 302 e 307 de redirecionamento. Garantir que não ira redirecionar com allow_redirects=False. Ou tentar conexão direta com a API.
 @tool
-def annotate_car(latitude: float, longitude: float, run_context: RunContext):
+
+def query_car(latitude: float, longitude: float, run_context: RunContext):
     """
-    Armazena os dados de localização do usuário.
+    Recupera as própriedades com Cadastro Ambiental Rural (CAR) para a coordenada informada.
 
     Args:
         latitude (float): Latitude in decimal degrees 
         longitude (float): Longitude in decimal degrees
 
     Returns:
-        str: Uma mensagem instruindo o Agente sobre o sucesso ou falha da operação.
+        ToolResult: Imagem com todos os CARs encontrados para seleção da propriedade do usuário.
     """
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -55,7 +63,7 @@ def annotate_car(latitude: float, longitude: float, run_context: RunContext):
             
         run_context.session_state['car'] = result
 
-        return "Os dados foram salvos corretamente."
+        return "A imagem contém 3 propriedades CAR distintas enúmeradas como A, B e C. Peça que o usuário escolha entre uma das opções."
     except requests.exceptions.Timeout:
         return "Erro: O servidor do CAR demorou muito para responder. Peça ao usuário para tentar novamente em alguns minutos."
     except requests.exceptions.ConnectionError:
@@ -69,7 +77,23 @@ def annotate_car(latitude: float, longitude: float, run_context: RunContext):
         return f"Erro HTTP {status}: Ocorreu um problema técnico ao acessar a base do CAR."
     except Exception as e:
         return f"Erro Inesperado: {str(e)}. Peça desculpas ao usuário e informe que houve um erro interno no processamento."
-    
-@tool()
-def annotate_cattle_count(count: int, run_context: RunContext):
+
+
+@tool
+def select_car(selection: Literal['A', 'B', 'C', 'D', 'E'], run_context: RunContext):
+    """
+    Seleciona uma das própriedades de Cadastro Ambiental Rural (CAR) para armazenar no sistema.
+
+    Args:
+        selection (Literal['A', 'B', 'C', 'D', 'E']): Letra representando a própriedade CAR escolhida pelo usuário.
+
+    Returns:
+        str: Resultado da operação.
+    """
+    log(selection)
+    return "Informe ao usuário que o CAR foi salvo com sucesso e que será mantido na memória do sistema por 3 meses e ele pode pedir para remover a qualquer momento"
+
+
+@tool
+def confirm_car():
     pass

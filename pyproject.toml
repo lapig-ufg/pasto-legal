@@ -23,6 +23,7 @@ dependencies = [
     "pypdf>=6.5.0",
     "python-dotenv>=1.2.1",
     "qdrant-client>=1.16.2",
+    "redis>=7.1.0",
     "rich==14.0.0",
     "sqlalchemy==2.0.41",
     "streamlit>=1.52.2",
