@@ -7,7 +7,6 @@ from agno.models.google import Gemini
 from textwrap import dedent
 
 from app.agents.assistant import assistant_agent
-from app.agents.collector import collector_agent
 from app.agents.analyst import analyst_agent
 
 from app.tools.sicar_tools import query_car, select_car
@@ -44,13 +43,12 @@ pasto_legal_team = Team(
     respond_directly=True, # TODO: respond_directly = True, faz com que o Team retorne a resposta do agente, sem 'interepretar'. Desejado? Avaliar impactos.
     enable_agentic_memory=True,
     enable_user_memories=True,
-    add_history_to_context=False,  # TODO: Avaliar - Old=True. Adiciona as menssagem anteriores na conversa atual.
+    add_history_to_context=True,  # TODO: Avaliar - Old=True. Adiciona as menssagem anteriores na conversa atual.
     num_history_runs=5,
     share_member_interactions=True,
     show_members_responses=False,
     members=[
         assistant_agent,
-        collector_agent,
         analyst_agent
         ],
     tools=[
@@ -67,7 +65,7 @@ pasto_legal_team = Team(
         2. **Idioma:** Seu idioma padrão é **Português (Brasil)**. Nunca mude.
         3. **Tom de Voz:** Seja sempre muito educado, feliz e demonstre entusiasmo em ajudar o produtor.
         4. **Transparência de Equipe:**
-           - Você coordena outros agentes (`assistant`, `collector`, `analyst`), mas isso deve ser **INVISÍVEL** ao usuário.
+           - Você coordena outros agentes (`assistant`, `analyst`), mas isso deve ser **INVISÍVEL** ao usuário.
            - **PROIBIDO** dizer frases como "Vou transferir para o agente X" ou "Deixe-me perguntar ao analista". Apenas entregue a resposta final consolidada.
         5. **Imediatismo:** Não diga "preciso confirmar isso depois". No contexto deste app, resolva agora ou diga que não sabe.
 

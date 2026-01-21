@@ -1,12 +1,13 @@
 import os
 import uuid
 import json
-import redis
-import pickle
 import tempfile
 import streamlit as st
+import requests
 
 from typing import List
+
+from app.utils.dummy_logger import log
 
 from app.agents.main_agent import pasto_legal_team
 
@@ -135,7 +136,7 @@ col_btn, _ = st.columns([0.4, 0.6])
 with col_btn:
     loc_btn_clicked = st.button("📍 Enviar Localização da Propriedade")
 
-loc_message = """Peça ao agente Coletor que guarde as seguintes coordenadas Lat: 13°46'53,13" S Long: 49°08'50,9". Em seguida, peça ao agente Analista que gere uma visualização da minha propriedade rural."""
+loc_message = """Minhas coordenadas são Lat: 13°46'53,13" S Long: 49°08'50,9"."""
 
 user_query = None
 
@@ -166,34 +167,48 @@ if user_query:
         full_response = ""
         
         try:
-            with st.spinner("Analisando dados e gerando resposta (via API)..."):
-                run_response = pasto_legal_team.run(input=user_query, user_id=st.session_state.session_id)
+            run_kwargs = {
+                "input": user_query,
+                "user_id": st.session_state.session_id,
+                "stream": False,
+            }
 
-                elif value_bytes:
-                    value = pickle.loads(value_bytes)
+            if image_paths:
+                run_kwargs["images"] = image_paths 
 
-                    run_response = value['run_response']
+            # TODO: Implementar files.
+            with st.spinner("Analisando dados e gerando resposta..."):
+                response = pasto_legal_team.run(**run_kwargs)
 
-                    for tool in run_response.tools_requiring_confirmation:
-                        tool.confirmed = user_query.lower() == "sim"
-
-                    run_response = easter_egg_agent.continue_run(run_response=run_response)
-
-                    print("============= Second ===============")
-                    print(run_response, flush=True)
-                    print('\n\n', flush=True)
-
-                    content = run_response.content
-                        
-                    r.delete(st.session_state.session_id)
-
-            full_response = content
+            log(response)
             
+            if hasattr(response, 'content'):
+                full_response = response.content
+            else:
+                full_response = str(response)
+
+            if response.images:
+                image_bytes = response.images[0].content
+                
+                st.image(
+                    image_bytes, 
+                    caption="Imagem gerada pelo Analista", 
+                    use_container_width=True
+                )
+            
+            # Exibe a resposta final
             message_placeholder.markdown(full_response)
 
+        except requests.exceptions.ConnectionError:
+            st.error(f"Erro de Conexão: Não foi possível conectar ao serviço em {API_URL}. Verifique se o container 'backend_service' está rodando.")
         except Exception as e:
             st.error(f"Erro ao processar: {e}")
         finally:
-            pass
+            # Limpeza dos arquivos temporários locais
+            for path in image_paths:
+                try:
+                    os.remove(path)
+                except:
+                    pass
 
     st.session_state.messages.append({"role": "assistant", "content": full_response})

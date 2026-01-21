@@ -1,10 +1,4 @@
 services:
-  redis_cache:
-    image: redis:alpine
-    container_name: meu_redis
-    ports:
-      - "6379:6379"
-
   streamlit_app:
     build: .
     command: uv run streamlit run ./app/interfaces/streamlit/streamlit_webapp.py --server.port 8080
@@ -19,5 +13,3 @@ services:
       - PYTHONUNBUFFERED=1
     env_file:
       - .env
-    depends_on:
-      - redis_cache
