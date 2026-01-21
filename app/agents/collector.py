@@ -3,7 +3,7 @@ import textwrap
 from agno.agent import Agent
 from agno.models.google import Gemini
 
-from app.tools.info_tools import annotate_car
+from app.tools.sicar_tools import annotate_car
 
 # TODO: Implementar a tool ProducerDB.
 # TODO: Talvez armazenar apenas informações de proprieda. Implentar isso por meio de 'description' e 'intructions'.

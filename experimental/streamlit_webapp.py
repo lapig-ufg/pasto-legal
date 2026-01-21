@@ -5,9 +5,13 @@ import redis
 import pickle
 import tempfile
 import streamlit as st
+import requests
 
 from typing import List
 
+from agno.tools.function import UserInputField
+
+from app.agents.easter_egg_agent import easter_egg_agent
 from app.agents.main_agent import pasto_legal_team
 
 st.set_page_config(page_title="Pasto Legal", page_icon="🐂")
@@ -167,7 +171,33 @@ if user_query:
         
         try:
             with st.spinner("Analisando dados e gerando resposta (via API)..."):
-                run_response = pasto_legal_team.run(input=user_query, user_id=st.session_state.session_id)
+                # 1. Conexão com o Redis
+                r = redis.Redis(host='redis_cache', port=6379)
+
+                value_bytes = r.get(st.session_state.session_id)
+
+                if not value_bytes:
+                    run_response = easter_egg_agent.run(input=user_query, user_id=st.session_state.session_id)
+
+                    print("============= First ===============")
+                    print(run_response, flush=True)
+                    print('\n\n', flush=True)
+
+                    if run_response.is_paused:
+                        dados_bytes = pickle.dumps({'run_response': run_response})
+                        r.set(st.session_state.session_id, dados_bytes)
+
+                        for tool in run_response.tools_requiring_confirmation:
+                            content = {'comecar_rodeio_tool': "Esta pronto para começar o rodeio?"}[tool.tool_name]
+
+                        for requirement in run_response.active_requirements:
+                            if requirement.needs_user_input:
+                                input_schema: List[UserInputField] = requirement.user_input_schema
+
+                                for field in input_schema:
+                                    content = f"Qual o valor? \nField: {field.name} \nDescription: {field.description} \nType: {field.field_type}"
+                    else:
+                        content = run_response.content
 
                 elif value_bytes:
                     value = pickle.loads(value_bytes)

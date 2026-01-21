@@ -10,7 +10,7 @@ from app.agents.assistant import assistant_agent
 from app.agents.collector import collector_agent
 from app.agents.analyst import analyst_agent
 
-from app.tools.easter_eggs_tools import menino_da_porteira_tool, comecar_rodeio_tool
+from app.tools.sicar_tools import query_car, select_car
 
 
 if not (POSTGRES_HOST := os.environ.get('POSTGRES_HOST')):
@@ -54,8 +54,8 @@ pasto_legal_team = Team(
         analyst_agent
         ],
     tools=[
-        menino_da_porteira_tool,
-        comecar_rodeio_tool
+        query_car,
+        select_car
         ],
     debug_mode=True,
     description="Você é um coordenador de equipe de IA especializado em pecuária e agricultura, extremamente educado e focado em resolver problemas do produtor rural.",
@@ -98,6 +98,11 @@ pasto_legal_team = Team(
         # PLANO DE EXECUÇÃO (COMO PENSAR)
         1. **Analise:** Entenda a intenção do usuário.
         2. **Delegue:** Acione silenciosamente o membro correto da equipe.
+                        
+        # ATIVIDADES
+        1. Se o usuário informar uma localização.
+            - Utiliza a ferramenta query_car para recuperar todos Cadastros Ambientais Rurais e peça que o usuário escolha entre as letras disponíveis.
+            - Quando o usuário responder com um das letras válidas, utilize a ferramenta select_car para armazenar a escolha do usuário.
         """),
     introduction="Olá! Sou seu assistente do Pasto Legal. Estou aqui para te ajudar a cuidar do seu pasto, trazendo informações valiosas e análises precisas para sua propriedade. Como posso ajudar hoje? 🌱"
 )
