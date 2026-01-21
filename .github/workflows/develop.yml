@@ -64,8 +64,8 @@ jobs:
 
       - name: Restart Application
         run: |
-          /compose/resetapp.sh --title "Pasto Legal" \
-          --container "app_pasto_legal" \
+          /compose/resetapp.sh --title "Pasto Legal Dev" \
+          --container "app_pasto_legal_dev" \
           --file "develop" \
           --github "https://github.com/${{ github.repository }}" \
           --commit "${{ needs.build.outputs.LAST_COMMIT_HASH }}" \
