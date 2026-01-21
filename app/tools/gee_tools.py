@@ -13,7 +13,7 @@ from agno.tools.function import ToolResult
 
 from app.hooks.tool_hooks import validate_car_hook
 
-from utils.gee_scripts import retrieve_feature_image, ee_query_pasture
+from app.utils.gee_scripts import retrieve_feature_image, ee_query_pasture
 
 
 # TODO: Escrever ferramenta para visualização da área de pastagem do usuário.
