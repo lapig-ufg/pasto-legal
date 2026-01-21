@@ -188,9 +188,7 @@ if user_query:
                         r.set(st.session_state.session_id, dados_bytes)
 
                         for tool in run_response.tools_requiring_confirmation:
-                            content = {
-                                'comecar_rodeio_tool': "Esta pronto para começar o rodeio?"
-                            }[tool.tool_name]
+                            content = {'comecar_rodeio_tool': "Esta pronto para começar o rodeio?"}[tool.tool_name]
 
                         for requirement in run_response.active_requirements:
                             if requirement.needs_user_input:

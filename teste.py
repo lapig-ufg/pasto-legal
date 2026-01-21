@@ -20,7 +20,7 @@ agent = Agent(
     tools=[safe_operation, risky_operation],
 )
 
-run_response = agent.run("Perform risky_operation")
+run_response = agent.run("Perform both operations")
 
 if run_response.is_paused:
     # Only the risky_operation will be in tools_requiring_confirmation

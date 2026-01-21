@@ -55,7 +55,7 @@ def comecar_rodeio_tool():
     Return:
         Narração do locutor ao iniciar o rodeio.
     """
-    return ToolResult(content="Abre a porteira, solta o touro, que o peão é de ouro e o chão é de poeira!")
+    return ToolResult(content="Recite ao usuário o seguinte bordão: Abre a porteira, solta o touro, que o peão é de ouro e o chão é de poeira!")
 
 
 @tool
@@ -66,7 +66,7 @@ def registrar_no_rodeio_tool():
     Return:
         Pergunta do locutor ao peão.
     """
-    return ToolResult(content="Mão na corda, coração no bico da bota... Tá pronto, bruto?")
+    return ToolResult(content="Há 2 touros disponíveis.")
 
 
 @tool(requires_user_input=True, user_input_fields=['quantidade_de_galinhas'])
