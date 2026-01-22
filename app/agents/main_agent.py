@@ -1,14 +1,14 @@
 import os
 
-from agno.team.team import Team
 from agno.db.postgres import PostgresDb
+from agno.team.team import Team
 from agno.models.google import Gemini
 
 from textwrap import dedent
 
-from app.agents.assistant import assistant_agent
 from app.agents.analyst import analyst_agent
-
+from app.agents.assistant import assistant_agent
+from app.guardrails.pii_detection_guardrail import pii_detection_guardrail
 from app.tools.sicar_tools import query_car, select_car_from_list, confirm_car_selection, reject_car_selection
 
 
@@ -37,13 +37,13 @@ db = PostgresDb(db_url=db_url)
 pasto_legal_team = Team(
     db=db,
     name="Equipe Pasto Legal",
-    model=Gemini(id="gemini-2.5-flash"),
+    model=Gemini(id="gemini-3-flash-preview"),
     markdown=True,
     reasoning=False,
     respond_directly=True, # TODO: respond_directly = True, faz com que o Team retorne a resposta do agente, sem 'interepretar'. Desejado? Avaliar impactos.
     enable_agentic_memory=True,
     enable_user_memories=True,
-    add_history_to_context=True,  # TODO: Avaliar - Old=True. Adiciona as menssagem anteriores na conversa atual.
+    add_history_to_context=True,
     num_history_runs=5,
     share_member_interactions=True,
     show_members_responses=False,
@@ -58,6 +58,7 @@ pasto_legal_team = Team(
         reject_car_selection
         ],
     debug_mode=True,
+    pre_hooks=[pii_detection_guardrail],
     description="Você é um coordenador de equipe de IA especializado em pecuária e agricultura, extremamente educado e focado em resolver problemas do produtor rural.",
     instructions=dedent("""\
         # DIRETRIZES PRIMÁRIAS (IDENTIDADE & COMPORTAMENTO)
