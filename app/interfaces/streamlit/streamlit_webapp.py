@@ -136,7 +136,7 @@ col_btn, _ = st.columns([0.4, 0.6])
 with col_btn:
     loc_btn_clicked = st.button("📍 Enviar Localização da Propriedade")
 
-loc_message = """Minhas coordenadas são Lat: 13°46'53,13" S Long: 49°08'50,9"."""
+loc_message = """Minhas coordenadas são Lat: -13.78143 S Long: -49.14747."""
 
 user_query = None
 
@@ -179,8 +179,6 @@ if user_query:
             # TODO: Implementar files.
             with st.spinner("Analisando dados e gerando resposta..."):
                 response = pasto_legal_team.run(**run_kwargs)
-
-            log(response)
             
             if hasattr(response, 'content'):
                 full_response = response.content
@@ -191,20 +189,16 @@ if user_query:
                 image_bytes = response.images[0].content
                 
                 st.image(
-                    image_bytes, 
-                    caption="Imagem gerada pelo Analista", 
+                    image_bytes,
                     use_container_width=True
                 )
             
             # Exibe a resposta final
             message_placeholder.markdown(full_response)
 
-        except requests.exceptions.ConnectionError:
-            st.error(f"Erro de Conexão: Não foi possível conectar ao serviço em {API_URL}. Verifique se o container 'backend_service' está rodando.")
         except Exception as e:
             st.error(f"Erro ao processar: {e}")
         finally:
-            # Limpeza dos arquivos temporários locais
             for path in image_paths:
                 try:
                     os.remove(path)

@@ -9,22 +9,22 @@ from typing import Literal
 from agno.run import RunContext
 from agno.tools import tool
 from agno.tools.function import ToolResult
+from agno.media import Image
 
 from app.utils.image_scripts import get_mosaic
-from app.utils.gee_scripts import retrieve_feature_image
+from app.utils.gee_scripts import retrieve_feature_images
 from app.utils.dummy_logger import log
 
 
 # TODO: As vezes o request retorna 302 e 307 de redirecionamento. Garantir que não ira redirecionar com allow_redirects=False. Ou tentar conexão direta com a API.
 @tool
-
 def query_car(latitude: float, longitude: float, run_context: RunContext):
     """
-    Recupera as própriedades com Cadastro Ambiental Rural (CAR) para a coordenada informada.
+    Recupera todas as própriedades com Cadastro Ambiental Rural (CAR) para a coordenada informada.
 
     Args:
-        latitude (float): Latitude in decimal degrees 
-        longitude (float): Longitude in decimal degrees
+        latitude (float): Latitude em graus decimais 
+        longitude (float): Longitude em graus decimais
 
     Returns:
         ToolResult: Imagem com todos os CARs encontrados para seleção da propriedade do usuário.
@@ -55,26 +55,53 @@ def query_car(latitude: float, longitude: float, run_context: RunContext):
 
         if not features:
             return ToolResult(content=textwrap.dedent("""
-                [FALHA] Nenhuma propriedade rural (CAR) foi encontrada nestas coordenadas. 
+                [FALHA] Nenhuma propriedade foi encontrada nesta coordenada. 
                                                       
                 # INTRUÇÕES
-                - Informe ao usuário que o local indicado não consta na base pública do CAR 
+                - Informe ao usuário que o local indicado não consta na base pública do CAR. 
             """).strip())
-        elif features and len(features) == 1:
-            img = retrieve_feature_image(features[0])
-            buffer = BytesIO()
-            img.save(buffer, format="PNG")
+        
+        log(result)
+        
+        size_feat = len(features)
 
-            ToolResult(
-                content="A imagem contém 3 propriedades CAR distintas enúmeradas como A, B e C. Peça que o usuário escolha entre uma das opções."
+        imgs = retrieve_feature_images(result)
+
+        log('Passou por aqui...')
+
+        mosaic = get_mosaic(imgs)
+
+        log(mosaic)
+
+        buffer = BytesIO()
+        mosaic.save(buffer, format="PNG")
+        
+        if size_feat == 1:
+            idxs = ", ".join(str(i) for i in range(1, size_feat + 1))
+
+            return ToolResult(
+                content=textwrap.dedent(f"""
+                [SUCESSO] Foram encontrados {size_feat} propriedades para a coordenada informada.
+
+                # INSTRUÇÕES
+                - Informe ao usuário que mais de uma propriedade foi encontrada.
+                - Peça que o usuário escolha entre as propriedades marcas de {idxs} representadas na imagem. 
+                """).strip(),
                 images=[Image(content=buffer.getvalue())]
                 )
-        elif features and len(features) > 1:
-            pass
-          
-        run_context.session_state['car'] = result
+        
+        elif size_feat > 1:
+            return ToolResult(
+                content=textwrap.dedent(f"""
+                [SUCESSO] Foi encontrado 1 propriedade para a coordenada informada.
 
-        return ToolResult(content= "A imagem contém 3 propriedades CAR distintas enúmeradas como A, B e C. Peça que o usuário escolha entre uma das opções.")
+                # INSTRUÇÕES
+                - Informe ao usuário que uma propriedade foi encontrada.
+                - Peça ao usuário para confirmar se a propriedade encontrada esta correta. 
+                """).strip(),
+                images=[Image(content=buffer.getvalue())]
+                )
+        
     except requests.exceptions.Timeout:
         return "Erro: O servidor do CAR demorou muito para responder. Peça ao usuário para tentar novamente em alguns minutos."
     except requests.exceptions.ConnectionError:

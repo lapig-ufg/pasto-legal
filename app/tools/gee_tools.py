@@ -13,7 +13,7 @@ from agno.tools.function import ToolResult
 
 from app.hooks.tool_hooks import validate_car_hook
 
-from app.utils.gee_scripts import retrieve_feature_image, ee_query_pasture
+from app.utils.gee_scripts import retrieve_feature_images, ee_query_pasture
 
 
 # TODO: Escrever ferramenta para visualização da área de pastagem do usuário.
@@ -34,7 +34,7 @@ def generate_property_image(run_context: RunContext) -> ToolResult:
         Retorna um objeto ToolResult contendo a imagem da propriedade do usuário em formato PNG e uma breve descrição.
     """
     try:
-        img_pil = retrieve_feature_image(run_context.session_state['car']['features'][0])
+        img_pil = retrieve_feature_images(run_context.session_state['car']['features'][0])
 
         buffer = BytesIO()
         img_pil.save(buffer, format="PNG")

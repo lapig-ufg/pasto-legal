@@ -3,6 +3,9 @@ import ee
 import datetime
 import requests
 import PIL
+import geemap as gee
+
+from PIL import Image
 
 from io import BytesIO
 
@@ -24,13 +27,15 @@ except Exception as e:
     print(f"Authentication failed: {e}")
 
 
-def retrieve_feature_image(feature: dict) -> PIL.Image:
+def retrieve_feature_images(geo_json: dict) -> PIL.Image:
     """
     Gera uma imagem de satélite da propriedade rural baseada nos dados do CAR do usuário
     armazenados na sessão. Esta função não requer parâmetros, pois recupera 
     automaticamente a geometria da fazenda do estado atual da conversa.
     """
-    roi = ee.Feature(feature).geometry()
+    # TODO: Será que da pra mudar para ee.Geometry.MultiPolygon? Se for possivel remover geemap da lista de bibliotecas do uv.
+    roi = gee.geojson_to_ee(geo_json)
+    rows = roi.aggregate_array('codigo').getInfo()
 
     sDate = ee.Date.fromYMD(datetime.date.today().year - 1, datetime.date.today().month, 1)
     eDate= sDate.advance(1, 'year')
@@ -42,25 +47,39 @@ def retrieve_feature_image(feature: dict) -> PIL.Image:
         .median()
     )
 
-    vis_params = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
-    sentinel = sentinel.visualize(**vis_params)
-
-    empty = ee.Image().byte()
-    outline = empty.paint(ee.FeatureCollection(roi), 1, 3)
-    outline = outline.updateMask(outline)
-    outline_rgb = outline.visualize(**{"palette": ['FF0000']})
-
-    final_image = sentinel.blend(outline_rgb).clip(ee.Feature(roi))
-
-    url = final_image.getThumbURL({"dimensions": 1024,"format": "png"})
+    sentinel = sentinel.visualize(**{"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000})
 
     try:
-        response = requests.get(url, timeout=20)
-        response.raise_for_status()
-                
-        return PIL.Image.open(BytesIO(response.content))
+        result = []
+
+        for idx, row in enumerate(rows, 1):
+            empty = ee.Image().byte()
+
+            feat = roi.filter(ee.Filter.eq('codigo', row))
+
+            outline = empty.paint(ee.FeatureCollection([ee.Feature(feat.geometry())]), 1, 3)
+            outline = outline.updateMask(outline)
+            outline_rgb = outline.visualize(**{"palette":['FF0000']})
+
+            # Unificando os dados
+            final_image = sentinel.blend(outline_rgb).clip(feat.geometry().buffer(400).bounds())
+
+            # Gerando a url
+            url = final_image.getThumbURL({"dimensions": 256,"format": "png"})
+
+            # 5. Download
+            resposta = requests.get(url, timeout=60)
+            resposta.raise_for_status()
+        
+            # 6. Converter para PIL.Image
+            img_pil = Image.open(BytesIO(resposta.content))
+
+            result.append(img_pil)
+
+        return result
     # TODO: Mapear possíveis erros.
     except Exception as e:
+        # TODO: Melhorar a menssagem de erro. Com motivo do erro e instrução de execução.
         raise Exception(f"Erro ao gerar imagem: {str(e)}")
 
    
