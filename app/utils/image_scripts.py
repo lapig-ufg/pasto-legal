@@ -1,3 +1,5 @@
+import os
+
 from PIL import Image, ImageDraw, ImageFont
 
 from app.utils.dummy_logger import log
@@ -12,9 +14,8 @@ def get_mosaic(imgs: list):
     widthMosaic = width + 5
     heightMosaic = (height * len(imgs)) + 10
 
-    font = ImageFont.truetype("/assets/fonts/DejaVuSans-Bold.ttf", 18)
-
-    log("Leu a fonte")
+    # TODO: Fazer código mais robusto para caminho do arquivo.
+    font = ImageFont.truetype("assets/fonts/DejaVuSans-Bold.ttf", 18)
 
     mosaic = Image.new("RGB", (widthMosaic, heightMosaic), "white")
     

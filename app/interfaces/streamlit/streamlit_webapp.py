@@ -136,7 +136,7 @@ col_btn, _ = st.columns([0.4, 0.6])
 with col_btn:
     loc_btn_clicked = st.button("📍 Enviar Localização da Propriedade")
 
-loc_message = """Minhas coordenadas são Lat: -13.78143 S Long: -49.14747."""
+loc_message = """Minhas coordenadas são Lat: -15.82994 S Long: -49.43353."""
 
 user_query = None
 

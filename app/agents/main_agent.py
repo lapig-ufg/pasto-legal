@@ -9,7 +9,7 @@ from textwrap import dedent
 from app.agents.assistant import assistant_agent
 from app.agents.analyst import analyst_agent
 
-from app.tools.sicar_tools import query_car, select_car
+from app.tools.sicar_tools import query_car, select_car_from_list, confirm_car_selection, reject_car_selection
 
 
 if not (POSTGRES_HOST := os.environ.get('POSTGRES_HOST')):
@@ -53,7 +53,9 @@ pasto_legal_team = Team(
         ],
     tools=[
         query_car,
-        select_car
+        select_car_from_list,
+        confirm_car_selection,
+        reject_car_selection
         ],
     debug_mode=True,
     description="Você é um coordenador de equipe de IA especializado em pecuária e agricultura, extremamente educado e focado em resolver problemas do produtor rural.",
@@ -99,8 +101,7 @@ pasto_legal_team = Team(
                         
         # ATIVIDADES
         1. Se o usuário informar uma localização.
-            - Utiliza a ferramenta query_car para recuperar todos Cadastros Ambientais Rurais e peça que o usuário escolha entre as letras disponíveis.
-            - Quando o usuário responder com um das letras válidas, utilize a ferramenta select_car para armazenar a escolha do usuário.
+            - Utiliza a ferramenta query_car para recuperar todos Cadastros Ambientais Rurais.
         """),
     introduction="Olá! Sou seu assistente do Pasto Legal. Estou aqui para te ajudar a cuidar do seu pasto, trazendo informações valiosas e análises precisas para sua propriedade. Como posso ajudar hoje? 🌱"
 )

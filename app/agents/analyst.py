@@ -4,16 +4,15 @@ import textwrap
 from agno.agent import Agent
 from agno.models.google import Gemini
 
-from app.tools.gee_tools import query_pasture, generate_property_image
+from app.tools.gee_tools import query_pasture
 
 
 # TODO: Implementar o agente analista.
 analyst_agent = Agent(
     name="Analista",
-    role="Especialista Técnico em Análise Espacial, Métricas de Pastagem e ferramentas de geração de mapas. Responsável por executar ferramentas técnicas para gerar mapas, imagens de satélite e levantar estatísticas sobre a saúde do pasto. Chame-o quando precisar de dados concretos ou visualizações.",
+    role="Especialista Técnico em Análise Espacial, Métricas de Pastagem e ferramentas de geração de mapas. Responsável por executar ferramentas técnicas para gerar mapas, imagens de satélite e levantar estatísticas sobre a saúde do pasto.",
     description="Responsável por executar ferramentas técnicas para gerar mapas, imagens de satélite e levantar estatísticas sobre a saúde do pasto. Chame-o quando precisar de dados concretos ou visualizações.",
     tools=[
-        generate_property_image,
         query_pasture
         ],
     instructions= textwrap.dedent("""                                  

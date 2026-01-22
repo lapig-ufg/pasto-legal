@@ -19,6 +19,7 @@ from app.utils.gee_scripts import retrieve_feature_images, ee_query_pasture
 # TODO: Escrever ferramenta para visualização da área de pastagem do usuário.
 # TODO: Deveria ter um buffer para as laterais da imagem não encostarem na região do poligono.
 # TODO: A imagem do satelite deveria estar inteira, e não cliped na região de interesse.
+# TODO: DUVIDA - Faz sentido manter para caso o usuário queira uma imagem da propriedade ou é melhor armazenas a imagem?
 @tool(tool_hooks=[validate_car_hook], requires_confirmation=False)
 def generate_property_image(run_context: RunContext) -> ToolResult:
     """
@@ -53,13 +54,13 @@ def query_pasture(run_context: RunContext) -> dict:
     """
     Calcula a área de pastagem, vigor da pastagem, áreas de pastagem degradadas (baixo vigor),
     biomassa total e a idade baseada nos dados do CAR do usuário armazenados na sessão. Esta função não
-    requer parâmetros, pois recupera automaticamente a geometria da fazenda do estado atual da conversa..
+    requer parâmetros, pois recupera automaticamente a geometria da fazenda do estado atual da conversa.
 
     Return:
         Dicionário contendo a área de pastagem, vigor da pastagem, áreas de pastagem degradadas (baixo vigor), biomassa total e a idade.
     """
     try:
-        result = ee_query_pasture(run_context.session_state['car']['features'][0])
+        result = ee_query_pasture(run_context.session_state['car_selected'])
     
         return result
     except Exception as e:
