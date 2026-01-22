@@ -114,7 +114,13 @@ def query_car(latitude: float, longitude: float, run_context: RunContext):
         
         return f"Erro HTTP {status}: Ocorreu um problema técnico ao acessar a base do CAR."
     except Exception as e:
-        return f"Erro Inesperado: {str(e)}. Peça desculpas ao usuário e informe que houve um erro interno no processamento."
+        return ToolResult(content=textwrap.dedent("""
+                [FALHA] Houve um erro interno. 
+                                                      
+                # INTRUÇÕES
+                - Peça desculpas ao usuário e informe que houve um erro interno.
+                - Peça que usuário tente novamente mais tarde.
+            """).strip())
 
 
 @tool
