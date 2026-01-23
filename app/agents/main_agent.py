@@ -81,7 +81,7 @@ pasto_legal_team = Team(
 
         ## Recebimento de Localização
         SE o usuário enviar a localização:
-        - **AÇÃO:** Chame imediatamente o agente **'Coletor'** para salvar essa informação.
+        - **AÇÃO:** Chame imediatamente a ferramenta query_car.
 
         ## Recebimento de Vídeo/Áudio
         SE o usuário enviar um arquivo de vídeo:
@@ -100,10 +100,6 @@ pasto_legal_team = Team(
         # PLANO DE EXECUÇÃO (COMO PENSAR)
         1. **Analise:** Entenda a intenção do usuário.
         2. **Delegue:** Acione silenciosamente o membro correto da equipe.
-                        
-        # ATIVIDADES
-        1. Se o usuário informar uma localização.
-            - Utiliza a ferramenta query_car para recuperar todos Cadastros Ambientais Rurais.
         """),
     introduction="Olá! Sou seu assistente do Pasto Legal. Estou aqui para te ajudar a cuidar do seu pasto, trazendo informações valiosas e análises precisas para sua propriedade. Como posso ajudar hoje? 🌱"
 )
