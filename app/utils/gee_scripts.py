@@ -77,7 +77,7 @@ CLASSES = {
     }
 }
 
-
+# TODO: Otimizar e tornar mais legivel.
 def retrieve_feature_images(geo_json: dict) -> PIL.Image:
     """
     Gera uma imagem de satélite da propriedade rural baseada nos dados do CAR do usuário
@@ -189,26 +189,16 @@ def group_values_age_ee(dados:dict):
     return ee.Dictionary(resultado)
 
 
+# TODO: Otimizar e tornar mais legivel. (Talvez criar uma função para cada operação)
 def query_pasture(coordinates: list) -> str:
     """
     Extração de estatísticas de pastagem (biomassa, vigor, idade e chuva).
     """
     roi = ee.Geometry.Polygon(coordinates)
 
-    # Configurações centrais - Base de dados
-    datasets = {
-      'class':ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_integration_v2')
-    }
-
-    #Tipo de agregações
-    tipoAgrega = ee.Dictionary({
-      'precipitation':ee.Reducer.mean(),
-      'class': ee.Reducer.frequencyHistogram()
-    })
-
     listData = []
 
-    # Biomass data:
+    # ==================== BIOMASS DATA ====================
     biomass_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_biomass_v2')
     selectedBand = biomass_asset.bandNames().size().subtract(1)
     last = biomass_asset.select(selectedBand)
@@ -223,7 +213,7 @@ def query_pasture(coordinates: list) -> str:
 
     listData.append(dict({'biomass': stats.getInfo()}))
 
-    # Age data:
+    # ==================== AGE DATA ====================
     age_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_age_v2')
     selectedBand = age_asset.bandNames().size().subtract(1)
     last = age_asset.select(selectedBand)
@@ -235,7 +225,7 @@ def query_pasture(coordinates: list) -> str:
     
     listData.append(dict({'age': group_values_age_ee(stats.get('Anos')).getInfo()}))
 
-    # Vigor data:
+    # ==================== VIGOR DATA ====================
     vigor_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_vigor_v3')
     selectedBand = vigor_asset.bandNames().size().subtract(1)
     last = vigor_asset.select(selectedBand)
@@ -255,16 +245,17 @@ def query_pasture(coordinates: list) -> str:
 
     yearDict = ee.Dictionary(groups.iterate(
         lambda group, d: ee.Dictionary(d).set(
-            ee.Dictionary(cls.get(srcname)).get(ee.String(ee.Number(ee.Dictionary(group).get('class')).toInt())),
+            ee.Dictionary(CLASSES.get('vigor')).get(ee.String(ee.Number(ee.Dictionary(group).get('class')).toInt())),
             ee.Number(ee.Dictionary(group).get('sum')).format('%.2f')#.divide(totalArea).multiply(100)
         ), initialDict
     ))
 
-    listData.append(dict({'vigor':yearDict.getInfo()}))
+    listData.append(dict({'vigor': yearDict.getInfo()}))
 
-    # Classes data:
-    selectedBand = datasets[srcname].bandNames().size().subtract(1)
-    last = datasets[srcname].select(selectedBand)
+    # ==================== CLASSES DATA ====================
+    class_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_integration_v2')
+    selectedBand = class_asset.bandNames().size().subtract(1)
+    last = class_asset.select(selectedBand)
 
     areaImg = ee.Image.pixelArea().divide(10000).addBands(last)
 
@@ -281,11 +272,11 @@ def query_pasture(coordinates: list) -> str:
 
     yearDict = ee.Dictionary(groups.iterate(
         lambda group, d: ee.Dictionary(d).set(
-            ee.Dictionary(cls.get(srcname)).get(ee.String(ee.Number(ee.Dictionary(group).get('class')).toInt())),
-            ee.Number(ee.Dictionary(group).get('sum')).format('%.2f')#.divide(totalArea).multiply(100)
+            ee.Dictionary(CLASSES.get('class')).get(ee.String(ee.Number(ee.Dictionary(group).get('class')).toInt())),
+            ee.Number(ee.Dictionary(group).get('sum')).format('%.2f')
         ), initialDict
     ))
 
-    listData.append(dict({srcname:yearDict.getInfo()}))
+    listData.append(dict({'class': yearDict.getInfo()}))
 
     return listData

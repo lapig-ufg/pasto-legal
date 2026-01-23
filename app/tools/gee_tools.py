@@ -13,7 +13,7 @@ from agno.tools.function import ToolResult
 
 from app.hooks.tool_hooks import validate_car_hook
 
-from app.utils.gee_scripts import retrieve_feature_images, ee_query_pasture
+from app.utils.gee_scripts import retrieve_feature_images, query_pasture
 
 
 # TODO: Escrever ferramenta para visualização da área de pastagem do usuário.
@@ -60,7 +60,9 @@ def query_pasture(run_context: RunContext) -> dict:
         Dicionário contendo a área de pastagem, vigor da pastagem, áreas de pastagem degradadas (baixo vigor), biomassa total e a idade.
     """
     try:
-        result = ee_query_pasture(run_context.session_state['car_selected'])
+        coordinates = run_context.session_state['car_selected']['geometry']['coordinates']
+
+        result = query_pasture(coordinates)
     
         return result
     except Exception as e:

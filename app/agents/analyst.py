@@ -3,7 +3,7 @@ import textwrap
 from agno.agent import Agent
 from agno.models.google import Gemini
 
-from app.tools.analyst_tools import query_pasture
+from app.tools.gee_tools import query_pasture
 
 
 # TODO: Implementar o agente analista.
