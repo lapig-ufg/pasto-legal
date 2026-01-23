@@ -1,13 +1,16 @@
 import os
 import ee
+import PIL
 import datetime
 import requests
-import PIL
+import textwrap
 import geemap as gee
 
 from PIL import Image
 
 from io import BytesIO
+
+from app.utils.exceptions.message_exception import MessageException
 
 
 if not (GEE_SERVICE_ACCOUNT := os.environ.get('GEE_SERVICE_ACCOUNT')):
@@ -148,7 +151,7 @@ def aggregateDate(img:dict,roi:dict,scale:int) -> dict:
     return stats
 
 
-def group_values_age_ee(dados:dict):
+def group_values_age_ee(dados: dict):
     """
     Agrega valores de um dicionário ee.Dictionary em 4 classes de idade.
     Processamento realizado no servidor do Google Earth Engine.
@@ -189,16 +192,8 @@ def group_values_age_ee(dados:dict):
     return ee.Dictionary(resultado)
 
 
-# TODO: Otimizar e tornar mais legivel. (Talvez criar uma função para cada operação)
-def query_pasture(coordinates: list) -> str:
-    """
-    Extração de estatísticas de pastagem (biomassa, vigor, idade e chuva).
-    """
-    roi = ee.Geometry.Polygon(coordinates)
-
-    listData = []
-
-    # ==================== BIOMASS DATA ====================
+# TODO: Tipar o 'roi'.
+def ee_query_biomass(roi):
     biomass_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_biomass_v2')
     selectedBand = biomass_asset.bandNames().size().subtract(1)
     last = biomass_asset.select(selectedBand)
@@ -211,9 +206,11 @@ def query_pasture(coordinates: list) -> str:
                   scale=30,
                   maxPixels=1e13)
 
-    listData.append(dict({'biomass': stats.getInfo()}))
+    return dict({'biomass': stats.getInfo()})
 
-    # ==================== AGE DATA ====================
+
+# TODO: Tipar o 'roi'.
+def ee_query_age(roi):
     age_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_age_v2')
     selectedBand = age_asset.bandNames().size().subtract(1)
     last = age_asset.select(selectedBand)
@@ -223,9 +220,11 @@ def query_pasture(coordinates: list) -> str:
 
     stats = last.reduceRegion(reducer=ee.Reducer.frequencyHistogram(), geometry=roi, scale=30, maxPixels=1e13)
     
-    listData.append(dict({'age': group_values_age_ee(stats.get('Anos')).getInfo()}))
+    return dict({'age': group_values_age_ee(stats.get('Anos')).getInfo()})
 
-    # ==================== VIGOR DATA ====================
+
+# TODO: Tipar o 'roi'.
+def ee_query_vigor(roi):
     vigor_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_vigor_v3')
     selectedBand = vigor_asset.bandNames().size().subtract(1)
     last = vigor_asset.select(selectedBand)
@@ -246,13 +245,15 @@ def query_pasture(coordinates: list) -> str:
     yearDict = ee.Dictionary(groups.iterate(
         lambda group, d: ee.Dictionary(d).set(
             ee.Dictionary(CLASSES.get('vigor')).get(ee.String(ee.Number(ee.Dictionary(group).get('class')).toInt())),
-            ee.Number(ee.Dictionary(group).get('sum')).format('%.2f')#.divide(totalArea).multiply(100)
+            ee.Number(ee.Dictionary(group).get('sum')).format('%.2f')
         ), initialDict
     ))
 
-    listData.append(dict({'vigor': yearDict.getInfo()}))
+    return dict({'vigor': yearDict.getInfo()})
 
-    # ==================== CLASSES DATA ====================
+
+# TODO: Tipar o 'roi'.
+def ee_query_class(roi):
     class_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_integration_v2')
     selectedBand = class_asset.bandNames().size().subtract(1)
     last = class_asset.select(selectedBand)
@@ -277,6 +278,25 @@ def query_pasture(coordinates: list) -> str:
         ), initialDict
     ))
 
-    listData.append(dict({'class': yearDict.getInfo()}))
+    return dict({'class': yearDict.getInfo()})
 
-    return listData
+
+# TODO: Otimizar e tornar mais legivel. (Talvez criar uma função para cada operação)
+def ee_query_pasture(coordinates: list) -> str:
+    """
+    Extração de estatísticas de pastagem (biomassa, vigor, idade e chuva).
+    """
+    try:
+        roi = ee.Geometry.Polygon(coordinates)
+
+        result = [ee_query_biomass(roi), ee_query_age(roi), ee_query_vigor(roi), ee_query_class(roi)]
+
+        return result
+    except Exception as e:
+        raise MessageException(
+            title="Ocorreu um erro ao consultar a API do GEE.",
+            instructions=textwrap.dedent("""
+                1. Peça desculpas ao usuário.
+                2. Peça que o usuário tente novamente mais tarde.
+                """)
+            )

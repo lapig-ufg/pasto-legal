@@ -23,5 +23,5 @@ assistant_agent = Agent(
         - Use linguagem simples, direta e coloquial (pt-BR), evitando termos técnicos desnecessários.
         - Se o usuário falar algo fora do seu escopo, traga-o gentilmente de volta para as opções de análise de pastagem ou visualização.
     """).strip(),
-    model=Gemini(id="gemini-3-flash-preview")
+    model=Gemini(id="gemini-2.5-flash")
 )

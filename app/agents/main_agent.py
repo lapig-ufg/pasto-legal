@@ -37,7 +37,7 @@ db = PostgresDb(db_url=db_url)
 pasto_legal_team = Team(
     db=db,
     name="Equipe Pasto Legal",
-    model=Gemini(id="gemini-3-flash-preview"),
+    model=Gemini(id="gemini-2.5-flash"),
     markdown=True,
     reasoning=False,
     respond_directly=True, # TODO: respond_directly = True, faz com que o Team retorne a resposta do agente, sem 'interepretar'. Desejado? Avaliar impactos.

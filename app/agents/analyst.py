@@ -35,5 +35,5 @@ analyst_agent = Agent(
           - *Exemplo Ruim:* "O índice é 0.4."
           - *Exemplo Bom:* "O índice de vegetação está em 0.4, o que indica que o pasto está sentindo um pouco a seca ou precisa de descanso."
     """),
-    model=Gemini(id="gemini-3-flash-preview")
+    model=Gemini(id="gemini-2.5-flash")
 )
