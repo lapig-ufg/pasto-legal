@@ -27,6 +27,57 @@ except Exception as e:
     print(f"Authentication failed: {e}")
 
 
+CLASSES = {
+    'class':{
+        '3':'Formação Florestal',
+        '4':'Formação Savânica',
+        '5':'Mangue',
+        '6':'Floresta Alagável',
+        '49':'Restinga Arbórea',
+        '11':'Campo Alagado e Área Pantanosa',
+        '12':'Formação Campestre',
+        '32':'Apicum',
+        '29':'Afloramento Rochoso',
+        '50':'Restinga Herbácea',
+        '15':'Pastagem',
+        '19':'Lavoura Temporária',
+        '39':'Soja',
+        '20':'Cana',
+        '40':'Arroz',
+        '62':'Algodão',
+        '41':'Outras Lavouras Temporárias',
+        '36':'Lavoura Perene',
+        '46':'Café',
+        '47':'Citrus',
+        '35':'Dendê',
+        '48':'Outras Lavouras Perenes',
+        '9':'Silvicultura',
+        '21':'Mosaico de Usos',
+        '23':'Praia, Duna e Areal',
+        '24':'Área Urbanizada',
+        '30':'Mineração',
+        '75':'Usina Fotovoltaica (beta)',
+        '25':'Outras Áreas não Vegetadas',
+        '26':"Corpo D'água",
+        '33':'Rio, Lago e Oceano',
+        '31':'Aquicultura',
+        '27':'Não observado'
+    },
+    'vigor':{
+        '1':'Baixo',
+        '2':'Médio',
+        '3':'Alto',
+    },
+    'age':{
+        '1-10': 0, 
+        '10-20': 0, 
+        '20-30': 0, 
+        '30-40': 0, 
+        'area_total_ha': 0
+    }
+}
+
+
 def retrieve_feature_images(geo_json: dict) -> PIL.Image:
     """
     Gera uma imagem de satélite da propriedade rural baseada nos dados do CAR do usuário
@@ -83,81 +134,158 @@ def retrieve_feature_images(geo_json: dict) -> PIL.Image:
         raise Exception(f"Erro ao gerar imagem: {str(e)}")
 
    
-# TODO: Dividir a função em funções menores.
-def ee_query_pasture(feature: dict) -> dict:
+def aggregateDate(img:dict,roi:dict,scale:int) -> dict:
     """
-    Calcula a área de pastagem, vigor da pastagem, áreas de pastagem degradadas (baixo vigor),
-    biomassa total e a idade baseada nos dados do CAR do usuário armazenados na sessão. Esta função não
-    requer parâmetros, pois recupera automaticamente a geometria da fazenda do estado atual da conversa..
+    Calculo da estatística zonal.
+    """
+    stats = img.reduceRegion(
+        reducer=ee.Reducer.sum().group(groupField=1,groupName='class'),
+        geometry=roi,
+        scale=scale,
+        maxPixels=1e13
+    )
 
-    Return:
-        Dicionário contendo a área de pastagem, vigor da pastagem, áreas de pastagem degradadas (baixo vigor), biomassa total e a idade.
+    return stats
+
+
+def group_values_age_ee(dados:dict):
     """
-    DATASETS = {
-        'age': ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_age_v2'),
-        'vigor': ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_vigor_v3'),
-        'biomass': ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_biomass_v2')
+    Agrega valores de um dicionário ee.Dictionary em 4 classes de idade.
+    Processamento realizado no servidor do Google Earth Engine.
+    """
+    # 1. Template de agregação (Acumulador inicial)
+    inicial =  CLASSES['age']
+
+    # Garante que a entrada seja um ee.Dictionary
+    dict_dados = ee.Dictionary(dados)
+
+    # 2. Função de iteração
+    def iterate_logic(key, acc):
+        acc = ee.Dictionary(acc)
+        key_str = ee.String(key)
+        valor = ee.Number(dict_dados.get(key_str)).round()
+        
+        # Arredondar para duas casas decimais no servidor
+        valor = valor.multiply(100).round().divide(100)
+        
+        # Tenta converter chave para número (default 999 para chaves de texto)
+        id_num = ee.Number.parse(key_str)
+
+        # Lógica de agrupamento com ee.Algorithms.If aninhado
+        # Nota: Usamos .And() (com A maiúsculo) para objetos ee.Number
+        grupo = ee.Algorithms.If(id_num.lte(10), '1-10',
+                ee.Algorithms.If(id_num.gt(10).And(id_num.lte(20)), '10-20',
+                ee.Algorithms.If(id_num.gt(20).And(id_num.lte(30)), '20-30', 
+                ee.Algorithms.If(id_num.gt(30).And(id_num.lte(40)), '30-40', 
+                key_str)))) # Mantém a chave original se for texto (ex: area_total_ha)
+
+        # Soma o valor ao que já existia no grupo dentro do acumulador
+        valor_antigo = ee.Number(acc.get(grupo, 0))
+        
+        return acc.set(grupo, valor_antigo.add(valor))
+    
+    resultado = dict_dados.keys().iterate(iterate_logic, inicial)
+
+    return ee.Dictionary(resultado)
+
+
+def query_pasture(coordinates: list) -> str:
+    """
+    Extração de estatísticas de pastagem (biomassa, vigor, idade e chuva).
+    """
+    roi = ee.Geometry.Polygon(coordinates)
+
+    # Configurações centrais - Base de dados
+    datasets = {
+      'class':ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_integration_v2')
     }
 
-    AGGREGATION_TYPE = ee.Dictionary({
-        'biomass': ee.Reducer.sum(),
-        'precipitation': ee.Reducer.mean()
+    #Tipo de agregações
+    tipoAgrega = ee.Dictionary({
+      'precipitation':ee.Reducer.mean(),
+      'class': ee.Reducer.frequencyHistogram()
     })
-
-    roi = ee.Feature(feature).geometry()
 
     listData = []
 
-    for data in DATASETS:
-        selectedBand = DATASETS[data].bandNames().size().subtract(1)
-        last = DATASETS[data].select(selectedBand)
+    # Biomass data:
+    biomass_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_biomass_v2')
+    selectedBand = biomass_asset.bandNames().size().subtract(1)
+    last = biomass_asset.select(selectedBand)
 
-        if data == 'age':
-            last = last.subtract(200)
-            last = last.where(last.eq(-100), 40);
+    last = last.multiply(ee.Image.pixelArea().divide(10000))
 
-        if data in ['biomass','precipitation']:
-            if data == 'biomass':
-                last = last.multiply(ee.Image.pixelArea().divide(10000))
-            else:
-                last = last
+    stats = last.reduceRegion(
+                  reducer=ee.Reducer.sum(),
+                  geometry=roi,
+                  scale=30,
+                  maxPixels=1e13)
 
-            yearDict = last.reduceRegion(
-                    reducer=AGGREGATION_TYPE.get(data),#ee.Reducer.sum(),
-                    geometry=roi,
-                    scale=30,
-                    maxPixels=1e13
-            )
+    listData.append(dict({'biomass': stats.getInfo()}))
 
-        else:
-            areaImg = ee.Image.pixelArea().divide(10000).addBands(last)
+    # Age data:
+    age_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_age_v2')
+    selectedBand = age_asset.bandNames().size().subtract(1)
+    last = age_asset.select(selectedBand)
 
-            stats = areaImg.reduceRegion(
-                reducer=ee.Reducer.sum().group(groupField=1, groupName='class'),
-                geometry=roi,
-                scale=30,
-                maxPixels=1e13
-            )
-            
-            groups = ee.List(stats.get('groups'));
+    last = last.subtract(200)
+    last = last.where(last.eq(-100), 40).rename('Anos');
 
-            totalArea = ee.Number(groups.iterate(
-                lambda item, sum_val: ee.Number(sum_val).add(ee.Dictionary(item).get('sum')),0
-            ))
+    stats = last.reduceRegion(reducer=ee.Reducer.frequencyHistogram(), geometry=roi, scale=30, maxPixels=1e13)
+    
+    listData.append(dict({'age': group_values_age_ee(stats.get('Anos')).getInfo()}))
 
-            initialDict = ee.Dictionary({
-                'area_total_ha': ee.Number(totalArea).round()
-            });
+    # Vigor data:
+    vigor_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_vigor_v3')
+    selectedBand = vigor_asset.bandNames().size().subtract(1)
+    last = vigor_asset.select(selectedBand)
 
-            yearDict = ee.Dictionary(groups.iterate(
-                lambda group, d: ee.Dictionary(d).set(
-                    ee.String(ee.Number(ee.Dictionary(group).get('class')).toInt()),
-                    ee.Number(ee.Dictionary(group).get('sum')).divide(totalArea).multiply(100)
-                ), initialDict
-            ))
+    areaImg = ee.Image.pixelArea().divide(10000).addBands(last)
 
-        listData.append(dict({data: yearDict.getInfo()}))
+    stats = aggregateDate(areaImg, roi,30)
+    groups = ee.List(stats.get('groups'));
 
-    return {
-        'info': listData,
-    }
+    totalArea = ee.Number(groups.iterate(
+        lambda item, sum_val: ee.Number(sum_val).add(ee.Dictionary(item).get('sum')),0
+    ))
+
+    initialDict = ee.Dictionary({
+        'area_total_ha': ee.Number(totalArea).format('%.2f')
+    });
+
+    yearDict = ee.Dictionary(groups.iterate(
+        lambda group, d: ee.Dictionary(d).set(
+            ee.Dictionary(cls.get(srcname)).get(ee.String(ee.Number(ee.Dictionary(group).get('class')).toInt())),
+            ee.Number(ee.Dictionary(group).get('sum')).format('%.2f')#.divide(totalArea).multiply(100)
+        ), initialDict
+    ))
+
+    listData.append(dict({'vigor':yearDict.getInfo()}))
+
+    # Classes data:
+    selectedBand = datasets[srcname].bandNames().size().subtract(1)
+    last = datasets[srcname].select(selectedBand)
+
+    areaImg = ee.Image.pixelArea().divide(10000).addBands(last)
+
+    stats = aggregateDate(areaImg,roi,30)
+    groups = ee.List(stats.get('groups'));
+
+    totalArea = ee.Number(groups.iterate(
+        lambda item, sum_val: ee.Number(sum_val).add(ee.Dictionary(item).get('sum')),0
+    ))
+
+    initialDict = ee.Dictionary({
+        'area_total_ha': ee.Number(totalArea).format('%.2f')
+    });
+
+    yearDict = ee.Dictionary(groups.iterate(
+        lambda group, d: ee.Dictionary(d).set(
+            ee.Dictionary(cls.get(srcname)).get(ee.String(ee.Number(ee.Dictionary(group).get('class')).toInt())),
+            ee.Number(ee.Dictionary(group).get('sum')).format('%.2f')#.divide(totalArea).multiply(100)
+        ), initialDict
+    ))
+
+    listData.append(dict({srcname:yearDict.getInfo()}))
+
+    return listData
