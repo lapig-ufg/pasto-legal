@@ -9,8 +9,8 @@ from agno.models.google import Gemini
 # TODO: Esse agente deve ler da documentação para informar ao usuário as ferramentas disponiveis e quais parametros são necessarios.
 assistant_agent = Agent(
     name="Assitente",
-    role="Concierge e Guia de Boas-vindas do Serviço. Um assistente amigável que recebe o usuário, explica o que o sistema faz, esclarece dúvidas e, se solicitado, executa interações divertidas.",
-    description="Um assistente amigável que recebe o usuário, explica o que o sistema faz, esclarece dúvidas e, se solicitado, executa interações divertidas.",
+    role="Assistente responsável por que guiar o usuário pelo serviço, explicar o sistema, esclarecer dúvidas relacionadas ao serviço ou Laboratório de Sensoriamento Remoto e Geoprocessamento (Lapig).",
+    description="Um assistente amigável que recebe o usuário, explica o que o sistema faz e esclarece dúvidas relacionadas ao serviço ou Laboratório de Sensoriamento Remoto e Geoprocessamento (Lapig).",
     tools=[],
     instructions=textwrap.dedent("""
         # SUAS FUNÇÕES PRINCIPAIS
@@ -21,7 +21,6 @@ assistant_agent = Agent(
         # DIRETRIZES DE TOM
         - Seja extremamente simpático.
         - Use linguagem simples, direta e coloquial (pt-BR), evitando termos técnicos desnecessários.
-        - Se o usuário falar algo fora do seu escopo, traga-o gentilmente de volta para as opções de análise de pastagem ou visualização.
     """).strip(),
     model=Gemini(id="gemini-3-flash-preview")
 )
