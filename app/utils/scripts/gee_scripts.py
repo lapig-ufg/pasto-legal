@@ -196,8 +196,8 @@ def group_values_age_ee(dados: dict):
 def ee_query_biomass(roi):
     biomass_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_biomass_v2')
     selectedBand = biomass_asset.bandNames().size().subtract(1)
-    last = biomass_asset.select(selectedBand)
 
+    last = biomass_asset.select(selectedBand)
     last = last.multiply(ee.Image.pixelArea().divide(10000))
 
     stats = last.reduceRegion(
@@ -213,8 +213,8 @@ def ee_query_biomass(roi):
 def ee_query_age(roi):
     age_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_age_v2')
     selectedBand = age_asset.bandNames().size().subtract(1)
-    last = age_asset.select(selectedBand)
 
+    last = age_asset.select(selectedBand)
     last = last.subtract(200)
     last = last.where(last.eq(-100), 40).rename('Anos');
 
@@ -227,6 +227,7 @@ def ee_query_age(roi):
 def ee_query_vigor(roi):
     vigor_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_vigor_v3')
     selectedBand = vigor_asset.bandNames().size().subtract(1)
+
     last = vigor_asset.select(selectedBand)
 
     areaImg = ee.Image.pixelArea().divide(10000).addBands(last)
@@ -256,6 +257,7 @@ def ee_query_vigor(roi):
 def ee_query_class(roi):
     class_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_integration_v2')
     selectedBand = class_asset.bandNames().size().subtract(1)
+    
     last = class_asset.select(selectedBand)
 
     areaImg = ee.Image.pixelArea().divide(10000).addBands(last)
