@@ -97,7 +97,7 @@ def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Option
                     message = messages[0]
 
                     # TODO: Deveria ter uma resposta amigável?
-                    if is_phone_number_authorized():
+                    if is_phone_number_authorized(message["from"]):
                         return {"status": "ignored"}
 
                     background_tasks.add_task(process_message, message, agent, team)

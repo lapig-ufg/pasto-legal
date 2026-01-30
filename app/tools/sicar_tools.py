@@ -91,16 +91,19 @@ def query_car(latitude: float, longitude: float, run_context: RunContext):
         elif size_feat > 1:
             run_context.session_state['car_all'] = features
 
-            idxs = ", ".join(str(i) for i in range(1, size_feat + 1))
+            log(features)
+
+            # TODO: Conflito com as Áreas (Área da imagem e Área da medida)
+            cars = " ".join(f"Área {i + 1}, CAR {features[i]["properties"]["codigo"]}, Tamanho da área {features[i]["properties"]["area"]} ha, município de {features[i]["properties"]["municipio"]}." for i in range(0, size_feat))
 
             return ToolResult(
                 content=textwrap.dedent(f"""
                 [STATUS: {size_feat} PROPRIEDADES ENCONTRADAS]
                 
                 # INSTRUÇÕES PARA O AGENTE:
-                1. Informe que existem {size_feat} propriedades sobrepostas neste local.
-                2. Peça para o usuário escolher qual delas é a correta baseando-se na imagem (Opções: {idxs}).
-                3. Quando o usuário responder com um número, chame a ferramenta 'select_car_from_list'.
+                1. Peça para o usuário escolher entre as propriedades:
+                    > {cars}
+                2. Quando o usuário responder com um número, chame a ferramenta 'select_car_from_list'.
                 """).strip(),
                 images=[Image(content=buffer.getvalue())]
                 )
