@@ -25,16 +25,16 @@
 
    ```
 
-3. **To run with FastAPI Server:**
+3. **To run with FastAPI Server (WhatsApp Bot):**
 
    ```bash
-   python main.py
+   python run_whatsapp.py
    ```
 
-4. **To run with Streamlit App :**
+4. **To run with Streamlit App:**
 
    ```bash
-   python -m streamlit run ./app/streamlit_webapp.py
+   python run_streamlit.py
    ```
 
 5. **To (re)build this docker:**

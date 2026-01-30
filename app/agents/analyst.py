@@ -4,6 +4,7 @@ from agno.agent import Agent
 from agno.models.google import Gemini
 
 from app.tools.gee_tools import query_pasture
+from app.tools.audioTTS import audioTTS
 
 
 # TODO: Implementar o agente analista.
@@ -35,8 +36,8 @@ analyst_agent = Agent(
         - **Interpretação:** Não jogue apenas os números. Explique o que eles significam.
           - *Exemplo Ruim:* "O índice é 0.4."
           - *Exemplo Bom:* "O índice de vegetação está em 0.4, o que indica que o pasto está sentindo um pouco a seca ou precisa de descanso."
-        ## Se o usuário enviar um arquivo de áudio ou preferir a resposta em áudio.
-            - Utiliza a ferramenta audioTTS para transcrever o áudio.
+        ## Se o usuário preferir a resposta em áudio.
+            - Utiliza a ferramenta audioTTS para converter sua resposta final (texto) em áudio.
     """),
     model=Gemini(id="gemini-2.5-flash")
 )

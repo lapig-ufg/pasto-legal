@@ -1,6 +1,8 @@
 import os
+from pathlib import Path
 
 from agno.db.postgres import PostgresDb
+from agno.db.sqlite import SqliteDb
 from agno.team.team import Team
 from agno.models.google import Gemini
 
@@ -10,25 +12,37 @@ from app.agents.analyst import analyst_agent
 from app.agents.assistant import assistant_agent
 from app.guardrails.pii_detection_guardrail import pii_detection_guardrail
 from app.tools.sicar_tools import query_car, select_car_from_list, confirm_car_selection, reject_car_selection
+from app.tools.audioTTS import audioTTS
 
+# Configuração do Banco de Dados
+DATABASE_TYPE = os.environ.get('DATABASE_TYPE', 'postgres').lower()
 
-if not (POSTGRES_HOST := os.environ.get('POSTGRES_HOST')):
-    raise ValueError("POSTGRES_HOST environment variables must be set.")
+if DATABASE_TYPE == 'sqlite':
+    # Garante que a pasta tmp existe
+    tmp_path = Path("tmp")
+    tmp_path.mkdir(exist_ok=True)
+    
+    db_url = f"sqlite:///{tmp_path}/agno.db"
+    db = SqliteDb(db_url=db_url)
+else:
+    # Configuração Postgres Legada
+    if not (POSTGRES_HOST := os.environ.get('POSTGRES_HOST')):
+        raise ValueError("POSTGRES_HOST environment variables must be set.")
 
-if not (POSTGRES_PORT := os.environ.get('POSTGRES_PORT')):
-    raise ValueError("POSTGRES_PORT environment variables must be set.")
+    if not (POSTGRES_PORT := os.environ.get('POSTGRES_PORT')):
+        raise ValueError("POSTGRES_PORT environment variables must be set.")
 
-if not (POSTGRES_DBNAME := os.environ.get('POSTGRES_DBNAME')):
-    raise ValueError("POSTGRES_DBNAME environment variables must be set.")
+    if not (POSTGRES_DBNAME := os.environ.get('POSTGRES_DBNAME')):
+        raise ValueError("POSTGRES_DBNAME environment variables must be set.")
 
-if not (POSTGRES_USER := os.environ.get('POSTGRES_USER')):
-    raise ValueError("POSTGRES_USER environment variables must be set.")
+    if not (POSTGRES_USER := os.environ.get('POSTGRES_USER')):
+        raise ValueError("POSTGRES_USER environment variables must be set.")
 
-if not (POSTGRES_PASSWORD := os.environ.get('POSTGRES_PASSWORD')):
-    raise ValueError("POSTGRES_PASSWORD environment variables must be set.")
+    if not (POSTGRES_PASSWORD := os.environ.get('POSTGRES_PASSWORD')):
+        raise ValueError("POSTGRES_PASSWORD environment variables must be set.")
 
-db_url = f"postgresql+psycopg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DBNAME}"
-db = PostgresDb(db_url=db_url)
+    db_url = f"postgresql+psycopg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DBNAME}"
+    db = PostgresDb(db_url=db_url)
 
 
 # TODO: Deveriamos mudar para o Gemini 3-flash? Talvez sim pois apesar de ser mais caro ele consome menos tokens e a resposta é melhor e mais rapida.
@@ -76,7 +90,7 @@ pasto_legal_team = Team(
         # ESCOPO DE ATUAÇÃO & BLOQUEIOS
         1. Se o usuário fizer perguntas fora dos temas: **Pastagem ou Agricultura** (incluindo política), responda ESTRITAMENTE com:
             > "Atualmente só posso lhe ajudar com questões relativas a eficiência de pastagens. Se precisar de ajuda com esses temas, estou à disposição! Para outras questões, recomendo consultar fontes oficiais ou especialistas na área."
-        2. Se o usuário fizer perguntas fora da escala territorial: **Propriedade Rural**, responda ESTRITAMENTE com:
+        2. Se o usuário fizer perguntas fora da escala territorial: **Propriedade Rural**, responda ESTRITAMENTE with:
             > "Minha análise é focada especificamente no nível da propriedade rural. Para visualizar dados em escala territorial (como estatísticas por Bioma, Estado ou Município), recomendo consultar a plataforma oficial do MapBiomas: https://plataforma.brasil.mapbiomas.org/"
                         
         # FLUXOS DE TRABALHO ESPECÍFICOS
@@ -91,7 +105,7 @@ pasto_legal_team = Team(
         1. Ignore as imagens visuais.
         2. **Transcreva o áudio** completamente.
         3. Baseie sua resposta **apenas no texto transcrito**.
-        4. Nunca descreva a cena visualmente (ex: "vejo um pasto verde"), foque no que foi falado.
+        4. Nunca descreva a scene visualmente (ex: "vejo um pasto verde"), foque no que foi falado.
 
         ## Gestão do Usuário
         - **Nome:** Se o usuário se apresentar, memorize o nome e use-o em TODAS as respostas subsequentes para criar rapport.
@@ -107,8 +121,8 @@ pasto_legal_team = Team(
         # ATIVIDADES
         1. Se o usuário informar uma localização.
             - Utiliza a ferramenta query_car para recuperar todos Cadastros Ambientais Rurais.
-        2. Se o usuário enviar um arquivo de áudio ou preferir a resposta em áudio.
-            - Utiliza a ferramenta audioTTS para transcrever o áudio.
+        2. Se o usuário preferir a resposta em áudio.
+            - Utiliza a ferramenta audioTTS para converter sua resposta final (texto) em áudio.
         """),
     introduction="Olá! Sou seu assistente do Pasto Legal. Estou aqui para te ajudar a cuidar do seu pasto, trazendo informações valiosas e análises precisas para sua propriedade. Como posso ajudar hoje? 🌱"
 )

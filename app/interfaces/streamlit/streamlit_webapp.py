@@ -2,6 +2,7 @@ import os
 import uuid
 import json
 import tempfile
+import re
 import streamlit as st
 import requests
 
@@ -107,6 +108,7 @@ if not st.session_state["logged_in"]:
 # ==========================================
 
 with st.sidebar:
+    st.sidebar.title("Configurações")
     st.write(f"👤 **Usuário:** {st.session_state.get('user_name', 'Desconhecido')}")
     st.caption(f"ID: {st.session_state['session_id']}")
     st.divider()
@@ -122,6 +124,12 @@ if "messages" not in st.session_state:
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
+        if "images" in message:
+            for img in message["images"]:
+                st.image(img, use_container_width=True)
+        if "audio" in message:
+            for aud in message["audio"]:
+                st.audio(aud)
 
 # Inputs do usuário
 files_uploaded = st.file_uploader(
@@ -165,6 +173,7 @@ if user_query:
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
         full_response = ""
+        response = None
         
         try:
             run_kwargs = {
@@ -185,19 +194,91 @@ if user_query:
             else:
                 full_response = str(response)
 
-            if response.images:
-                image_bytes = response.images[0].content
-                
-                st.image(
-                    image_bytes,
-                    use_container_width=True
-                )
+            if response and response.images:
+                for img in response.images:
+                    st.image(img.content, use_container_width=True)
+
+            audio_to_display = []
+            if response and hasattr(response, 'audio') and response.audio:
+                audio_to_display.extend(response.audio)
+            
+            # Tenta extrair áudio de tools_output se a lista principal estiver vazia
+            if not audio_to_display and hasattr(response, 'tools_output'):
+                for tool_out in response.tools_output:
+                    # Verifica se é dicionário
+                    if isinstance(tool_out, dict) and 'audio' in tool_out:
+                        audio_to_display.extend(tool_out['audio'])
+                    # Verifica se é objeto (ToolResult/ToolOutput)
+                    elif hasattr(tool_out, 'audio') and tool_out.audio:
+                        audio_to_display.extend(tool_out.audio)
+
+            # REGEX: Extração de caminhos de áudio do texto (incluindo padrões tipo path=... ou filepath=...)
+            # Procura por caminhos Windows ou caminhos relativos/unix que terminam em extensões de áudio
+            audio_patterns = [
+                r'(?:path|filepath)\s*=\s*[\'"]?([a-zA-Z]:\\[^\s\(\)\[\]\'",]+?\.(?:ogg|mp3|wav))[\'"]?',
+                r'([a-zA-Z]:\\[^\s\(\)\[\]\'",]+?\.(?:ogg|mp3|wav))'
+            ]
+            
+            # DEBUG: Visualizar o que está acontecendo
+            with st.expander("Debug: Regex de Áudio"):
+                st.write("Regex Patterns:", audio_patterns)
+                st.code(full_response, language='text')
+
+            for pattern in audio_patterns:
+                matches = re.findall(pattern, full_response, re.IGNORECASE)
+                if matches:
+                    with st.expander(f"Debug: Matches encontrados ({pattern})"):
+                        st.write(matches)
+
+                for path in matches:
+                    # Limpa possíveis aspas residuais ou espaços
+                    clean_path = path.strip().strip("'").strip('"')
+                    
+                    if os.path.exists(clean_path):
+                         # Evita duplicatas
+                         current_paths = [getattr(a, 'filepath', getattr(a, 'path', '')) for a in audio_to_display]
+                         # Handle dicts in current_paths (audio_to_display can have dicts now)
+                         current_path_strings = []
+                         for cp in audio_to_display:
+                             if isinstance(cp, dict):
+                                 current_path_strings.append(cp.get('filepath') or cp.get('path'))
+                             else:
+                                 current_path_strings.append(getattr(cp, 'filepath', getattr(cp, 'path', '')))
+
+                         if clean_path not in current_path_strings:
+                            audio_to_display.append({'filepath': clean_path})
+                    else:
+                         with st.expander("Debug: Arquivo não encontrado"):
+                             st.write(f"Path extraído mas não existe: {clean_path}")
+
+            if audio_to_display:
+                for audio_item in audio_to_display:
+                    if isinstance(audio_item, dict):
+                        path = audio_item.get('filepath') or audio_item.get('path')
+                        content = audio_item.get('content')
+                        if path: st.audio(path)
+                        elif content: st.audio(content)
+                    else:
+                        if hasattr(audio_item, 'filepath') and audio_item.filepath:
+                            st.audio(audio_item.filepath)
+                        elif hasattr(audio_item, 'path') and audio_item.path:
+                            st.audio(audio_item.path)
+                        elif hasattr(audio_item, 'content') and audio_item.content:
+                            st.audio(audio_item.content)
+            
+            # Debug: Mostra atributos da resposta se não houver áudio
+            if not response.audio:
+                with st.expander("Debug: Resposta do Agente"):
+                    st.write("Atributos:", dir(response))
+                    if hasattr(response, 'tools_output'):
+                        st.write("Tools Output:", response.tools_output)
             
             # Exibe a resposta final
             message_placeholder.markdown(full_response)
 
         except Exception as e:
             st.error(f"Erro ao processar: {e}")
+            full_response = f"Desculpe, ocorreu um erro: {str(e)}"
         finally:
             for path in image_paths:
                 try:
@@ -205,4 +286,25 @@ if user_query:
                 except:
                     pass
 
-    st.session_state.messages.append({"role": "assistant", "content": full_response})
+    if full_response:
+        new_message = {"role": "assistant", "content": full_response}
+        if response:
+            if response.images:
+                new_message["images"] = [img.content for img in response.images]
+            if audio_to_display:
+                new_message["audio"] = []
+                for aud in audio_to_display:
+                    if isinstance(aud, dict):
+                        path = aud.get('filepath') or aud.get('path')
+                        content = aud.get('content')
+                        if path: new_message["audio"].append(path)
+                        elif content: new_message["audio"].append(content)
+                    else:
+                        if hasattr(aud, 'filepath') and aud.filepath:
+                            new_message["audio"].append(aud.filepath)
+                        elif hasattr(aud, 'path') and aud.path:
+                            new_message["audio"].append(aud.path)
+                        elif hasattr(aud, 'content') and aud.content:
+                            new_message["audio"].append(aud.content)
+        
+        st.session_state.messages.append(new_message)
