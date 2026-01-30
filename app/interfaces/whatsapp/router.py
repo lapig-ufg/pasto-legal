@@ -23,8 +23,10 @@ if not (APP_ENV := os.environ.get('APP_ENV')):
 
 
 def is_phone_number_authorized(number_to_check):
+    log_info("Executando is_phone_number_authorized.")
     try:
         with open(f'phone_numbers{APP_ENV}.in', 'r', encoding='utf-8') as file:
+            log_info("Executando loop.")
             for l in file:
                 log_info(f"Arquivo número: {l.strip()}; Original número: {number_to_check}\n\n")
                 if l.strip() == str(number_to_check).strip():
