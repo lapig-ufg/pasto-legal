@@ -16,6 +16,19 @@ from agno.utils.whatsapp import get_media_async, send_image_message_async, typin
 
 from app.interfaces.whatsapp.security import validate_webhook_signature
 
+def is_phone_number_authorized(number_to_check):
+    try:
+        with open('phone_numbers.in', 'r', encoding='utf-8') as file:
+            for l in file:
+                if l.strip() == str(number_to_check).strip():
+                    return True
+        return False
+    
+    except FileNotFoundError:
+        return False
+    except Exception as e:
+        return False
+
 # TODO: O contato de desenvolvimento só deve responder números conhecidos.
 # TODO: No primeiro contato o sistema deve enviar o termo de consentimento. Interface: vídeo, voz e texto.
 def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Optional[Team] = None) -> APIRouter:
@@ -75,6 +88,11 @@ def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Option
                         continue
 
                     message = messages[0]
+
+                    # TODO: Deveria ter uma resposta amigável?
+                    if is_phone_number_authorized():
+                        return {"status": "ignored"}
+
                     background_tasks.add_task(process_message, message, agent, team)
 
             return {"status": "processing"}
