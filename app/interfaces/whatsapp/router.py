@@ -1,3 +1,4 @@
+import os
 import base64
 import textwrap
 
@@ -16,9 +17,14 @@ from agno.utils.whatsapp import get_media_async, send_image_message_async, typin
 
 from app.interfaces.whatsapp.security import validate_webhook_signature
 
+
+if not (APP_ENV := os.environ.get('APP_ENV')):
+    raise ValueError("APP_ENV environment variables must be set.")
+
+
 def is_phone_number_authorized(number_to_check):
     try:
-        with open('phone_numbers.in', 'r', encoding='utf-8') as file:
+        with open(f'phone_numbers{APP_ENV}.in', 'r', encoding='utf-8') as file:
             for l in file:
                 if l.strip() == str(number_to_check).strip():
                     return True
@@ -28,6 +34,7 @@ def is_phone_number_authorized(number_to_check):
         return False
     except Exception as e:
         return False
+
 
 # TODO: O contato de desenvolvimento só deve responder números conhecidos.
 # TODO: No primeiro contato o sistema deve enviar o termo de consentimento. Interface: vídeo, voz e texto.
