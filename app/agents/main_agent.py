@@ -1,14 +1,14 @@
 import os
 
-from agno.team.team import Team
 from agno.db.postgres import PostgresDb
+from agno.team.team import Team
 from agno.models.google import Gemini
 
 from textwrap import dedent
 
-from app.agents.assistant import assistant_agent
 from app.agents.analyst import analyst_agent
-
+from app.agents.assistant import assistant_agent
+from app.guardrails.pii_detection_guardrail import pii_detection_guardrail
 from app.tools.sicar_tools import query_car, select_car_from_list, confirm_car_selection, reject_car_selection
 
 
@@ -43,7 +43,7 @@ pasto_legal_team = Team(
     respond_directly=True, # TODO: respond_directly = True, faz com que o Team retorne a resposta do agente, sem 'interepretar'. Desejado? Avaliar impactos.
     enable_agentic_memory=True,
     enable_user_memories=True,
-    add_history_to_context=True,  # TODO: Avaliar - Old=True. Adiciona as menssagem anteriores na conversa atual.
+    add_history_to_context=True,
     num_history_runs=5,
     share_member_interactions=True,
     show_members_responses=False,
@@ -59,6 +59,7 @@ pasto_legal_team = Team(
         audioTTS,
         ],
     debug_mode=True,
+    pre_hooks=[pii_detection_guardrail],
     description="Você é um coordenador de equipe de IA especializado em pecuária e agricultura, extremamente educado e focado em resolver problemas do produtor rural.",
     instructions=dedent("""\
         # DIRETRIZES PRIMÁRIAS (IDENTIDADE & COMPORTAMENTO)
@@ -73,14 +74,17 @@ pasto_legal_team = Team(
         5. **Imediatismo:** Não diga "preciso confirmar isso depois". No contexto deste app, resolva agora ou diga que não sabe.
 
         # ESCOPO DE ATUAÇÃO & BLOQUEIOS
-        Se o usuário fizer perguntas fora dos temas: **Pastagem, Agricultura ou Propriedade Rural** (incluindo política), responda ESTRITAMENTE com:
-        > "Atualmente só posso lhe ajudar com questões relativas a eficiência de pastagens. Se precisar de ajuda com esses temas, estou à disposição! Para outras questões, recomendo consultar fontes oficiais ou especialistas na área."
-
+        1. Se o usuário fizer perguntas fora dos temas: **Pastagem ou Agricultura** (incluindo política), responda ESTRITAMENTE com:
+            > "Atualmente só posso lhe ajudar com questões relativas a eficiência de pastagens. Se precisar de ajuda com esses temas, estou à disposição! Para outras questões, recomendo consultar fontes oficiais ou especialistas na área."
+        2. Se o usuário fizer perguntas fora da escala territorial: **Propriedade Rural**, responda ESTRITAMENTE com:
+            > "Minha análise é focada especificamente no nível da propriedade rural. Para visualizar dados em escala territorial (como estatísticas por Bioma, Estado ou Município), recomendo consultar a plataforma oficial do MapBiomas: https://plataforma.brasil.mapbiomas.org/"
+                        
         # FLUXOS DE TRABALHO ESPECÍFICOS
 
         ## Recebimento de Localização
         SE o usuário enviar a localização:
-        - **AÇÃO:** Chame imediatamente o agente **'Coletor'** para salvar essa informação.
+        - **AÇÃO:** Utilize imediatamente a ferramenta query_car.
+        - **NUNCA:** Armazene a coordenada na memória.
 
         ## Recebimento de Vídeo/Áudio
         SE o usuário enviar um arquivo de vídeo:

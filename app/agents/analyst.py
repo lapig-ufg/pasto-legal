@@ -1,4 +1,3 @@
-import os
 import textwrap
 
 from agno.agent import Agent
