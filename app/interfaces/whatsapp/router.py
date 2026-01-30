@@ -17,6 +17,8 @@ from agno.utils.whatsapp import get_media_async, send_image_message_async, typin
 
 from app.interfaces.whatsapp.security import validate_webhook_signature
 
+from app.utils.dummy_logger import log
+
 
 if not (APP_ENV := os.environ.get('APP_ENV')):
     raise ValueError("APP_ENV environment variables must be set.")
@@ -26,6 +28,7 @@ def is_phone_number_authorized(number_to_check):
     try:
         with open(f'phone_numbers{APP_ENV}.in', 'r', encoding='utf-8') as file:
             for l in file:
+                log(f"Arquivo número: {l.strip()}; Original número: {number_to_check}\n\n")
                 if l.strip() == str(number_to_check).strip():
                     return True
         return False
