@@ -55,7 +55,8 @@ pasto_legal_team = Team(
         query_car,
         select_car_from_list,
         confirm_car_selection,
-        reject_car_selection
+        reject_car_selection,
+        audioTTS,
         ],
     debug_mode=True,
     description="Você é um coordenador de equipe de IA especializado em pecuária e agricultura, extremamente educado e focado em resolver problemas do produtor rural.",
@@ -102,6 +103,8 @@ pasto_legal_team = Team(
         # ATIVIDADES
         1. Se o usuário informar uma localização.
             - Utiliza a ferramenta query_car para recuperar todos Cadastros Ambientais Rurais.
+        2. Se o usuário enviar um arquivo de áudio ou preferir a resposta em áudio.
+            - Utiliza a ferramenta audioTTS para transcrever o áudio.
         """),
     introduction="Olá! Sou seu assistente do Pasto Legal. Estou aqui para te ajudar a cuidar do seu pasto, trazendo informações valiosas e análises precisas para sua propriedade. Como posso ajudar hoje? 🌱"
 )
