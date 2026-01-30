@@ -100,11 +100,6 @@ def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Option
                         continue
 
                     message = messages[0]
-
-                    # TODO: Deveria ter uma resposta amigável?
-                    if is_phone_number_authorized(message["from"]):
-                        return {"status": "ignored"}
-
                     background_tasks.add_task(process_message, message, agent, team)
 
             return {"status": "processing"}
@@ -116,6 +111,9 @@ def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Option
     async def process_message(message: dict, agent: Optional[Agent], team: Optional[Team]):
         """Process a single WhatsApp message in the background"""
         log_info(message)
+
+        if not is_phone_number_authorized(message["from"]):
+            return
 
         try:
             message_text = ""
