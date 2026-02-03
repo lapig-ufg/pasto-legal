@@ -49,15 +49,16 @@ else:
 if not (APP_ENV := os.environ.get('APP_ENV')):
     raise ValueError("APP_ENV environment variables must be set.")
 
-pre_hooks = [pii_detection_guardrail]
+pre_hooks = []
 
 if APP_ENV == "production":
-    pre_hooks.extend([validate_phone_authorization, validate_terms_acceptance])
+    pre_hooks = [validate_phone_authorization, pii_detection_guardrail, validate_terms_acceptance]
+elif APP_ENV == "stagging":
+    pre_hooks = [validate_phone_authorization, pii_detection_guardrail, validate_terms_acceptance]
 elif APP_ENV == "development":
-    pre_hooks.extend([validate_phone_authorization, validate_terms_acceptance])
+    pre_hooks = [validate_phone_authorization]
 
 
-# TODO: Deveriamos mudar para o Gemini 3-flash? Talvez sim pois apesar de ser mais caro ele consome menos tokens e a resposta é melhor e mais rapida.
 # TODO: O Team não deveria ter memória, justamente para não confundir informações antigas. Um agente deveria ser responsável por isso. Dessa forma, teremos maior controle da informação armazenada.
 # TODO: Não deveria responder o usuário, apenas orquestrar. Pois, pode acabar respondendo sem saber se a resposta esta correta.
 pasto_legal_team = Team(
@@ -85,7 +86,7 @@ pasto_legal_team = Team(
         audioTTS,
         ],
     debug_mode=True,
-    pre_hooks=[pii_detection_guardrail, ],
+    pre_hooks=pre_hooks,
     description="Você é um coordenador de equipe de IA especializado em pecuária e agricultura, extremamente educado e focado em resolver problemas do produtor rural.",
     instructions=dedent("""\
         # DIRETRIZES PRIMÁRIAS (IDENTIDADE & COMPORTAMENTO)
@@ -106,6 +107,10 @@ pasto_legal_team = Team(
             > "Minha análise é focada especificamente no nível da propriedade rural. Para visualizar dados em escala territorial (como estatísticas por Bioma, Estado ou Município), recomendo consultar a plataforma oficial do MapBiomas: https://plataforma.brasil.mapbiomas.org/"
                         
         # FLUXOS DE TRABALHO ESPECÍFICOS
+                        
+        ## Confirmação de termos e condições
+        SE o usuário pedir pelos termos e condições:
+        - **AÇÃO:** Informe que os termos estão em pasto.legal/terms e peça para que ele confirme.
 
         ## Recebimento de Localização
         SE o usuário enviar uma localização (coordenadas):

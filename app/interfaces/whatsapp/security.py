@@ -8,7 +8,7 @@ from agno.utils.log import log_warning
 
 def is_development_mode() -> bool:
     """Check if the application is running in development mode."""
-    return os.getenv("APP_ENV", "development").lower() == "development"
+    return os.getenv("APP_ENV", "stagging").lower() == "stagging"
 
 
 def get_app_secret() -> str:

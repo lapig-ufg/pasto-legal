@@ -18,27 +18,6 @@ from agno.utils.whatsapp import get_media_async, send_image_message_async, typin
 from app.interfaces.whatsapp.security import validate_webhook_signature
 
 
-if not (APP_ENV := os.environ.get('APP_ENV')):
-    raise ValueError("APP_ENV environment variables must be set.")
-
-
-def is_phone_number_authorized(number_to_check):
-    try:
-        with open(f'phone_numbers_{APP_ENV}.in', 'r', encoding='utf-8') as file:
-            
-            for l in file:
-                log_info(f"Arquivo número: {l.strip()}; Original número: {number_to_check}\n\n")
-                if l.strip() == str(number_to_check).strip():
-                    return True
-        return False
-    
-    except FileNotFoundError:
-        log_error(f"FileNotFoundError: phone_numbers_{APP_ENV}.in.")
-        return False
-    except Exception as e:
-        return False
-
-
 # TODO: O contato de desenvolvimento só deve responder números conhecidos.
 # TODO: No primeiro contato o sistema deve enviar o termo de consentimento. Interface: vídeo, voz e texto.
 def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Optional[Team] = None) -> APIRouter:
@@ -111,9 +90,6 @@ def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Option
     async def process_message(message: dict, agent: Optional[Agent], team: Optional[Team]):
         """Process a single WhatsApp message in the background"""
         log_info(message)
-
-        if not is_phone_number_authorized(message["from"]):
-            return
 
         try:
             message_text = ""
