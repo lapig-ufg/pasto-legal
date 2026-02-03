@@ -8,7 +8,6 @@ from agno.run import RunContext
 from agno.run.agent import RunInput
 from agno.agent import Agent
 from agno.models.google import Gemini
-from agno.exceptions import StopAgentRun
 
 from app.utils.dummy_logger import log, error
 
@@ -21,12 +20,13 @@ def validate_phone_authorization(user_id: Optional[str], run_input: RunInput):
     """
     Hook de validação para garantir que o número telefônico possui autorização.
     """
-    log(user_id)
+    user_phone_number = user_id.replace("wa:", "")
+
     try:
         with open(f'phone_numbers.in', 'r', encoding='utf-8') as file:
             
-            for l in file:
-                if l.strip() == str(user_id).strip():
+            for line in file:
+                if line.strip() == user_phone_number.strip():
                     return
     
     except FileNotFoundError:
