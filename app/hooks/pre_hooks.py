@@ -108,7 +108,7 @@ def validate_car_selection(run_context: RunContext, function_call: Callable, arg
     """
     session_state = run_context.session_state
 
-    if session_state and hasattr(session_state, "car"):
+    if session_state and hasattr(session_state, "car_selected"):
         return function_call(**arguments)
 
     return textwrap.dedent("""
