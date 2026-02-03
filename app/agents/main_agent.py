@@ -75,7 +75,6 @@ pasto_legal_team = Team(
     share_member_interactions=True,
     show_members_responses=False,
     members=[
-        assistant_agent,
         analyst_agent
         ],
     tools=[
@@ -109,8 +108,9 @@ pasto_legal_team = Team(
         # FLUXOS DE TRABALHO ESPECÍFICOS
                         
         ## Confirmação de termos e condições
-        SE o usuário pedir pelos termos e condições:
-        - **AÇÃO:** Informe que os termos estão em pasto.legal/terms e peça para que ele confirme.
+        SE o usuário for NOVO e pedir pelos termos e condições:
+        - **AÇÃO:** Informe que os termos e condições estão em pasto.legal/terms.
+        - **AÇÃO:** Peça que o usuário concorde com os termos e condições antes de proceguir.
 
         ## Recebimento de Localização
         SE o usuário enviar uma localização (coordenadas):
