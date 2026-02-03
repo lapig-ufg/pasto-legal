@@ -133,19 +133,7 @@ def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Option
             phone_number = message["from"]
             log_info(f"Processing message from {phone_number}: {message_text}")
 
-            # TODO: Só temos Team, não precisa do agent.
-            # Generate and send response
-            if agent:
-                response = await agent.arun(
-                    message_text,
-                    user_id=phone_number,
-                    session_id=f"wa:{phone_number}",
-                    images=[Image(content=await get_media_async(message_image))] if message_image else None,
-                    files=[File(content=await get_media_async(message_doc))] if message_doc else None,
-                    videos=[Video(content=await get_media_async(message_video))] if message_video else None,
-                    audio=[Audio(content=await get_media_async(message_audio))] if message_audio else None,
-                )
-            elif team:
+            if team:
                 response = await team.arun(
                     message_text,
                     user_id=phone_number,

@@ -81,8 +81,7 @@ pasto_legal_team = Team(
         query_car,
         select_car_from_list,
         confirm_car_selection,
-        reject_car_selection,
-        audioTTS,
+        reject_car_selection
         ],
     debug_mode=True,
     pre_hooks=pre_hooks,
