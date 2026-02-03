@@ -8,12 +8,13 @@ from agno.models.google import Gemini
 
 from textwrap import dedent
 
-from app.agents.analyst import analyst_agent
-from app.agents.assistant import assistant_agent
+from app.agents import analyst_agent, assistant_agent
 from app.guardrails.pii_detection_guardrail import pii_detection_guardrail
 from app.tools.sicar_tools import query_car, select_car_from_list, confirm_car_selection, reject_car_selection
 from app.tools.audioTTS import audioTTS
+from app.hooks.pre_hooks import validate_phone_authorization, validate_terms_acceptance
 
+# TODO: Talvez mudar para uma pasta separada?
 # Configuração do Banco de Dados
 DATABASE_TYPE = os.environ.get('DATABASE_TYPE', 'postgres').lower()
 
@@ -45,6 +46,17 @@ else:
     db = PostgresDb(db_url=db_url)
 
 
+if not (APP_ENV := os.environ.get('APP_ENV')):
+    raise ValueError("APP_ENV environment variables must be set.")
+
+pre_hooks = [pii_detection_guardrail]
+
+if APP_ENV == "production":
+    pre_hooks.extend([validate_phone_authorization, validate_terms_acceptance])
+elif APP_ENV == "development":
+    pre_hooks.extend([validate_phone_authorization, validate_terms_acceptance])
+
+
 # TODO: Deveriamos mudar para o Gemini 3-flash? Talvez sim pois apesar de ser mais caro ele consome menos tokens e a resposta é melhor e mais rapida.
 # TODO: O Team não deveria ter memória, justamente para não confundir informações antigas. Um agente deveria ser responsável por isso. Dessa forma, teremos maior controle da informação armazenada.
 # TODO: Não deveria responder o usuário, apenas orquestrar. Pois, pode acabar respondendo sem saber se a resposta esta correta.
@@ -73,7 +85,7 @@ pasto_legal_team = Team(
         audioTTS,
         ],
     debug_mode=True,
-    pre_hooks=[pii_detection_guardrail],
+    pre_hooks=[pii_detection_guardrail, ],
     description="Você é um coordenador de equipe de IA especializado em pecuária e agricultura, extremamente educado e focado em resolver problemas do produtor rural.",
     instructions=dedent("""\
         # DIRETRIZES PRIMÁRIAS (IDENTIDADE & COMPORTAMENTO)
@@ -96,7 +108,7 @@ pasto_legal_team = Team(
         # FLUXOS DE TRABALHO ESPECÍFICOS
 
         ## Recebimento de Localização
-        SE o usuário enviar a localização:
+        SE o usuário enviar uma localização (coordenadas):
         - **AÇÃO:** Utilize imediatamente a ferramenta query_car.
         - **NUNCA:** Armazene a coordenada na memória.
 
@@ -119,9 +131,7 @@ pasto_legal_team = Team(
         2. **Delegue:** Acione silenciosamente o membro correto da equipe.
                         
         # ATIVIDADES
-        1. Se o usuário informar uma localização.
-            - Utiliza a ferramenta query_car para recuperar todos Cadastros Ambientais Rurais.
-        2. Se o usuário preferir a resposta em áudio.
+        1. Se o usuário preferir a resposta em áudio.
             - Utiliza a ferramenta audioTTS para converter sua resposta final (texto) em áudio.
         """),
     introduction="Olá! Sou seu assistente do Pasto Legal. Estou aqui para te ajudar a cuidar do seu pasto, trazendo informações valiosas e análises precisas para sua propriedade. Como posso ajudar hoje? 🌱"

@@ -188,6 +188,7 @@ if user_query:
             # TODO: Implementar files.
             with st.spinner("Analisando dados e gerando resposta..."):
                 response = pasto_legal_team.run(**run_kwargs)
+                log(response)
             
             if hasattr(response, 'content'):
                 full_response = response.content

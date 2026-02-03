@@ -1,11 +1,27 @@
 import textwrap
 
-from typing import Callable, Dict, Any
+from typing import Optional, Callable, Dict, Any
 
 from agno.run import RunContext
+from agno.exceptions import StopAgentRun
 
 
-def validate_car_hook(run_context: RunContext, function_name: str, function_call: Callable, arguments: Dict[str, Any]) -> Any:
+def validate_phone_authorization(user_id: Optional[str]):
+    """
+    Hook de validação para garantir que o número telefônico possui autorização.
+    """
+    print(user_id, flush=True)
+    return
+
+
+def validate_terms_acceptance():
+    """
+    Hook de validação para garantir que o número telefônico aceitou os termos/condições.
+    """
+    pass
+
+
+def validate_car_selection(run_context: RunContext, function_name: str, function_call: Callable, arguments: Dict[str, Any]) -> Any:
     """
     Hook de validação para garantir que o CAR (Cadastro Ambiental Rural) esteja presente.
     """
