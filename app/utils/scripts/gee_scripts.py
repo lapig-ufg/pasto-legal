@@ -6,7 +6,7 @@ import requests
 import textwrap
 import geemap as gee
 
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont, ImageColor
 
 from io import BytesIO
 
