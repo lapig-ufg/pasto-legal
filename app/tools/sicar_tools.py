@@ -91,8 +91,6 @@ def query_car(latitude: float, longitude: float, run_context: RunContext):
         elif size_feat > 1:
             run_context.session_state['car_all'] = features
 
-            log(features)
-
             # TODO: Conflito com as Áreas (Área da imagem e Área da medida)
             cars = " ".join(f"Área {i + 1}, CAR {features[i]["properties"]["codigo"]}, Tamanho da área {features[i]["properties"]["area"]} ha, município de {features[i]["properties"]["municipio"]}." for i in range(0, size_feat))
 
@@ -161,8 +159,6 @@ def select_car_from_list(selection: int, run_context: RunContext):
 
         selected_feature = features[selection - 1]
         run_context.session_state['car_selected'] = selected_feature
-
-        log(run_context.session_state)
 
         return ToolResult(
             content=textwrap.dedent(f"""

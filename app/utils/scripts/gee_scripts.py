@@ -6,19 +6,17 @@ import requests
 import textwrap
 import geemap as gee
 
-from PIL import Image, ImageDraw, ImageFont, ImageColor
-
 from io import BytesIO
+from pydantic import BaseModel
 
+from app.utils.scripts.image_scripts import add_legend
 from app.utils.exceptions.message_exception import MessageException
 
 
 if not (GEE_SERVICE_ACCOUNT := os.environ.get('GEE_SERVICE_ACCOUNT')):
     raise ValueError("GEE_SERVICE_ACCOUNT environment variables must be set.")
-
 if not (GEE_KEY_FILE := os.environ.get('GEE_KEY_FILE')):
     raise ValueError("GEE_KEY_FILE environment variables must be set.")
-
 if not (GEE_PROJECT := os.environ.get('GEE_PROJECT')):
     raise ValueError("GEE_PROJECT environment variables must be set.")
 
@@ -36,25 +34,25 @@ CLASSES = {
         '4':'Formação Savânica',
         '5':'Mangue',
         '6':'Floresta Alagável',
-        '49':'Restinga Arbórea',
+        '9':'Silvicultura',
         '11':'Campo Alagado e Área Pantanosa',
         '12':'Formação Campestre',
-        '32':'Apicum',
-        '29':'Afloramento Rochoso',
-        '50':'Restinga Herbácea',
         '15':'Pastagem',
         '19':'Lavoura Temporária',
+        '20':'Cana',        
+        '29':'Afloramento Rochoso',        
         '39':'Soja',
-        '20':'Cana',
-        '40':'Arroz',
-        '62':'Algodão',
-        '41':'Outras Lavouras Temporárias',
+        '32':'Apicum',
+        '35':'Dendê',   
         '36':'Lavoura Perene',
+        '40':'Arroz',
+        '41':'Outras Lavouras Temporárias',
         '46':'Café',
         '47':'Citrus',
-        '35':'Dendê',
         '48':'Outras Lavouras Perenes',
-        '9':'Silvicultura',
+        '49':'Restinga Arbórea',
+        '50':'Restinga Herbácea',
+        '62':'Algodão', 
         '21':'Mosaico de Usos',
         '23':'Praia, Duna e Areal',
         '24':'Área Urbanizada',
@@ -72,16 +70,16 @@ CLASSES = {
         '3':'Alto',
     },
     'age':{
-        '1-10': 0, 
-        '10-20': 0, 
-        '20-30': 0, 
-        '30-40': 0, 
-        'area_total_ha': 0
+        '1':'1-10', 
+        '2':'10-20', 
+        '3':'20-30', 
+        '4':'30-40', 
     }
 }
 
+
 # TODO: Otimizar e tornar mais legivel.
-def retrieve_feature_images(geo_json: dict) -> PIL.Image:
+def retrieve_feature_images(geo_json: dict) -> list[PIL.Image]:
     """
     Gera uma imagem de satélite da propriedade rural baseada nos dados do CAR do usuário
     armazenados na sessão. Esta função não requer parâmetros, pois recupera 
@@ -94,7 +92,8 @@ def retrieve_feature_images(geo_json: dict) -> PIL.Image:
     sDate = ee.Date.fromYMD(datetime.date.today().year - 1, datetime.date.today().month, 1)
     eDate= sDate.advance(1, 'year')
 
-    sentinel = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+    sentinel = (
+        ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
         .filterBounds(roi)
         .filterDate(sDate, eDate)
         .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',10))
@@ -126,7 +125,7 @@ def retrieve_feature_images(geo_json: dict) -> PIL.Image:
             resposta.raise_for_status()
         
             # 6. Converter para PIL.Image
-            img_pil = Image.open(BytesIO(resposta.content))
+            img_pil = PIL.Image.open(BytesIO(resposta.content))
 
             result.append(img_pil)
 
@@ -136,70 +135,93 @@ def retrieve_feature_images(geo_json: dict) -> PIL.Image:
         # TODO: Melhorar a menssagem de erro. Com motivo do erro e instrução de execução.
         raise Exception(f"Erro ao gerar imagem: {str(e)}")
 
-   
-def aggregateDate(img:dict,roi:dict,scale:int) -> dict:
+
+# TODO: Otimizar e tornar mais legivel.
+def retrieve_feature_biomass_image(coordinates: list) -> PIL.Image:
     """
-    Calculo da estatística zonal.
+    Gera uma imagem de satélite da propriedade rural baseada nos dados do CAR do usuário
+    armazenados na sessão. Esta função não requer parâmetros, pois recupera 
+    automaticamente a geometria da fazenda do estado atual da conversa.
     """
-    stats = img.reduceRegion(
-        reducer=ee.Reducer.sum().group(groupField=1,groupName='class'),
-        geometry=roi,
-        scale=scale,
-        maxPixels=1e13
+    roi = ee.Geometry.Polygon(coordinates)
+
+    sDate = ee.Date.fromYMD(datetime.date.today().year - 1, datetime.date.today().month, 1)
+    eDate= sDate.advance(1, 'year')
+
+    sentinel = (
+        ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+        .filterBounds(roi)
+        .filterDate(sDate, eDate)
+        .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',10))
+        .median()
     )
 
-    return stats
+    sentinel = sentinel.visualize(**{"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}) 
 
-
-def group_values_age_ee(dados: dict):
-    """
-    Agrega valores de um dicionário ee.Dictionary em 4 classes de idade.
-    Processamento realizado no servidor do Google Earth Engine.
-    """
-    # 1. Template de agregação (Acumulador inicial)
-    inicial =  CLASSES['age']
-
-    # Garante que a entrada seja um ee.Dictionary
-    dict_dados = ee.Dictionary(dados)
-
-    # 2. Função de iteração
-    def iterate_logic(key, acc):
-        acc = ee.Dictionary(acc)
-        key_str = ee.String(key)
-        valor = ee.Number(dict_dados.get(key_str)).round()
-        
-        # Arredondar para duas casas decimais no servidor
-        valor = valor.multiply(100).round().divide(100)
-        
-        # Tenta converter chave para número (default 999 para chaves de texto)
-        id_num = ee.Number.parse(key_str)
-
-        # Lógica de agrupamento com ee.Algorithms.If aninhado
-        # Nota: Usamos .And() (com A maiúsculo) para objetos ee.Number
-        grupo = ee.Algorithms.If(id_num.lte(10), '1-10',
-                ee.Algorithms.If(id_num.gt(10).And(id_num.lte(20)), '10-20',
-                ee.Algorithms.If(id_num.gt(20).And(id_num.lte(30)), '20-30', 
-                ee.Algorithms.If(id_num.gt(30).And(id_num.lte(40)), '30-40', 
-                key_str)))) # Mantém a chave original se for texto (ex: area_total_ha)
-
-        # Soma o valor ao que já existia no grupo dentro do acumulador
-        valor_antigo = ee.Number(acc.get(grupo, 0))
-        
-        return acc.set(grupo, valor_antigo.add(valor))
+    #Coletando informações de biomassa
+    biomass = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_biomass_v2')
+    biomass = biomass.select(biomass.bandNames().size().subtract(1)).clip(roi)  
     
-    resultado = dict_dados.keys().iterate(iterate_logic, inicial)
+    #Paleta de cores na biomassa
+    paletteBiomassa = ['#000033','#9400D3','#FF00FF','#00FFFF','#FFFFFF']
+    
+    try:
+        empty = ee.Image().byte()
 
-    return ee.Dictionary(resultado)
+        #Agregando informação de biomassa
+        statsbiomass = biomass.reduceRegion(
+                reducer=ee.Reducer.minMax(),
+                geometry=roi,
+                scale=30,
+                maxPixels=1e13
+        )
+
+        #Valor maximo e minimo da biomassa
+        minBio = statsbiomass.get(ee.String(biomass.bandNames().get(0)).cat('_min'))
+        maxBio = statsbiomass.get(ee.String(biomass.bandNames().get(0)).cat('_max'))               
+        
+        bioprop = biomass.visualize(**{"min": minBio, "max": maxBio,"palette": paletteBiomassa})        
+        
+        outline = empty.paint(ee.FeatureCollection([ee.Feature(roi)]), 1, 3)
+        outline = outline.updateMask(outline)
+        outline_rgb = outline.visualize(**{"palette":['FF0000']})
+
+        # Unificando os dados
+        final_image = sentinel.blend(bioprop.clip(roi))
+        final_image = final_image.blend(outline_rgb).clip(roi.buffer(400).bounds());
+        
+        # Gerando a url
+        url = final_image.getThumbURL({"dimensions": 1024,"format": "png"})
+        
+        # Download
+        resposta = requests.get(url, timeout=60)
+        resposta.raise_for_status()
+    
+        # Converter para PIL.Image
+        img = PIL.Image.open(BytesIO(resposta.content))
+
+        # Inserção da Legenda: Usamos os valores capturados do GEE
+        img = add_legend(
+            img, 
+            title=f"Biomassa\npasto ({str(2024)})", 
+            vmin=int(minBio.getInfo()), 
+            vmax=int(maxBio.getInfo()), 
+            palette=paletteBiomassa
+        )
+
+        return img
+    # TODO: Mapear possíveis erros.
+    except Exception as e:
+        # TODO: Melhorar a menssagem de erro. Com motivo do erro e instrução de execução.
+        raise Exception(f"Erro ao gerar imagem: {str(e)}")
 
 
-# TODO: Tipar o 'roi'.
-def ee_query_biomass(roi):
+def ee_query_biomass(roi: ee.Geometry.Polygon):
     biomass_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_biomass_v2')
     selectedBand = biomass_asset.bandNames().size().subtract(1)
 
     last = biomass_asset.select(selectedBand)
-    last = last.multiply(ee.Image.pixelArea().divide(10000))
-
+    
     stats = last.reduceRegion(
                   reducer=ee.Reducer.sum(),
                   geometry=roi,
@@ -209,22 +231,48 @@ def ee_query_biomass(roi):
     return dict({'biomass': stats.getInfo()})
 
 
-# TODO: Tipar o 'roi'.
-def ee_query_age(roi):
+def ee_query_age(roi: ee.Geometry.Polygon):
     age_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_age_v2')
     selectedBand = age_asset.bandNames().size().subtract(1)
 
     last = age_asset.select(selectedBand)
     last = last.subtract(200)
-    last = last.where(last.eq(-100), 40).rename('Anos');
+    last = last.where(last.eq(-100), 40)
 
-    stats = last.reduceRegion(reducer=ee.Reducer.frequencyHistogram(), geometry=roi, scale=30, maxPixels=1e13)
+    #Agrupando as informações para 04 classe
+    last = (last.where(last.gte(1).And(last.lte(10)),1)
+                        .where(last.gt(10).And(last.lte(20)),2)
+                        .where(last.gt(20).And(last.lte(30)),3)
+                        .where(last.gt(30).And(last.lte(40)),4)
+                   ).rename('Anos');
+
+    #Cálculo das áreas
+    areaImg = ee.Image.pixelArea().divide(10000).addBands(last)
+
+    #Agregando dados
+    stats = areaImg.reduceRegion(
+        reducer=ee.Reducer.sum().group(groupField=1, groupName='class'),
+        geometry=roi,
+        scale=30,
+        maxPixels=1e13
+    )
+    groups = ee.List(stats.get('groups'));
+
+    #Template 
+    initialDict = ee.Dictionary()
     
-    return dict({'age': group_values_age_ee(stats.get('Anos')).getInfo()})
+    # Iterar para calcular porcentagens e nomear classes
+    yearDict = ee.Dictionary(groups.iterate(
+          lambda group, d: ee.Dictionary(d).set(
+              ee.Dictionary(CLASSES.get('age')).get(ee.String(ee.Number(ee.Dictionary(group).get('class')).toInt())),
+              ee.Number(ee.Dictionary(group).get('sum')).format('%.2f')
+          ), initialDict
+    ))
+    
+    return dict({'age': yearDict.getInfo()})
 
 
-# TODO: Tipar o 'roi'.
-def ee_query_vigor(roi):
+def ee_query_vigor(roi: ee.Geometry.Polygon):
     vigor_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_vigor_v3')
     selectedBand = vigor_asset.bandNames().size().subtract(1)
 
@@ -232,16 +280,15 @@ def ee_query_vigor(roi):
 
     areaImg = ee.Image.pixelArea().divide(10000).addBands(last)
 
-    stats = aggregateDate(areaImg, roi,30)
+    stats = areaImg.reduceRegion(
+        reducer=ee.Reducer.sum().group(groupField=1, groupName='class'),
+        geometry=roi,
+        scale=30,
+        maxPixels=1e13
+    )
     groups = ee.List(stats.get('groups'));
 
-    totalArea = ee.Number(groups.iterate(
-        lambda item, sum_val: ee.Number(sum_val).add(ee.Dictionary(item).get('sum')),0
-    ))
-
-    initialDict = ee.Dictionary({
-        'area_total_ha': ee.Number(totalArea).format('%.2f')
-    });
+    initialDict = ee.Dictionary();
 
     yearDict = ee.Dictionary(groups.iterate(
         lambda group, d: ee.Dictionary(d).set(
@@ -253,8 +300,8 @@ def ee_query_vigor(roi):
     return dict({'vigor': yearDict.getInfo()})
 
 
-# TODO: Tipar o 'roi'.
-def ee_query_class(roi):
+def ee_query_class(roi: ee.Geometry.Polygon):
+    
     class_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_integration_v2')
     selectedBand = class_asset.bandNames().size().subtract(1)
     
@@ -262,16 +309,15 @@ def ee_query_class(roi):
 
     areaImg = ee.Image.pixelArea().divide(10000).addBands(last)
 
-    stats = aggregateDate(areaImg,roi,30)
+    stats = areaImg.reduceRegion(
+        reducer=ee.Reducer.sum().group(groupField=1, groupName='class'),
+        geometry=roi,
+        scale=30,
+        maxPixels=1e13
+    )
     groups = ee.List(stats.get('groups'));
 
-    totalArea = ee.Number(groups.iterate(
-        lambda item, sum_val: ee.Number(sum_val).add(ee.Dictionary(item).get('sum')),0
-    ))
-
-    initialDict = ee.Dictionary({
-        'area_total_ha': ee.Number(totalArea).format('%.2f')
-    });
+    initialDict = ee.Dictionary();
 
     yearDict = ee.Dictionary(groups.iterate(
         lambda group, d: ee.Dictionary(d).set(

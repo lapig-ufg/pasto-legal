@@ -1,0 +1,20 @@
+agno
+google-genai
+streamlit
+geemap
+requests
+psycopg[binary]
+earthengine-api
+pydub
+python-dotenv
+fastapi
+uvicorn
+pillow
+sqlalchemy
+psycopg
+psycopg-binary
+sqlalchemy
+python-multipart
+ffmpeg-python
+# Opcionais dependendo do ambiente
+# ffmpeg-python (para pydub se necessário)
