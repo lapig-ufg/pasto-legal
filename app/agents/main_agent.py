@@ -19,26 +19,20 @@ from app.hooks.pre_hooks import validate_phone_authorization, validate_terms_acc
 DATABASE_TYPE = os.environ.get('DATABASE_TYPE', 'postgres').lower()
 
 if DATABASE_TYPE == 'sqlite':
-    # Garante que a pasta tmp existe
     tmp_path = Path("tmp")
     tmp_path.mkdir(exist_ok=True)
     
     db_url = f"sqlite:///{tmp_path}/agno.db"
     db = SqliteDb(db_url=db_url)
 else:
-    # Configuração Postgres Legada
     if not (POSTGRES_HOST := os.environ.get('POSTGRES_HOST')):
         raise ValueError("POSTGRES_HOST environment variables must be set.")
-
     if not (POSTGRES_PORT := os.environ.get('POSTGRES_PORT')):
         raise ValueError("POSTGRES_PORT environment variables must be set.")
-
     if not (POSTGRES_DBNAME := os.environ.get('POSTGRES_DBNAME')):
         raise ValueError("POSTGRES_DBNAME environment variables must be set.")
-
     if not (POSTGRES_USER := os.environ.get('POSTGRES_USER')):
         raise ValueError("POSTGRES_USER environment variables must be set.")
-
     if not (POSTGRES_PASSWORD := os.environ.get('POSTGRES_PASSWORD')):
         raise ValueError("POSTGRES_PASSWORD environment variables must be set.")
 
@@ -56,7 +50,7 @@ if APP_ENV == "production":
 elif APP_ENV == "stagging":
     pre_hooks = [validate_phone_authorization, pii_detection_guardrail, validate_terms_acceptance]
 elif APP_ENV == "development":
-    pre_hooks = [validate_phone_authorization]
+    pre_hooks = [validate_terms_acceptance]
 
 
 # TODO: O Team não deveria ter memória, justamente para não confundir informações antigas. Um agente deveria ser responsável por isso. Dessa forma, teremos maior controle da informação armazenada.
@@ -108,8 +102,9 @@ pasto_legal_team = Team(
                         
         ## Confirmação de termos e condições
         SE o usuário for NOVO e pedir pelos termos e condições:
-        - **AÇÃO:** Informe que os termos e condições estão em pasto.legal/terms.
-        - **AÇÃO:** Peça que o usuário concorde com os termos e condições antes de proceguir.
+        - **AÇÃO:**
+            - Informe que os termos e condições estão em: https://pasto.legal/termos-legais-2.
+            - Peça que o usuário concorde com os termos e condições antes de proceguir.
 
         ## Recebimento de Localização
         SE o usuário enviar uma localização (coordenadas):

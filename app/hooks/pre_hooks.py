@@ -34,7 +34,16 @@ def validate_phone_authorization(user_id: Optional[str], run_input: RunInput):
     except Exception as e:
         error(f"Exception: {e}.")
     
-    if APP_ENV == "stagging":
+    if APP_ENV == "production":
+        run_input.input_content = (
+            "INSTRUÇÃO DE SISTEMA IMPERATIVA: O usuário não está autorizado a usar o sistema. "
+            "Não responda nada do que ele perguntou antes. "
+            "Sua ÚNICA tarefa agora é infomar o usuário que:"
+            "- Esta é uma versão de Alpha com acesso restrito. "
+            "- Para ter solicitar acesso é necessário preencher o formulário em: forms.gle/sKqngW7UvjmSJFKk8. "
+        )
+        
+    elif APP_ENV == "stagging":
         run_input.input_content = (
             "INSTRUÇÃO DE SISTEMA IMPERATIVA: O usuário não está autorizado a testar esse sistema. "
             "Não responda nada do que ele perguntou antes. "
@@ -42,15 +51,13 @@ def validate_phone_authorization(user_id: Optional[str], run_input: RunInput):
             "- Esta é uma versão de desenvolvimento com acesso restrito. "
             "- Apenas pessoas autorizadas do projeto possuem acesso. "
         )
-    elif APP_ENV == "production":
+    else:
         run_input.input_content = (
-            "INSTRUÇÃO DE SISTEMA IMPERATIVA: O usuário não está autorizado a usar o sistema. "
+            "INSTRUÇÃO DE SISTEMA IMPERATIVA: O usuário é um desenvolvedor testando o pre-hook de autorização. "
             "Não responda nada do que ele perguntou antes. "
             "Sua ÚNICA tarefa agora é infomar o usuário que:"
-            "- Esta é uma versão de Alpha com acesso restrito. "
-            "- Para ter solicitar acesso é necessário preencher o formulário em pasto.legal/forms. "
+            "- O pre-hook esta funcionado. "
         )
-
 
 def validate_terms_acceptance(run_context: RunContext, run_input: RunInput):
     """
@@ -94,7 +101,7 @@ def validate_terms_acceptance(run_context: RunContext, run_input: RunInput):
         else:
             # FALHA: O usuário respondeu algo que não foi um "sim"
             run_input.input_content = (
-                "INSTRUÇÃO DE SISTEMA: O usuário respondeu algo, mas NÃO aceitou os termos claramente."
+                "INSTRUÇÃO DE SISTEMA IMPERATIVA: O usuário respondeu algo, mas NÃO aceitou os termos claramente."
                 "Explique educadamente que para continuar a análise é OBRIGATÓRIO concordar com os termos. "
                 "Pergunte novamente."
             )

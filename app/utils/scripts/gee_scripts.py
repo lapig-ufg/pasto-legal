@@ -6,9 +6,8 @@ import requests
 import textwrap
 import geemap as gee
 
-from PIL import Image
-
 from io import BytesIO
+from PIL import Image, ImageColor, ImageDraw, ImageFont
 
 from app.utils.exceptions.message_exception import MessageException
 
@@ -249,8 +248,6 @@ def ee_query_biomass(roi):
 
 # TODO: Tipar o 'roi'.
 def ee_query_age(roi):
-    def ee_query_age(roi):
-    
     age_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_age_v2')
     selectedBand = age_asset.bandNames().size().subtract(1)
 
