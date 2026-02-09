@@ -14,10 +14,8 @@ from app.utils.exceptions.message_exception import MessageException
 
 if not (GEE_SERVICE_ACCOUNT := os.environ.get('GEE_SERVICE_ACCOUNT')):
     raise ValueError("GEE_SERVICE_ACCOUNT environment variables must be set.")
-
 if not (GEE_KEY_FILE := os.environ.get('GEE_KEY_FILE')):
     raise ValueError("GEE_KEY_FILE environment variables must be set.")
-
 if not (GEE_PROJECT := os.environ.get('GEE_PROJECT')):
     raise ValueError("GEE_PROJECT environment variables must be set.")
 
@@ -81,7 +79,6 @@ CLASSES = {
 #Adicionar a legenda no mapa
 def add_legend(image_pil:PIL.Image, title:str, vmin:int, vmax:int, palette:list):
     """Desenha uma barra de cores contínua na imagem PIL com respiro após o título."""
-    
     draw = ImageDraw.Draw(image_pil)
     width, height = image_pil.size
     
@@ -126,10 +123,9 @@ def add_legend(image_pil:PIL.Image, title:str, vmin:int, vmax:int, palette:list)
     
     return image_pil
    
-   
 
 # TODO: Otimizar e tornar mais legivel.
-def retrieve_feature_images(geo_json: dict) -> PIL.Image:
+def retrieve_feature_images(geo_json: dict) -> list[PIL.Image]:
     """
     Gera uma imagem de satélite da propriedade rural baseada nos dados do CAR do usuário
     armazenados na sessão. Esta função não requer parâmetros, pois recupera 
@@ -142,12 +138,72 @@ def retrieve_feature_images(geo_json: dict) -> PIL.Image:
     sDate = ee.Date.fromYMD(datetime.date.today().year - 1, datetime.date.today().month, 1)
     eDate= sDate.advance(1, 'year')
 
-    sentinel = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+    sentinel = (
+        ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
         .filterBounds(roi)
         .filterDate(sDate, eDate)
         .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',10))
         .median()
     )
+
+    sentinel = sentinel.visualize(**{"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000})
+
+    try:
+        result = []
+
+        for idx, row in enumerate(rows, 1):
+            empty = ee.Image().byte()
+
+            feat = roi.filter(ee.Filter.eq('codigo', row))
+
+            outline = empty.paint(ee.FeatureCollection([ee.Feature(feat.geometry())]), 1, 3)
+            outline = outline.updateMask(outline)
+            outline_rgb = outline.visualize(**{"palette":['FF0000']})
+
+            # Unificando os dados
+            final_image = sentinel.blend(outline_rgb).clip(feat.geometry().buffer(400).bounds())
+
+            # Gerando a url
+            url = final_image.getThumbURL({"dimensions": 256,"format": "png"})
+
+            # 5. Download
+            resposta = requests.get(url, timeout=60)
+            resposta.raise_for_status()
+        
+            # 6. Converter para PIL.Image
+            img_pil = Image.open(BytesIO(resposta.content))
+
+            result.append(img_pil)
+
+        return result
+    # TODO: Mapear possíveis erros.
+    except Exception as e:
+        # TODO: Melhorar a menssagem de erro. Com motivo do erro e instrução de execução.
+        raise Exception(f"Erro ao gerar imagem: {str(e)}")
+
+
+# TODO: Otimizar e tornar mais legivel.
+def retrieve_feature_biomass_image(geo_json: dict) -> PIL.Image:
+    """
+    Gera uma imagem de satélite da propriedade rural baseada nos dados do CAR do usuário
+    armazenados na sessão. Esta função não requer parâmetros, pois recupera 
+    automaticamente a geometria da fazenda do estado atual da conversa.
+    """
+    # TODO: Será que da pra mudar para ee.Geometry.MultiPolygon? Se for possivel remover geemap da lista de bibliotecas do uv.
+    roi = gee.geojson_to_ee(geo_json)
+    rows = roi.aggregate_array('codigo').getInfo()
+
+    sDate = ee.Date.fromYMD(datetime.date.today().year - 1, datetime.date.today().month, 1)
+    eDate= sDate.advance(1, 'year')
+
+    sentinel = (
+        ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+        .filterBounds(roi)
+        .filterDate(sDate, eDate)
+        .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',10))
+        .median()
+    )
+
     #Coletando informações de biomassa
     biomass = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_biomass_v2')
     biomass = biomass.select(biomass.bandNames().size().subtract(1)).clip(roi.geometry())  
@@ -215,8 +271,9 @@ def retrieve_feature_images(geo_json: dict) -> PIL.Image:
         # TODO: Melhorar a menssagem de erro. Com motivo do erro e instrução de execução.
         raise Exception(f"Erro ao gerar imagem: {str(e)}")
 
+
 #Função para o cálculo da estatistica zonal
-def aggregateDate(img:dict,roi:dict,scale:int) -> dict:
+def aggregateDate(img:dict, roi:dict,scale:int) -> dict:
     """
     Calculo da estatística zonal.
     """
@@ -295,10 +352,6 @@ def ee_query_vigor(roi):
     stats = aggregateDate(areaImg, roi,30)
     groups = ee.List(stats.get('groups'));
 
-    totalArea = ee.Number(groups.iterate(
-        lambda item, sum_val: ee.Number(sum_val).add(ee.Dictionary(item).get('sum')),0
-    ))
-
     initialDict = ee.Dictionary();
 
     yearDict = ee.Dictionary(groups.iterate(
@@ -323,10 +376,6 @@ def ee_query_class(roi):
 
     stats = aggregateDate(areaImg,roi,30)
     groups = ee.List(stats.get('groups'));
-
-    totalArea = ee.Number(groups.iterate(
-        lambda item, sum_val: ee.Number(sum_val).add(ee.Dictionary(item).get('sum')),0
-    ))
 
     initialDict = ee.Dictionary();
 

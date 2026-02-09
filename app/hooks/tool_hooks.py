@@ -13,8 +13,6 @@ def validate_car_hook(run_context: RunContext, function_call: Callable, argument
     """
     session_state = run_context.session_state
 
-    log(run_context.session_state)
-
     if session_state and 'car_selected' in session_state:
         return function_call(**arguments)
 
