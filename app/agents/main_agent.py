@@ -8,7 +8,7 @@ from agno.models.google import Gemini
 
 from textwrap import dedent
 
-from app.agents import analyst_agent, assistant_agent
+from app.agents import analyst_agent
 from app.guardrails.pii_detection_guardrail import pii_detection_guardrail
 from app.tools.sicar_tools import query_car, select_car_from_list, confirm_car_selection, reject_car_selection
 from app.tools.audioTTS import audioTTS
@@ -46,11 +46,11 @@ if not (APP_ENV := os.environ.get('APP_ENV')):
 pre_hooks = []
 
 if APP_ENV == "production":
-    pre_hooks = [validate_phone_authorization, pii_detection_guardrail, validate_terms_acceptance]
+    pre_hooks = [validate_phone_authorization, pii_detection_guardrail]
 elif APP_ENV == "stagging":
     pre_hooks = [validate_phone_authorization, pii_detection_guardrail, validate_terms_acceptance]
 elif APP_ENV == "development":
-    pre_hooks = [validate_terms_acceptance]
+    pre_hooks = []
 
 
 # TODO: O Team não deveria ter memória, justamente para não confundir informações antigas. Um agente deveria ser responsável por isso. Dessa forma, teremos maior controle da informação armazenada.
@@ -65,7 +65,7 @@ pasto_legal_team = Team(
     enable_agentic_memory=True,
     enable_user_memories=True,
     add_history_to_context=True,
-    num_history_runs=5,
+    num_history_runs=3,
     share_member_interactions=True,
     show_members_responses=False,
     members=[

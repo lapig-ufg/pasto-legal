@@ -59,6 +59,7 @@ def validate_phone_authorization(user_id: Optional[str], run_input: RunInput):
             "- O pre-hook esta funcionado. "
         )
 
+
 def validate_terms_acceptance(run_context: RunContext, run_input: RunInput):
     """
     Hook de validação. Se não aceitou, altera o input para o Agente pedir o aceite.

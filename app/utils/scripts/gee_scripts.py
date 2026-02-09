@@ -7,8 +7,9 @@ import textwrap
 import geemap as gee
 
 from io import BytesIO
-from PIL import Image, ImageColor, ImageDraw, ImageFont
+from pydantic import BaseModel
 
+from app.utils.scripts.image_scripts import add_legend
 from app.utils.exceptions.message_exception import MessageException
 
 
@@ -76,53 +77,6 @@ CLASSES = {
     }
 }
 
-#Adicionar a legenda no mapa
-def add_legend(image_pil:PIL.Image, title:str, vmin:int, vmax:int, palette:list):
-    """Desenha uma barra de cores contínua na imagem PIL com respiro após o título."""
-    draw = ImageDraw.Draw(image_pil)
-    width, height = image_pil.size
-    
-    cb_width, cb_height = 12, 25
-    margin = 10
-    
-    # 1. Aumentamos um pouco a altura do fundo (de 35 para 45) para acomodar o espaço extra
-    bg_box = [width - 70, height - cb_height - 45, width - 5, height - 5]
-    draw.rectangle(bg_box, fill="white", outline="gray")
-    
-    #Fonte de dados utilizadas
-    font = ImageFont.truetype("assets/fonts/DejaVuSans-Bold.ttf", 7)
-    
-    # Título 
-    draw.text((bg_box[0] + 5, bg_box[1] + 2), title, fill="black", font=font)
-
-    # Definição do espaço entre o título e o gradiente de cores
-    gradient_top_offset = 30 
-
-    # Criar o gradiente
-    for y in range(cb_height):
-        ratio = 1 - (y / (cb_height - 1))
-        n = len(palette) - 1
-        idx = max(0, min(int(ratio * n), n - 1))
-        local_ratio = (ratio * n) - idx
-        
-        c1 = ImageColor.getrgb(palette[idx])
-        c2 = ImageColor.getrgb(palette[idx+1])
-        
-        rgb = tuple(int(c1[i] + (c2[i] - c1[i]) * local_ratio) for i in range(3))
-        
-        # Aplicando o novo offset no desenho da linha
-        draw.line([width - 60, bg_box[1] + gradient_top_offset + y, 
-                   width - 60 + cb_width, bg_box[1] + gradient_top_offset + y], fill=rgb)
-
-    # Ajuste dos rótulos para acompanharem o novo posicionamento da barra
-    # Vmax alinhado ao topo da barra (gradient_top_offset)
-    draw.text((width - 40, bg_box[1] + gradient_top_offset), str(vmax), fill="black", font=font)
-    
-    # Vmin alinhado à base da barra (offset + altura da barra - ajuste de texto)
-    draw.text((width - 40, bg_box[1] + gradient_top_offset + cb_height - 8), str(vmin), fill="black", font=font)
-    
-    return image_pil
-   
 
 # TODO: Otimizar e tornar mais legivel.
 def retrieve_feature_images(geo_json: dict) -> list[PIL.Image]:
@@ -171,7 +125,7 @@ def retrieve_feature_images(geo_json: dict) -> list[PIL.Image]:
             resposta.raise_for_status()
         
             # 6. Converter para PIL.Image
-            img_pil = Image.open(BytesIO(resposta.content))
+            img_pil = PIL.Image.open(BytesIO(resposta.content))
 
             result.append(img_pil)
 
@@ -183,15 +137,13 @@ def retrieve_feature_images(geo_json: dict) -> list[PIL.Image]:
 
 
 # TODO: Otimizar e tornar mais legivel.
-def retrieve_feature_biomass_image(geo_json: dict) -> PIL.Image:
+def retrieve_feature_biomass_image(coordinates: list) -> PIL.Image:
     """
     Gera uma imagem de satélite da propriedade rural baseada nos dados do CAR do usuário
     armazenados na sessão. Esta função não requer parâmetros, pois recupera 
     automaticamente a geometria da fazenda do estado atual da conversa.
     """
-    # TODO: Será que da pra mudar para ee.Geometry.MultiPolygon? Se for possivel remover geemap da lista de bibliotecas do uv.
-    roi = gee.geojson_to_ee(geo_json)
-    rows = roi.aggregate_array('codigo').getInfo()
+    roi = ee.Geometry.Polygon(coordinates)
 
     sDate = ee.Date.fromYMD(datetime.date.today().year - 1, datetime.date.today().month, 1)
     eDate= sDate.advance(1, 'year')
@@ -204,91 +156,67 @@ def retrieve_feature_biomass_image(geo_json: dict) -> PIL.Image:
         .median()
     )
 
+    sentinel = sentinel.visualize(**{"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}) 
+
     #Coletando informações de biomassa
     biomass = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_biomass_v2')
-    biomass = biomass.select(biomass.bandNames().size().subtract(1)).clip(roi.geometry())  
-   
-    sentinel = sentinel.visualize(**{"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000})   
+    biomass = biomass.select(biomass.bandNames().size().subtract(1)).clip(roi)  
     
     #Paleta de cores na biomassa
     paletteBiomassa = ['#000033','#9400D3','#FF00FF','#00FFFF','#FFFFFF']
     
     try:
-        result = []
+        empty = ee.Image().byte()
 
-        for idx, row in enumerate(rows, 1):
-            empty = ee.Image().byte()
+        #Agregando informação de biomassa
+        statsbiomass = biomass.reduceRegion(
+                reducer=ee.Reducer.minMax(),
+                geometry=roi,
+                scale=30,
+                maxPixels=1e13
+        )
 
-            feat = roi.filter(ee.Filter.eq('codigo', row))
-
-            #Agregando informação de biomassa
-            statsbiomass = biomass.reduceRegion(
-                    reducer=ee.Reducer.minMax(),
-                    geometry=feat,
-                    scale=30,
-                    maxPixels=1e13
-            )
-
-       
-            #Valor maximo e minimo da biomassa
-            minBio = statsbiomass.get(ee.String(biomass.bandNames().get(0)).cat('_min'))
-            maxBio = statsbiomass.get(ee.String(biomass.bandNames().get(0)).cat('_max'))               
-            
-            bioprop = biomass.visualize(**{"min": minBio, "max": maxBio,"palette":paletteBiomassa})        
-            
-            outline = empty.paint(ee.FeatureCollection([ee.Feature(feat.geometry())]), 1, 3)
-            outline = outline.updateMask(outline)
-            outline_rgb = outline.visualize(**{"palette":['FF0000']})
-
-            # Unificando os dados
-            final_image = sentinel.blend(bioprop.clip(feat.geometry()))
-            final_image = final_image.blend(outline_rgb).clip(feat.geometry().buffer(400).bounds());
-            
-            # Gerando a url
-            url = final_image.getThumbURL({"dimensions": 256,"format": "png"})
-            
-            # Download
-            resposta = requests.get(url, timeout=60)
-            resposta.raise_for_status()
+        #Valor maximo e minimo da biomassa
+        minBio = statsbiomass.get(ee.String(biomass.bandNames().get(0)).cat('_min'))
+        maxBio = statsbiomass.get(ee.String(biomass.bandNames().get(0)).cat('_max'))               
         
-            # Converter para PIL.Image
-            img_pil = Image.open(BytesIO(resposta.content))
+        bioprop = biomass.visualize(**{"min": minBio, "max": maxBio,"palette": paletteBiomassa})        
+        
+        outline = empty.paint(ee.FeatureCollection([ee.Feature(roi)]), 1, 3)
+        outline = outline.updateMask(outline)
+        outline_rgb = outline.visualize(**{"palette":['FF0000']})
 
-            # Inserção da Legenda: Usamos os valores capturados do GEE
-            img_pil = add_legend(
-                img_pil, 
-                title="Biomassa"+"\n"+"pasto ("+str(2024)+")", 
-                vmin=int(minBio.getInfo()), 
-                vmax=int(maxBio.getInfo()), 
-                palette=paletteBiomassa
-            )
+        # Unificando os dados
+        final_image = sentinel.blend(bioprop.clip(roi))
+        final_image = final_image.blend(outline_rgb).clip(roi.buffer(400).bounds());
+        
+        # Gerando a url
+        url = final_image.getThumbURL({"dimensions": 1024,"format": "png"})
+        
+        # Download
+        resposta = requests.get(url, timeout=60)
+        resposta.raise_for_status()
+    
+        # Converter para PIL.Image
+        img = PIL.Image.open(BytesIO(resposta.content))
 
-            result.append(img_pil)
+        # Inserção da Legenda: Usamos os valores capturados do GEE
+        img = add_legend(
+            img, 
+            title=f"Biomassa\npasto ({str(2024)})", 
+            vmin=int(minBio.getInfo()), 
+            vmax=int(maxBio.getInfo()), 
+            palette=paletteBiomassa
+        )
 
-        return result
+        return img
     # TODO: Mapear possíveis erros.
     except Exception as e:
         # TODO: Melhorar a menssagem de erro. Com motivo do erro e instrução de execução.
         raise Exception(f"Erro ao gerar imagem: {str(e)}")
 
 
-#Função para o cálculo da estatistica zonal
-def aggregateDate(img:dict, roi:dict,scale:int) -> dict:
-    """
-    Calculo da estatística zonal.
-    """
-    stats = img.reduceRegion(
-        reducer=ee.Reducer.sum().group(groupField=1,groupName='class'),
-        geometry=roi,
-        scale=scale,
-        maxPixels=1e13
-    )
-
-    return stats
-
-
-# TODO: Tipar o 'roi'.
-def ee_query_biomass(roi):
+def ee_query_biomass(roi: ee.Geometry.Polygon):
     biomass_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_biomass_v2')
     selectedBand = biomass_asset.bandNames().size().subtract(1)
 
@@ -303,8 +231,7 @@ def ee_query_biomass(roi):
     return dict({'biomass': stats.getInfo()})
 
 
-# TODO: Tipar o 'roi'.
-def ee_query_age(roi):
+def ee_query_age(roi: ee.Geometry.Polygon):
     age_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_age_v2')
     selectedBand = age_asset.bandNames().size().subtract(1)
 
@@ -323,7 +250,12 @@ def ee_query_age(roi):
     areaImg = ee.Image.pixelArea().divide(10000).addBands(last)
 
     #Agregando dados
-    stats = aggregateDate(areaImg,roi,30)
+    stats = areaImg.reduceRegion(
+        reducer=ee.Reducer.sum().group(groupField=1, groupName='class'),
+        geometry=roi,
+        scale=30,
+        maxPixels=1e13
+    )
     groups = ee.List(stats.get('groups'));
 
     #Template 
@@ -340,8 +272,7 @@ def ee_query_age(roi):
     return dict({'age': yearDict.getInfo()})
 
 
-# TODO: Tipar o 'roi'.
-def ee_query_vigor(roi):
+def ee_query_vigor(roi: ee.Geometry.Polygon):
     vigor_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_vigor_v3')
     selectedBand = vigor_asset.bandNames().size().subtract(1)
 
@@ -349,7 +280,12 @@ def ee_query_vigor(roi):
 
     areaImg = ee.Image.pixelArea().divide(10000).addBands(last)
 
-    stats = aggregateDate(areaImg, roi,30)
+    stats = areaImg.reduceRegion(
+        reducer=ee.Reducer.sum().group(groupField=1, groupName='class'),
+        geometry=roi,
+        scale=30,
+        maxPixels=1e13
+    )
     groups = ee.List(stats.get('groups'));
 
     initialDict = ee.Dictionary();
@@ -364,8 +300,7 @@ def ee_query_vigor(roi):
     return dict({'vigor': yearDict.getInfo()})
 
 
-# TODO: Tipar o 'roi'.
-def ee_query_class(roi):
+def ee_query_class(roi: ee.Geometry.Polygon):
     
     class_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_integration_v2')
     selectedBand = class_asset.bandNames().size().subtract(1)
@@ -374,7 +309,12 @@ def ee_query_class(roi):
 
     areaImg = ee.Image.pixelArea().divide(10000).addBands(last)
 
-    stats = aggregateDate(areaImg,roi,30)
+    stats = areaImg.reduceRegion(
+        reducer=ee.Reducer.sum().group(groupField=1, groupName='class'),
+        geometry=roi,
+        scale=30,
+        maxPixels=1e13
+    )
     groups = ee.List(stats.get('groups'));
 
     initialDict = ee.Dictionary();

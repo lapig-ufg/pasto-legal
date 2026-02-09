@@ -7,6 +7,7 @@ from agno.media import Image
 
 from app.hooks.tool_hooks import validate_car_hook
 from app.utils.scripts.gee_scripts import retrieve_feature_images, retrieve_feature_biomass_image, ee_query_pasture
+from app.utils.dummy_logger import error
 
 
 # TODO: Escrever ferramenta para visualização da área de pastagem do usuário.
@@ -55,14 +56,16 @@ def query_pasture(run_context: RunContext) -> dict:
     try:
         coordinates = run_context.session_state['car_selected']['geometry']['coordinates'][0][0]
 
-        imgs = retrieve_feature_biomass_image()
+        #imgs = retrieve_feature_biomass_image(coordinates)
 
-        buffer = BytesIO()
-        imgs.save(buffer, format="PNG")
+        #buffer = BytesIO()
+        #imgs.save(buffer, format="PNG")
 
         result = ee_query_pasture(coordinates)
     
-        return ToolResult(content=result, images=[Image(content=buffer.getvalue())])
+        # TODO: Retornar imagem com biomassa?
+        return result
     except Exception as e:
         # TODO: Retornar menssagem de erro quando todos os erros forem mapeados dentro da função ee_query_pasture;
+        error(f"Não foi possível concluir a função 'query_pasture': {e}")
         return ToolResult(content='Erro')
