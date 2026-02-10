@@ -74,6 +74,8 @@ def query_car(latitude: float, longitude: float, run_context: RunContext):
         if size_feat == 1:
             run_context.session_state['car_candidate'] = features[0]
 
+            cars = f"CAR {features[0]["properties"]["codigo"]}, Tamanho da área {round(features[0]["properties"]["area"], 2)} ha, município de {features[0]["properties"]["municipio"]}."
+
             return ToolResult(
                 content=textwrap.dedent("""
                 [STATUS: 1 PROPRIEDADE ENCONTRADA]
@@ -92,7 +94,7 @@ def query_car(latitude: float, longitude: float, run_context: RunContext):
             run_context.session_state['car_all'] = features
 
             # TODO: Conflito com as Áreas (Área da imagem e Área da medida)
-            cars = " ".join(f"Área {i + 1}, CAR {features[i]["properties"]["codigo"]}, Tamanho da área {features[i]["properties"]["area"]} ha, município de {features[i]["properties"]["municipio"]}." for i in range(0, size_feat))
+            cars = "- ".join(f"Área {i + 1}, CAR {features[i]["properties"]["codigo"]}, Tamanho da área {round(features[i]["properties"]["area"], 2)} ha, município de {features[i]["properties"]["municipio"]}.\n" for i in range(0, size_feat))
 
             return ToolResult(
                 content=textwrap.dedent(f"""
@@ -100,7 +102,7 @@ def query_car(latitude: float, longitude: float, run_context: RunContext):
                 
                 # INSTRUÇÕES PARA O AGENTE:
                 1. Peça para o usuário escolher entre as propriedades:
-                    > {cars}
+                    {cars}
                 2. Quando o usuário responder com um número, chame a ferramenta 'select_car_from_list'.
                 """).strip(),
                 images=[Image(content=buffer.getvalue())]
@@ -158,6 +160,7 @@ def select_car_from_list(selection: int, run_context: RunContext):
             return ToolResult(content=f"[ERRO] Seleção inválida. O usuário deve escolher um número entre 1 e {len(features)}.")
 
         selected_feature = features[selection - 1]
+        selected_feature['properties']['area'] = round(selected_feature['properties']['area'], 2)
         run_context.session_state['car_selected'] = selected_feature
 
         return ToolResult(
@@ -204,7 +207,7 @@ def reject_car_selection(run_context: RunContext):
     """
     Cancela a seleção ou rejeita os resultados encontrados.
     
-    Use esta ferramenta se o usuário disser que a propriedade mostrada na imagem NÃO é a correta ou quiser buscar em outro lugar.
+    Use esta ferramenta se o usuário disser que a propriedade mostrada na imagem NÃO é a correta.
     """
     keys_to_clear = ['car_all', 'car_candidate']
 

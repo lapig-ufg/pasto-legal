@@ -1,3 +1,5 @@
+import textwrap
+
 from io import BytesIO
 
 from agno.tools import tool
@@ -7,32 +9,31 @@ from agno.media import Image
 
 from app.hooks.tool_hooks import validate_car_hook
 from app.utils.scripts.gee_scripts import retrieve_feature_images, retrieve_feature_biomass_image, ee_query_pasture
-from app.utils.dummy_logger import error
+
+from app.utils.dummy_logger import log, error
 
 
 # TODO: Escrever ferramenta para visualização da área de pastagem do usuário.
-# TODO: Deveria ter um buffer para as laterais da imagem não encostarem na região do poligono.
-# TODO: A imagem do satelite deveria estar inteira, e não cliped na região de interesse.
-# TODO: DUVIDA - Faz sentido manter para caso o usuário queira uma imagem da propriedade ou é melhor armazenas a imagem?
-@tool(tool_hooks=[validate_car_hook], requires_confirmation=False)
+@tool(tool_hooks=[validate_car_hook])
 def generate_property_image(run_context: RunContext) -> ToolResult:
     """
-    Gera uma imagem de satélite da propriedade rural baseada nos dados do CAR do usuário
-    armazenados na sessão. Esta função não requer parâmetros, pois recupera 
-    automaticamente a geometria da fazenda do estado atual da conversa.
+    Gera uma imagem de satélite em alta resolução (RGB) da propriedade rural, 
+    incluindo a delimitação geográfica do CAR.
 
-    Esta função deve ser chamada quando:
-    - O usuário pedir para "ver", "mostrar" ou "gerar mapa" da fazenda/propriedade.
-    - O usuário quiser visualizar o contorno da área (CAR) sobreposto ao terreno.
+    Esta ferramenta deve ser chamada quando:
+    - O usuário quiser ver uma "foto", "imagem real" ou "visão aérea" da fazenda.
+    - For solicitado o contorno da propriedade (CAR) sobreposto ao terreno natural.
 
     Return:
-        Retorna um objeto ToolResult contendo a imagem da propriedade do usuário em formato PNG e uma breve descrição.
+        ToolResult: Objeto contendo a imagem PNG da visão aérea e uma confirmação textual.
     """
     try:
-        img_pil = retrieve_feature_images(run_context.session_state['car']['features'][0])
+        coordinates = run_context.session_state['car_selected']['geometry']['coordinates'][0][0]
+
+        img = retrieve_feature_images(coordinates)
 
         buffer = BytesIO()
-        img_pil.save(buffer, format="PNG")
+        img.save(buffer, format="PNG")
                 
         return ToolResult(
             content=f"Aqui está a imagem de satélite da área. O contorno vermelho indica a zona de amortecimento de 5km.",
@@ -44,11 +45,48 @@ def generate_property_image(run_context: RunContext) -> ToolResult:
 
 
 @tool(tool_hooks=[validate_car_hook])
+def generate_property_biomass_image(run_context: RunContext) -> ToolResult:
+    """
+    Gera um mapa geoespacial temático da biomassa (vegetação) sobre os limites da propriedade rural.
+    
+    Esta ferramenta deve ser acionada quando:
+    - O usuário solicitar visualização espacial, mapas ou imagens da biomassa.
+    - Termos como "ver a foto da biomassa" ou "ver distribuição de biomassa" forem utilizados.
+    - For necessário complementar uma análise numérica de biomassa com uma evidência visual do terreno.
+
+    A função utiliza automaticamente os dados geográficos do CAR selecionado no contexto da sessão para processar as imagens de satélite mais recentes.
+
+    Return:
+        ToolResult: Objeto contendo o mapa renderizado em formato PNG e uma mensagem de confirmação para o usuário.
+    """
+    try:
+        coordinates = run_context.session_state['car_selected']['geometry']['coordinates'][0][0]
+
+        img = retrieve_feature_biomass_image(coordinates)
+
+        buffer = BytesIO()
+        img.save(buffer, format="PNG")
+                
+        return ToolResult(
+            content=f"Aqui está o mapa de biomassa da propriedade.",
+            images=[Image(content=buffer.getvalue())]
+        )
+
+    except Exception as e:
+        return ToolResult(content=f"Erro ao gerar imagem: {str(e)}")
+
+
+@tool(tool_hooks=[validate_car_hook])
 def query_pasture(run_context: RunContext) -> dict:
     """
-    Calcula a área de pastagem, vigor da pastagem, áreas de pastagem degradadas (baixo vigor),
-    biomassa total e a idade baseada nos dados do CAR do usuário armazenados na sessão. Esta função não
-    requer parâmetros, pois recupera automaticamente a geometria da fazenda do estado atual da conversa.
+    Realiza uma análise técnica detalhada do uso do solo, com foco em pastagem, vigor vegetativo e biomassa
+    para a propriedade selecionada no contexto (CAR).
+    
+    Use esta ferramenta quando o usuário perguntar sobre:
+    - Saúde ou qualidade da pastagem (degradação, vigor).
+    - Quantidade de biomassa disponível.
+    - Classificação de uso do solo (LULC) incluindo: Silvicultura, Cana, Soja, Arroz, Café, Citrus, etc.
+    - Histórico ou idade da pastagem.
 
     Return:
         Dicionário contendo a área de pastagem, vigor da pastagem, áreas de pastagem degradadas (baixo vigor), biomassa total e a idade.
@@ -56,15 +94,27 @@ def query_pasture(run_context: RunContext) -> dict:
     try:
         coordinates = run_context.session_state['car_selected']['geometry']['coordinates'][0][0]
 
-        #imgs = retrieve_feature_biomass_image(coordinates)
+        query = ee_query_pasture(coordinates)
 
-        #buffer = BytesIO()
-        #imgs.save(buffer, format="PNG")
+        log(query)
 
-        result = ee_query_pasture(coordinates)
+        # TODO: Fazer com pydantic.
+        biomass_str = f"- {round(query[0]['biomass']['biomass_2024'])} ha."
+        pasture_age_str = "\n".join(f"- {r} anos: {round(float(query[1]['age'][r]))} ha." for r in query[1]['age'].keys())
+        pasture_vigor_str = "\n".join(f"- {v}: {round(float(query[2]['vigor'][v]))} ha." for v in query[2]['vigor'].keys())
+        lulc_str = "\n".join(f"- {c}: {round(float(query[3]['class'][c]))} ha." for c in query[3]['class'].keys())
     
-        # TODO: Retornar imagem com biomassa?
-        return result
+        # TODO: Texto explicando melhor os dados para a ia não se confundir.
+        return textwrap.dedent(f"""
+            Biomassa:
+                {biomass_str}
+            Idade da pastagem:
+                {pasture_age_str}
+            Vigor da pastagem:
+                {pasture_vigor_str}
+            Uso e cobertura da terra:
+                {lulc_str}
+            """).strip()
     except Exception as e:
         # TODO: Retornar menssagem de erro quando todos os erros forem mapeados dentro da função ee_query_pasture;
         error(f"Não foi possível concluir a função 'query_pasture': {e}")

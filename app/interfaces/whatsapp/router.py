@@ -193,7 +193,6 @@ def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Option
             else:
                 batch_message = f"{batch}"
 
-
             if italics:
                 # TODO: É possível que, caso o texto possua "\n\n", a menssagem gere um "__" literal.
                 formatted_batch = "\n".join([f"_{line}_" for line in batch_message.split("\n")])

@@ -39,11 +39,11 @@ CLASSES = {
         '12':'Formação Campestre',
         '15':'Pastagem',
         '19':'Lavoura Temporária',
-        '20':'Cana',        
+        '20':'Cana', 
         '29':'Afloramento Rochoso',        
         '39':'Soja',
         '32':'Apicum',
-        '35':'Dendê',   
+        '35':'Dendê', 
         '36':'Lavoura Perene',
         '40':'Arroz',
         '41':'Outras Lavouras Temporárias',
@@ -52,7 +52,7 @@ CLASSES = {
         '48':'Outras Lavouras Perenes',
         '49':'Restinga Arbórea',
         '50':'Restinga Herbácea',
-        '62':'Algodão', 
+        '62':'Algodão',
         '21':'Mosaico de Usos',
         '23':'Praia, Duna e Areal',
         '24':'Área Urbanizada',
@@ -191,7 +191,7 @@ def retrieve_feature_biomass_image(coordinates: list) -> PIL.Image:
         final_image = final_image.blend(outline_rgb).clip(roi.buffer(400).bounds());
         
         # Gerando a url
-        url = final_image.getThumbURL({"dimensions": 1024,"format": "png"})
+        url = final_image.getThumbURL({"dimensions": 256,"format": "png"})
         
         # Download
         resposta = requests.get(url, timeout=60)

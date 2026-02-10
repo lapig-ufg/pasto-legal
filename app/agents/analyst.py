@@ -3,7 +3,7 @@ import textwrap
 from agno.agent import Agent
 from agno.models.google import Gemini
 
-from app.tools.gee_tools import query_pasture
+from app.tools.gee_tools import query_pasture, generate_property_biomass_image
 from app.tools.audioTTS import audioTTS
 
 
@@ -13,6 +13,7 @@ analyst_agent = Agent(
     role="Especialista Técnico em Análise Espacial, Métricas de Pastagem e ferramentas de geração de mapas. Responsável por executar ferramentas técnicas para gerar mapas, imagens de satélite e levantar estatísticas sobre a saúde do pasto.",
     description="Responsável por executar ferramentas técnicas para gerar mapas, imagens de satélite e levantar estatísticas sobre a saúde do pasto. Chame-o quando precisar de dados concretos ou visualizações.",
     tools=[
+        generate_property_biomass_image,
         query_pasture,
         audioTTS
         ],
