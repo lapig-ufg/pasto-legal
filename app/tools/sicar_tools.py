@@ -16,7 +16,6 @@ from app.utils.scripts.gee_scripts import retrieve_feature_images
 from app.utils.dummy_logger import log, error
 
 
-# TODO: As vezes o request retorna 302 e 307 de redirecionamento. Garantir que não ira redirecionar com allow_redirects=False. Ou tentar conexão direta com a API.
 @tool
 def query_car(latitude: float, longitude: float, run_context: RunContext):
     """
@@ -74,7 +73,7 @@ def query_car(latitude: float, longitude: float, run_context: RunContext):
         if size_feat == 1:
             run_context.session_state['car_candidate'] = features[0]
 
-            cars = f"CAR {features[0]["properties"]["codigo"]}, Tamanho da área {round(features[0]["properties"]["area"], 2)} ha, município de {features[0]["properties"]["municipio"]}."
+            cars = f"CAR {features[0]["properties"]["codigo"]}, Tamanho da área {round(features[0]["properties"]["area"])} ha, município de {features[0]["properties"]["municipio"]}."
 
             return ToolResult(
                 content=textwrap.dedent("""
@@ -94,16 +93,17 @@ def query_car(latitude: float, longitude: float, run_context: RunContext):
             run_context.session_state['car_all'] = features
 
             # TODO: Conflito com as Áreas (Área da imagem e Área da medida)
-            cars = "- ".join(f"Área {i + 1}, CAR {features[i]["properties"]["codigo"]}, Tamanho da área {round(features[i]["properties"]["area"], 2)} ha, município de {features[i]["properties"]["municipio"]}.\n" for i in range(0, size_feat))
+            cars = "- ".join(f"Área {i + 1}, CAR {features[i]["properties"]["codigo"]}, Tamanho da área {round(features[i]["properties"]["area"])} ha, município de {features[i]["properties"]["municipio"]}.\n" for i in range(0, size_feat))
 
             return ToolResult(
                 content=textwrap.dedent(f"""
                 [STATUS: {size_feat} PROPRIEDADES ENCONTRADAS]
                 
                 # INSTRUÇÕES PARA O AGENTE:
-                1. Peça para o usuário escolher entre as propriedades:
+                1. Informe ao usuário as informações das propriedades na integra:
                     {cars}
-                2. Quando o usuário responder com um número, chame a ferramenta 'select_car_from_list'.
+                2. Peça ao usuário que escolhe um propriedade entre as informadas.
+                3. Quando o usuário responder com um número, chame a ferramenta 'select_car_from_list'.
                 """).strip(),
                 images=[Image(content=buffer.getvalue())]
                 )
@@ -160,7 +160,7 @@ def select_car_from_list(selection: int, run_context: RunContext):
             return ToolResult(content=f"[ERRO] Seleção inválida. O usuário deve escolher um número entre 1 e {len(features)}.")
 
         selected_feature = features[selection - 1]
-        selected_feature['properties']['area'] = round(selected_feature['properties']['area'], 2)
+        selected_feature['properties']['area'] = round(selected_feature['properties']['area'])
         run_context.session_state['car_selected'] = selected_feature
 
         return ToolResult(

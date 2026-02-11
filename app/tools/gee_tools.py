@@ -96,8 +96,6 @@ def query_pasture(run_context: RunContext) -> dict:
 
         query = ee_query_pasture(coordinates)
 
-        log(query)
-
         # TODO: Fazer com pydantic.
         biomass_str = f"- {round(query[0]['biomass']['biomass_2024'])} ha."
         pasture_age_str = "\n".join(f"- {r} anos: {round(float(query[1]['age'][r]))} ha." for r in query[1]['age'].keys())

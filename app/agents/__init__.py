@@ -1,9 +1,10 @@
 from .analyst import analyst_agent
+from .generic import generic_agent
 from .main_agent import pasto_legal_team
 
 
 __all__ = [
     "analyst_agent",
-    "assistant_agent",
+    "generic_agent",
     "pasto_legal_team",
 ]
