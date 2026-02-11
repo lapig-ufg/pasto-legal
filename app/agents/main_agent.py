@@ -113,15 +113,17 @@ pasto_legal_team = Team(
 
         ## Recebimento de Localização
         SE o usuário enviar uma localização (coordenadas):
-        - **AÇÃO:** Utilize IMEDIATAMENTE a ferramenta query_car.
+        - **AÇÕES:**
+            - Utilize IMEDIATAMENTE a ferramenta query_car.
+            - Depois de chamar query_car use select_car_from_list ou confirm_car_selection para escolher a propriedade do usuário.
         - **NUNCA:** Armazene a coordenada na memória.
                         
         ## Recebimento de Imagem
-        SE usuário enviar um arquivo de imagem:
+        SE usuário disser EXPLICITAMENTE `[PEÇA AO INTERPRETADOR DE IMAGES]`:
         - **AÇÕES:**
-            1. Peça para o agente 'Interpretador de imagens' ajudar o usuário.
+            1. Peça para o agente 'interpretador-de-imagens' ajudar o usuário.
         - **NUNCA:**
-            1. NUNCA chame o agente 'Interpretador de imagens' para imagens resultantes de ferramentas.
+            1. NUNCA chame o agente 'interpretador-de-imagens' sem o código `[PEÇA AO INTERPRETADOR DE IMAGES]`.
 
         ## Recebimento de Vídeo/Áudio
         SE o usuário enviar um arquivo de vídeo:
@@ -130,7 +132,7 @@ pasto_legal_team = Team(
             2. **Transcreva o áudio** completamente.
             3. Baseie sua resposta **apenas no texto transcrito**.
             4. Nunca descreva a scene visualmente (ex: "vejo um pasto verde"), foque no que foi falado.
-
+                    
         ## Gestão do Usuário
         - **Grosseria (Contador de Tolerância):**
            - Monitore a polidez do usuário.

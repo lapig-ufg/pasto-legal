@@ -140,7 +140,7 @@ def query_car(latitude: float, longitude: float, run_context: RunContext):
             """).strip())
 
 
-@tool
+@tool(stop_after_tool_call=True)
 def select_car_from_list(selection: int, run_context: RunContext):
     """
     Seleciona uma propriedade específica quando a busca retorna múltiplos resultados.
@@ -154,29 +154,26 @@ def select_car_from_list(selection: int, run_context: RunContext):
         features = run_context.session_state.get('car_all', [])
         
         if not features:
-            return ToolResult(content="[ERRO] Nenhuma busca foi realizada ainda. Peça a localização primeiro.")
+            return ToolResult(content="Nenhuma busca foi realizada ainda. Informe uma localização primeiro.")
 
         if selection < 1 or selection > len(features):
-            return ToolResult(content=f"[ERRO] Seleção inválida. O usuário deve escolher um número entre 1 e {len(features)}.")
+            return ToolResult(content=f"Seleção inválida. Escolha um número válido entre 1 e {len(features)}.")
 
         selected_feature = features[selection - 1]
         selected_feature['properties']['area'] = round(selected_feature['properties']['area'])
         run_context.session_state['car_selected'] = selected_feature
 
-        return ToolResult(
-            content=textwrap.dedent(f"""
-            [SUCESSO] Propriedade selecionada e armazenada.
-
-            # INSTRUÇÕES PARA O AGENTE:
-            1. Confirme para o usuário que a propriedade {selection} foi selecionada.
-            2. Prossiga com o fluxo de atendimento.
-            """).strip()
+        return ToolResult(content="Perfeito! A propriedade foi selecionada. ✅\n\n"
+            "Como deseja seguir agora? Posso ajudar com:\n\n"
+            "🌱 *Análise de pastagem*\n"
+            "🗺️ *Uso e cobertura da terra*\n"
+            "📊 *Visualização de biomassa*"
         )
     except Exception as e:
         return ToolResult(content=f"[ERRO] Falha ao selecionar: {str(e)}")
 
 
-@tool
+@tool(stop_after_tool_call=True)
 def confirm_car_selection(run_context: RunContext):
     """
     Confirma a propriedade encontrada quando a busca retorna apenas um resultado único.
@@ -186,21 +183,18 @@ def confirm_car_selection(run_context: RunContext):
     candidate = run_context.session_state.get('car_candidate')
     
     if not candidate:
-        return ToolResult(content="[ERRO] Não há propriedade pendente de confirmação. Realize uma busca primeiro.")
+        return ToolResult(content="Não há propriedade pendente de confirmação. Realize uma busca primeiro.")
 
     run_context.session_state['car_selected'] = candidate
     
     del run_context.session_state['car_candidate']
 
-    return ToolResult(
-        content=textwrap.dedent("""
-        [SUCESSO] Propriedade única confirmada.
-
-        # INSTRUÇÕES PARA O AGENTE:
-        1. Agradeça a confirmação.
-        2. Prossiga com o fluxo.
-        """).strip()
-    )
+    return ToolResult(content="Perfeito! A propriedade foi confirmada. ✅\n\n"
+        "Como deseja seguir agora? Posso ajudar com:\n\n"
+        "🌱 *Análise de pastagem*\n"
+        "🗺️ *Uso e cobertura da terra*\n"
+        "📊 *Visualização de biomassa*"
+        )
 
 @tool
 def reject_car_selection(run_context: RunContext):

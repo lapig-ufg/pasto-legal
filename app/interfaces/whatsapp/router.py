@@ -107,6 +107,7 @@ def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Option
                 case "image":
                     try:
                         message_text = message["image"]["caption"]
+                        message_text = "[PEÇA AO INTERPRETADOR DE IMAGES] " + message_text
                     except Exception:
                         message_text = "Describe the image"
                     finally:
