@@ -107,6 +107,7 @@ def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Option
                 case "image":
                     try:
                         message_text = message["image"]["caption"]
+                        message_text = "[PEÇA AO INTERPRETADOR DE IMAGES] " + message_text
                     except Exception:
                         message_text = "Describe the image"
                     finally:
@@ -192,7 +193,6 @@ def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Option
                 batch_message = f"[{i}/{len(message_batches)}] {batch}"
             else:
                 batch_message = f"{batch}"
-
 
             if italics:
                 # TODO: É possível que, caso o texto possua "\n\n", a menssagem gere um "__" literal.
