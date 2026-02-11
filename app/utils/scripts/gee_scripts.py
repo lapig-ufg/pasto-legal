@@ -204,8 +204,8 @@ def retrieve_feature_biomass_image(coordinates: list) -> PIL.Image:
         img = add_legend(
             img, 
             title=f"Biomassa\npasto ({str(2024)})", 
-            vmin=int(minBio.getInfo()), 
-            vmax=int(maxBio.getInfo()), 
+            vmin=float(minBio.getInfo()) * 0.09, # ton->pixel 
+            vmax=float(maxBio.getInfo()) * 0.09, # ton->pixel
             palette=paletteBiomassa
         )
 
@@ -228,7 +228,7 @@ def ee_query_biomass(roi: ee.Geometry.Polygon):
                   scale=30,
                   maxPixels=1e13)
 
-    return dict({'biomass': stats.getInfo()})
+    return dict({'biomass': stats.getInfo()}) # ton->pixel 
 
 
 def ee_query_age(roi: ee.Geometry.Polygon):
