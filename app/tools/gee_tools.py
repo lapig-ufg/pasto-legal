@@ -68,7 +68,7 @@ def generate_property_biomass_image(run_context: RunContext) -> ToolResult:
         img.save(buffer, format="PNG")
                 
         return ToolResult(
-            content=f"Aqui está o mapa de biomassa da propriedade.",
+            content=f"Aqui está o mapa de biomassa da propriedade. As áreas em tons de azul claro indicam maior quantidade de biomassa, tons de roxo quantidade moderada de biomassa e tons de roxo escuro pouca biomassa.",
             images=[Image(content=buffer.getvalue())]
         )
 
@@ -97,7 +97,7 @@ def query_pasture(run_context: RunContext) -> dict:
         query = ee_query_pasture(coordinates)
 
         # TODO: Fazer com pydantic.
-        biomass_str = f"- {round(query[0]['biomass']['biomass_2024'])} ha."
+        biomass_str = f"- {round(query[0]['biomass']['biomass_2024'])} kg."
         pasture_age_str = "\n".join(f"- {r} anos: {round(float(query[1]['age'][r]))} ha." for r in query[1]['age'].keys())
         pasture_vigor_str = "\n".join(f"- {v}: {round(float(query[2]['vigor'][v]))} ha." for v in query[2]['vigor'].keys())
         lulc_str = "\n".join(f"- {c}: {round(float(query[3]['class'][c]))} ha." for c in query[3]['class'].keys())
