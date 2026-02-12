@@ -68,7 +68,7 @@ def generate_property_biomass_image(run_context: RunContext) -> ToolResult:
         img.save(buffer, format="PNG")
                 
         return ToolResult(
-            content=f"Aqui está o mapa de biomassa da propriedade. As áreas em tons de azul claro indicam maior quantidade de biomassa, tons de roxo quantidade moderada de biomassa e tons de roxo escuro pouca biomassa.",
+            content=f"Mapa de biomassa gerado. Legenda: Azul claro (Alta concentração) a Roxo escuro (Baixa concentração).",
             images=[Image(content=buffer.getvalue())]
         )
 

@@ -78,13 +78,12 @@ def query_car(latitude: float, longitude: float, run_context: RunContext):
             return ToolResult(
                 content=textwrap.dedent("""
                 [STATUS: 1 PROPRIEDADE ENCONTRADA]
-                Foi encontrado 1 registro.
-                
+
                 # INSTRUÇÕES PARA O AGENTE:
-                1. Mostre a imagem ao usuário.
-                2. Informe que encontrou a propriedade.
-                3. Pergunte: "É esta a propriedade correta?"
-                4. Se o usuário confirmar, chame a ferramenta 'confirm_car_selection'.
+                1. Informe ao usuário as informações das propriedades na integra:
+                    {cars}
+                2. Pergunte: "É esta a propriedade correta?"
+                3. Se o usuário confirmar, chame a ferramenta 'confirm_car_selection'.
                 """).strip(),
                 images=[Image(content=buffer.getvalue())]
                 )
@@ -140,7 +139,7 @@ def query_car(latitude: float, longitude: float, run_context: RunContext):
             """).strip())
 
 
-@tool(stop_after_tool_call=True)
+@tool
 def select_car_from_list(selection: int, run_context: RunContext):
     """
     Seleciona uma propriedade específica quando a busca retorna múltiplos resultados.
@@ -173,7 +172,7 @@ def select_car_from_list(selection: int, run_context: RunContext):
         return ToolResult(content=f"[ERRO] Falha ao selecionar: {str(e)}")
 
 
-@tool(stop_after_tool_call=True)
+@tool
 def confirm_car_selection(run_context: RunContext):
     """
     Confirma a propriedade encontrada quando a busca retorna apenas um resultado único.

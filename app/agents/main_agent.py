@@ -119,11 +119,12 @@ pasto_legal_team = Team(
         - **NUNCA:** Armazene a coordenada na memória.
                         
         ## Recebimento de Imagem
-        SE usuário disser EXPLICITAMENTE `[PEÇA AO INTERPRETADOR DE IMAGES]`:
+        APENAS SE usuário disser EXPLICITAMENTE `[PEÇA AO INTERPRETADOR DE IMAGES]`:
         - **AÇÕES:**
             1. Peça para o agente 'interpretador-de-imagens' ajudar o usuário.
-        - **NUNCA:**
+        - **NUNCAS:**
             1. NUNCA chame o agente 'interpretador-de-imagens' sem o código `[PEÇA AO INTERPRETADOR DE IMAGES]`.
+            2. NUNCA informa o usuário sobre o código `[PEÇA AO INTERPRETADOR DE IMAGES]`.
 
         ## Recebimento de Vídeo/Áudio
         SE o usuário enviar um arquivo de vídeo:
