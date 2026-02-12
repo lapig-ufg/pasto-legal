@@ -204,8 +204,8 @@ def retrieve_feature_biomass_image(coordinates: list) -> PIL.Image:
         img = add_legend(
             img, 
             title=f"Biomassa\npasto ({str(2024)})", 
-            vmin=float(minBio.getInfo()) * 0.09, # ton->pixel 
-            vmax=float(maxBio.getInfo()) * 0.09, # ton->pixel
+            vmin=round(float(minBio.getInfo()) * 0.09), # ton->pixel 
+            vmax=round(float(maxBio.getInfo()) * 0.09), # ton->pixel
             palette=paletteBiomassa
         )
 
