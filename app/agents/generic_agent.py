@@ -4,7 +4,6 @@ from agno.agent import Agent
 from agno.models.google import Gemini
 
 
-# TODO: Implementar o agente analista.
 generic_agent = Agent(
     name="Interpretador de imagens",
     role="Responsável por responder a dúvidas do usuário em relação a imagens fornecidas por ele. Capaz de interpretar imagens fornecidas pelo usuário.",

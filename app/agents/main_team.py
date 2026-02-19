@@ -96,7 +96,6 @@ def get_instructions(run_context: RunContext) -> str:
 
 
 # TODO: add_session_state_to_context pode trazer memória para o agente. Testar uso para o agente entender que possui car entre outras informações. Podendo ser uma memoria dinamica.
-# TODO: O Team não deveria ter memória, justamente para não confundir informações antigas. Um agente deveria ser responsável por isso. Dessa forma, teremos maior controle da informação armazenada.
 pasto_legal_team = Team(
     db=db,
     name="Equipe Pasto Legal",

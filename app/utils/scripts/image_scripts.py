@@ -2,10 +2,7 @@ import PIL
 
 from PIL import Image, ImageFont, ImageColor, ImageDraw
 
-from app.utils.dummy_logger import log
 
-# TODO: Documentação da função.
-# TODO: Definir tipo de retorno da função.
 def get_mosaic(imgs: list[PIL.Image]) -> Image:
     first = imgs[0]
 
@@ -14,7 +11,6 @@ def get_mosaic(imgs: list[PIL.Image]) -> Image:
     widthMosaic = width + 5
     heightMosaic = (height * len(imgs)) + 10
 
-    # TODO: Fazer código mais robusto para caminho do arquivo.
     font = ImageFont.truetype("assets/fonts/DejaVuSans-Bold.ttf", 16)
 
     mosaic = Image.new("RGB", (widthMosaic, heightMosaic), "white")

@@ -92,7 +92,6 @@ def query_feature_by_coordinate(latitude: float, longitude: float, run_context: 
             run_context.session_state['car_all'] = features
             run_context.session_state['car_selection_type'] = "MULTIPLE"
 
-            # TODO: Conflito com as Áreas (Área da imagem e Área da medida)
             cars = "- ".join(f"Área {i + 1}, CAR {features[i]["properties"]["codigo"]}, Tamanho da área {round(features[i]["properties"]["area"])} ha, município de {features[i]["properties"]["municipio"]}.\n" for i in range(0, size_feat))
 
             return ToolResult(
