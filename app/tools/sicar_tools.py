@@ -4,8 +4,6 @@ import textwrap
 
 from io import BytesIO
 
-from typing import Literal
-
 from agno.run import RunContext
 from agno.tools import tool
 from agno.tools.function import ToolResult
