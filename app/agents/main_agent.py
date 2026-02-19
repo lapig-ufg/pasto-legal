@@ -38,6 +38,9 @@ def get_instructions(run_context: RunContext) -> str:
     # TODO: Implementar uma linha de instruções para usuários novos aceitarem os termos e condições.
 
     if is_confirming_car:
+        # THINK: Talvez isso poderia ser um agente. Dessa forma todas as ferramentas estaria no agente.
+        # Contribui para reduzir a quantidade de tokens no agente principal que apenas seria responsável
+        # por redirecionar para o agente correto.
         instructions = textwrap.dedent("""
             Atue exclusivamente na etapa de confirmação de Cadastro Ambiental Rural (CAR).
             Regras:
