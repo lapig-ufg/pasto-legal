@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from agno.run import RunContext
 from agno.run.agent import RunInput
+from agno.team import Team
 from agno.agent import Agent
 from agno.models.google import Gemini
 

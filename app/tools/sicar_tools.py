@@ -72,6 +72,7 @@ def query_car(latitude: float, longitude: float, run_context: RunContext):
         
         if size_feat == 1:
             run_context.session_state['car_candidate'] = features[0]
+            run_context.session_state['is_confirming_car'] = True
 
             cars = f"CAR {features[0]["properties"]["codigo"]}, Tamanho da área {round(features[0]["properties"]["area"])} ha, município de {features[0]["properties"]["municipio"]}."
 
@@ -90,6 +91,7 @@ def query_car(latitude: float, longitude: float, run_context: RunContext):
         
         elif size_feat > 1:
             run_context.session_state['car_all'] = features
+            run_context.session_state['is_selecting_car'] = True
 
             # TODO: Conflito com as Áreas (Área da imagem e Área da medida)
             cars = "- ".join(f"Área {i + 1}, CAR {features[i]["properties"]["codigo"]}, Tamanho da área {round(features[i]["properties"]["area"])} ha, município de {features[i]["properties"]["municipio"]}.\n" for i in range(0, size_feat))
@@ -162,6 +164,9 @@ def select_car_from_list(selection: int, run_context: RunContext):
         selected_feature['properties']['area'] = round(selected_feature['properties']['area'])
         run_context.session_state['car_selected'] = selected_feature
 
+        del run_context.session_state['car_all']
+        del run_context.session_state['is_selecting_car']
+
         return ToolResult(content="Perfeito! A propriedade foi selecionada. ✅\n\n"
             "Como deseja seguir agora? Posso ajudar com:\n\n"
             "🌱 *Análise de pastagem*\n"
@@ -187,6 +192,7 @@ def confirm_car_selection(run_context: RunContext):
     run_context.session_state['car_selected'] = candidate
     
     del run_context.session_state['car_candidate']
+    del run_context.session_state['is_confirming_car']
 
     return ToolResult(content="Perfeito! A propriedade foi confirmada. ✅\n\n"
         "Como deseja seguir agora? Posso ajudar com:\n\n"
@@ -200,9 +206,9 @@ def reject_car_selection(run_context: RunContext):
     """
     Cancela a seleção ou rejeita os resultados encontrados.
     
-    Use esta ferramenta se o usuário disser que a propriedade mostrada na imagem NÃO é a correta.
+    Use esta ferramenta se o usuário disser que a propriedade mostrada na imagem NÃO é a correta ou quiser cancelar a seleção.
     """
-    keys_to_clear = ['car_all', 'car_candidate']
+    keys_to_clear = ['car_all', 'car_candidate', 'is_confirming_car', 'is_selecting_car']
 
     for k in keys_to_clear:
         if k in run_context.session_state:
@@ -210,10 +216,9 @@ def reject_car_selection(run_context: RunContext):
 
     return ToolResult(
         content=textwrap.dedent("""
-        [FLUXO REINICIADO] Seleção limpa.
+        Seleção limpa.
 
         # INSTRUÇÕES PARA O AGENTE:
         1. Peça desculpas por não ter encontrado a propriedade correta.
-        2. Solicite uma nova localização (Latitude/Longitude) ou endereço para tentar novamente.
         """).strip()
     )
