@@ -6,7 +6,6 @@ from agno.models.google import Gemini
 from app.tools.gee_tools import query_pasture, generate_property_biomass_image
 
 
-# TODO: Implementar o agente analista.
 analyst_agent = Agent(
     name="analista-agent",
     role=textwrap.dedent("""

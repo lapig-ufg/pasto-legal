@@ -12,7 +12,7 @@ from typing import List
 from agno.tools.function import UserInputField
 
 from app.agents.easter_egg_agent import easter_egg_agent
-from app.agents.main_agent import pasto_legal_team
+from app.agents.main_team import pasto_legal_team
 
 st.set_page_config(page_title="Pasto Legal", page_icon="🐂")
 

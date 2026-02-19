@@ -56,7 +56,6 @@ def get_instructions(run_context: RunContext):
     
     return instructions
 
-# TODO: Implementar o agente analista.
 sicar_agent = Agent(
     name="sicar-agent",
     role="Processador de Entradas Geográficas e Registros CAR",

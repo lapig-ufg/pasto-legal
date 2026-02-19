@@ -1,7 +1,7 @@
-from .analyst import analyst_agent
-from .generic import generic_agent
+from .analyst_agent import analyst_agent
+from .generic_agent import generic_agent
 from .sicar_agent import sicar_agent
-from .main_agent import pasto_legal_team
+from .main_team import pasto_legal_team
 
 
 __all__ = [
