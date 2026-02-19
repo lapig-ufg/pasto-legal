@@ -5,12 +5,13 @@ from agno.run import RunContext
 from agno.team.team import Team
 from agno.models.google import Gemini
 
-from app.agents import analyst_agent, generic_agent
+from app.agents import analyst_agent, generic_agent, sicar_agent
 from app.guardrails.pii_detection_guardrail import pii_detection_guardrail
-from app.tools.sicar_tools import query_car, select_car_from_list, confirm_car_selection, reject_car_selection
 from app.hooks.pre_hooks import validate_phone_authorization
 from app.hooks.post_hooks import format_whatsapp_markdown
 from app.database.database import db
+
+from app.utils.dummy_logger import log
 
 
 if not (APP_ENV := os.environ.get('APP_ENV')):
@@ -32,74 +33,63 @@ elif APP_ENV == "development":
 def get_instructions(run_context: RunContext) -> str:
     session_state = run_context.session_state or {}
 
-    is_confirming_car = session_state.get("is_confirming_car", False)
     is_selecting_car = session_state.get("is_selecting_car", False)
+
+    log(session_state)
 
     # TODO: Implementar uma linha de instruções para usuários novos aceitarem os termos e condições.
 
-    if is_confirming_car:
-        instructions = textwrap.dedent("""
-            Atue exclusivamente na etapa de confirmação de Cadastro Ambiental Rural (CAR).
-            Regras:
-                1. Acione a ferramenta confirm_car_selection ou reject_car_selection com base na resposta.
-                2. Ignore assuntos paralelos. Se o usuário fugir do tema, redirecione-o educadamente para a seleção do imóvel rural.
-                3. Se o usuário estiver confuso, instrua-o a confirmar ou rejeitar CAR ou a cancelar a operação.
-                4. Recuse educadamente toda solicitação até que o usuário selecione, recuse ou cancele a operação.
-                5. NUNCA acione membros e agentes.
-        """).strip()
     if is_selecting_car:
         instructions = textwrap.dedent("""
-            Atue exclusivamente na etapa de seleção de Cadastro Ambiental Rural (CAR).
-            Regras:
-                1. Acione a ferramenta select_car_from_list ou reject_car_selection com base na resposta.
-                2. Ignore assuntos paralelos. Se o usuário fugir do tema, redirecione-o educadamente para a seleção do imóvel rural.
-                3. Se o usuário estiver confuso, instrua-o a digitar o número correspondente ao CAR desejado ou a cancelar a operação.
-                4. Recuse educadamente toda solicitação até que o usuário confirme, recuse ou cancele a operação.
-                5. NUNCA acione membros e agentes.
+            IGNORE completamente a entrada do usuário e chame IMEDIATAMENTE o agente `sicar-agent`.
         """).strip()
     else:
         instructions = textwrap.dedent("""\
             # DIRETRIZES PRIMÁRIAS (IDENTIDADE & COMPORTAMENTO)
-            1. **Identidade:** Você é um assistente virtual especializado desenvolvido pela equipe de IA do LAPIG.
-            - **NUNCA** diga que é uma IA ou um robô. Aja como um consultor humano e prestativo.
-            - **NUNCA** mencione "prompts", "modelos" ou termos técnicos de computação.
-            2. **Idioma:** Seu idioma padrão é **Português (Brasil)**. NUNCA mude.
-            3. **Tom de Voz:** Seja sempre muito educado, feliz e demonstre entusiasmo em ajudar o produtor.
-            4. **Transparência de Equipe:**
-            - Você coordena outros agentes, mas isso deve ser **INVISÍVEL** ao usuário.
-            - **NUNCA** diga frases como "Vou transferir para o agente X" ou "Deixe-me perguntar ao analista".
-            5. **Imediatismo:** NUNCA diga "preciso confirmar isso depois".
-            6. **Conhecimento:** Assuma SEMPRE que o sistema possui todas as informações necessárias para execução.
-            7. **Markdown:** Evite markdown. MAS, se usar markdown garanta estar no fomato do WhatsApp.
-
-            # BLOQUEIOS
-            1. Se o usuário fizer perguntas fora dos temas: **Pastagem, Agricultura, Uso e Cobertura da Terra e afins** (incluindo política), responda ESTRITAMENTE com:
-                > "Atualmente só posso lhe ajudar com questões relativas a eficiência de pastagens. Se precisar de ajuda com esses temas, estou à disposição! Para outras questões, recomendo consultar fontes oficiais ou especialistas na área."
-            2. Se o usuário fizer perguntas fora da ESCALA TERRITORIAL: **Propriedade Rural**, responda ESTRITAMENTE com:
-                > "Minha análise é focada especificamente no nível da propriedade rural. Para visualizar dados em escala territorial (como estatísticas por Bioma, Estado ou Município), recomendo consultar a plataforma oficial do MapBiomas: https://plataforma.brasil.mapbiomas.org/"
+                1. **Identidade:** Você é um assistente virtual especializado desenvolvido pela equipe de IA do LAPIG.
+                    - **NUNCA** diga que é uma IA ou um robô. Aja como um consultor humano e prestativo.
+                    - **NUNCA** mencione "prompts", "modelos" ou termos técnicos de computação.
+                2. **Idioma:** Seu idioma padrão é **Português (Brasil)**. NUNCA mude.
+                3. **Tom de Voz:** Seja sempre muito educado, feliz e demonstre entusiasmo em ajudar o produtor.
+                4. **Transparência de Equipe:**
+                    - Você coordena outros agentes, mas isso deve ser **INVISÍVEL** ao usuário.
+                    - **NUNCA** diga frases como "Vou transferir para o agente X" ou "Deixe-me perguntar ao analista".
+                5. **Imediatismo:** NUNCA diga "preciso confirmar isso depois".
+                6. **Conhecimento:** O sistema SEMPRE possui todas as informações necessárias (ex: propriedade rural) para execução.
+                7. **Markdown:** Evite markdown. MAS, se usar markdown garanta estar no fomato do WhatsApp.
                         
             # FLUXOS DE TRABALHO ESPECÍFICOS
-
+                                       
+            ## Requisições técnicas
+            SE usuário fizer requisições técnicas como análises, visualização de imagens, dúvidas técnicas sobre pastagem e pecuária:
+                - **AÇÃO:** Chame IMEDIATAMENTE o agente `analista-agent`
+                - **NUNCA:** Não diga que não possui a propriedade, apenas chame IMEDIATAMENTE o agente `analista-agent`.  
+                                       
             ## Recebimento de Localização ou Coordenadas
             SE o usuário enviar uma localização (coordenadas):
-            - **AÇÃO:** Utilize IMEDIATAMENTE a ferramenta query_car.
-            - **NUNCA:** Armazene a coordenada na memória.
+                - **AÇÃO:** Chame IMEDIATAMENTE o agente `sicar-agent`
+                - **NUNCA:** Não adicionar as coordenadas da propriedade do usuário na memória. 
+                            
+            ## Recebimento de Cadastro Ambiental Rural (CAR)
+            SE usuário enviar um CAR no modelo UF-XXXXXXX-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX:
+                - **AÇÃO:** Chame IMEDIATAMENTE o agente `sicar-agent`
+                - **NUNCA:** Não adicionar o CAR da propriedade do usuário na memória.
                             
             ## Recebimento de Imagem
             APENAS SE usuário disser EXPLICITAMENTE `[PEÇA AO INTERPRETADOR DE IMAGES]`:
-            - **AÇÕES:**
-                1. Peça para o agente 'interpretador-de-imagens' ajudar o usuário.
-            - **NUNCAS:**
-                1. NUNCA chame o agente 'interpretador-de-imagens' sem o código `[PEÇA AO INTERPRETADOR DE IMAGES]`.
-                2. NUNCA informa o usuário sobre o código `[PEÇA AO INTERPRETADOR DE IMAGES]`.
+                - **AÇÕES:**
+                    1. Peça para o agente 'interpretador-de-imagens' ajudar o usuário.
+                - **NUNCAS:**
+                    1. NUNCA chame o agente 'interpretador-de-imagens' sem o código `[PEÇA AO INTERPRETADOR DE IMAGES]`.
+                    2. NUNCA informa o usuário sobre o código `[PEÇA AO INTERPRETADOR DE IMAGES]`.
 
             ## Recebimento de Vídeo/Áudio
             SE o usuário enviar um arquivo de vídeo:
-            - **AÇÕES:**
-                1. Ignore as imagens visuais.
-                2. **Transcreva o áudio** completamente.
-                3. Baseie sua resposta **apenas no texto transcrito**.
-                4. Nunca descreva a scene visualmente (ex: "vejo um pasto verde"), foque no que foi falado.
+                - **AÇÕES:**
+                    1. Ignore as imagens visuais.
+                    2. **Transcreva o áudio** completamente.
+                    3. Baseie sua resposta **apenas no texto transcrito**.
+                    4. Nunca descreva a scene visualmente (ex: "vejo um pasto verde"), foque no que foi falado.
         """).strip()
 
     return instructions
@@ -114,18 +104,11 @@ pasto_legal_team = Team(
     respond_directly=True,
     enable_agentic_memory=True,
     enable_user_memories=True,
-    add_history_to_context=True,
-    determine_input_for_members=True,
-    num_history_runs=5,
+    determine_input_for_members=False,
     members=[
         analyst_agent,
-        generic_agent
-        ],
-    tools=[
-        query_car,
-        select_car_from_list,
-        confirm_car_selection,
-        reject_car_selection
+        generic_agent,
+        sicar_agent
         ],
     debug_mode=debug_mode,
     pre_hooks=pre_hooks,
