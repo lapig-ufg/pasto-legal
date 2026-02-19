@@ -15,7 +15,7 @@ from app.utils.dummy_logger import log, error
 
 
 @tool
-def query_car(latitude: float, longitude: float, run_context: RunContext):
+def query_feature_by_coordinate(latitude: float, longitude: float, run_context: RunContext):
     """
     Busca imóveis no Cadastro Ambiental Rural (CAR) baseando-se nas coordenadas fornecidas.
     
@@ -67,10 +67,12 @@ def query_car(latitude: float, longitude: float, run_context: RunContext):
 
         buffer = BytesIO()
         mosaic.save(buffer, format="PNG")
+
+        run_context.session_state['is_selecting_car'] = True
         
         if size_feat == 1:
             run_context.session_state['car_candidate'] = features[0]
-            run_context.session_state['is_confirming_car'] = True
+            run_context.session_state['car_selection_type'] = "SINGLE"
 
             cars = f"CAR {features[0]["properties"]["codigo"]}, Tamanho da área {round(features[0]["properties"]["area"])} ha, município de {features[0]["properties"]["municipio"]}."
 
@@ -82,14 +84,13 @@ def query_car(latitude: float, longitude: float, run_context: RunContext):
                 1. Informe ao usuário as informações das propriedades na integra:
                     {cars}
                 2. Pergunte: "É esta a propriedade correta?"
-                3. Se o usuário confirmar, chame a ferramenta 'confirm_car_selection'.
                 """).strip(),
                 images=[Image(content=buffer.getvalue())]
                 )
         
         elif size_feat > 1:
             run_context.session_state['car_all'] = features
-            run_context.session_state['is_selecting_car'] = True
+            run_context.session_state['car_selection_type'] = "MULTIPLE"
 
             # TODO: Conflito com as Áreas (Área da imagem e Área da medida)
             cars = "- ".join(f"Área {i + 1}, CAR {features[i]["properties"]["codigo"]}, Tamanho da área {round(features[i]["properties"]["area"])} ha, município de {features[i]["properties"]["municipio"]}.\n" for i in range(0, size_feat))
@@ -101,11 +102,110 @@ def query_car(latitude: float, longitude: float, run_context: RunContext):
                 # INSTRUÇÕES PARA O AGENTE:
                 1. Informe ao usuário as informações das propriedades na integra:
                     {cars}
-                2. Peça ao usuário que escolhe um propriedade entre as informadas.
-                3. Quando o usuário responder com um número, chame a ferramenta 'select_car_from_list'.
+                2. Pergunte: "Qual destas é a propriedade correta?"
                 """).strip(),
                 images=[Image(content=buffer.getvalue())]
                 )
+        
+    except requests.exceptions.Timeout:
+        return ToolResult(content=textwrap.dedent("""
+                [FALHA] O servidor do SICAR demorou muito para responder.
+                                                      
+                # INTRUÇÕES
+                - Peça ao usuário para tentar novamente mais tarde.
+            """).strip())
+    except requests.exceptions.ConnectionError:
+        return ToolResult(content=textwrap.dedent("""
+                [FALHA] Falha na conexão com o site do SICAR.
+                                                      
+                # INTRUÇÕES
+                - Peça ao usuário para tentar novamente mais tarde.
+            """).strip())
+    except requests.exceptions.HTTPError as e:
+        status = e.response.status_code
+
+        if status == 403:
+            return "Erro: Acesso negado pelo servidor."
+        
+        return f"Erro HTTP {status}: Ocorreu um problema técnico ao acessar a base do CAR."
+    except Exception as e:
+        error(e)
+        return ToolResult(content=textwrap.dedent("""
+                [FALHA] Houve um erro interno. 
+                                                      
+                # INTRUÇÕES
+                - Peça desculpas ao usuário e informe que houve um erro interno.
+                - Peça que usuário tente novamente mais tarde.
+            """).strip())
+    
+@tool
+def query_feature_by_car(car: str, run_context: RunContext):
+    """
+    Busca imóveis no Cadastro Ambiental Rural (CAR) baseando-se nas coordenadas fornecidas.
+    
+    Use esta ferramenta quando o usuário fornecer um valor de CAR válido.
+    
+    Args:
+        car (str): Valor de Cadastro Ambiental Rural (CAR) válido.
+
+    Returns:
+        ToolResult: Resultado da busca contendo imagem e instruções para o próximo passo.
+    """
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://consultapublica.car.gov.br/publico/imoveis/index'
+    }
+
+    sess = requests.Session()
+
+    base_url = "https://consultapublica.car.gov.br/publico/imoveis/index"
+
+    try:
+        sess.get(base_url, verify=False, headers=headers, timeout=5)
+
+        url_api = f'https://consultapublica.car.gov.br/publico/imoveis/search?text={car}'
+        response = sess.get(url_api, verify=False, headers=headers, timeout=5)
+
+        response.raise_for_status()
+
+        try:
+            result = response.json()
+        except json.JSONDecodeError:
+            raise ValueError("O servidor retornou uma resposta inválida (não é JSON).")
+
+        features = result.get("features", [])
+
+        if not features:
+            return ToolResult(content=textwrap.dedent("""
+                [FALHA] Nenhuma propriedade foi encontrada nesta coordenada. 
+                                                      
+                # INTRUÇÕES
+                - Informe ao usuário que o local indicado não consta na base pública do CAR. 
+            """).strip())
+
+        img = retrieve_feature_images(result)
+        mosaic = get_mosaic(img)
+
+        buffer = BytesIO()
+        mosaic.save(buffer, format="PNG")
+        
+        run_context.session_state['car_candidate'] = features[0]
+        run_context.session_state['is_selecting_car'] = True
+        run_context.session_state['car_selection_type'] = "SINGLE"
+
+        car = f"CAR {features[0]["properties"]["codigo"]}, Tamanho da área {round(features[0]["properties"]["area"])} ha, município de {features[0]["properties"]["municipio"]}."
+
+        return ToolResult(
+            content=textwrap.dedent(f"""
+                [STATUS: 1 PROPRIEDADE ENCONTRADA]
+
+                # INSTRUÇÕES PARA O AGENTE:
+                1. Informe ao usuário as informações das propriedades na integra:
+                    {car}
+                2. Pergunte: "É esta a propriedade correta?"
+            """).strip(),
+            images=[Image(content=buffer.getvalue())]
+            )
         
     except requests.exceptions.Timeout:
         return ToolResult(content=textwrap.dedent("""
@@ -162,8 +262,9 @@ def select_car_from_list(selection: int, run_context: RunContext):
         selected_feature['properties']['area'] = round(selected_feature['properties']['area'])
         run_context.session_state['car_selected'] = selected_feature
 
-        del run_context.session_state['car_all']
-        del run_context.session_state['is_selecting_car']
+        run_context.session_state['car_all'] = []
+        run_context.session_state['is_selecting_car'] = False
+        run_context.session_state['car_selection_type'] = None
 
         return ToolResult(content="Perfeito! A propriedade foi selecionada. ✅\n\n"
             "Como deseja seguir agora? Posso ajudar com:\n\n"
@@ -188,9 +289,10 @@ def confirm_car_selection(run_context: RunContext):
         return ToolResult(content="Não há propriedade pendente de confirmação. Realize uma busca primeiro.")
 
     run_context.session_state['car_selected'] = candidate
-    
-    del run_context.session_state['car_candidate']
-    del run_context.session_state['is_confirming_car']
+
+    run_context.session_state['car_candidate'] = None
+    run_context.session_state['is_selecting_car'] = False
+    run_context.session_state['car_selection_type'] = None
 
     return ToolResult(content="Perfeito! A propriedade foi confirmada. ✅\n\n"
         "Como deseja seguir agora? Posso ajudar com:\n\n"
@@ -206,11 +308,10 @@ def reject_car_selection(run_context: RunContext):
     
     Use esta ferramenta se o usuário disser que a propriedade mostrada na imagem NÃO é a correta ou quiser cancelar a seleção.
     """
-    keys_to_clear = ['car_all', 'car_candidate', 'is_confirming_car', 'is_selecting_car']
-
-    for k in keys_to_clear:
-        if k in run_context.session_state:
-            del run_context.session_state[k]
+    run_context.session_state['car_all'] = []
+    run_context.session_state['car_candidate'] = None
+    run_context.session_state['is_selecting_car'] = False
+    run_context.session_state['car_selection_type'] = None
 
     return ToolResult(
         content=textwrap.dedent("""
