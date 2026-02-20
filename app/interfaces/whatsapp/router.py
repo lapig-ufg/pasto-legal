@@ -14,6 +14,7 @@ from agno.team.team import Team
 from agno.tools.whatsapp import WhatsAppTools
 from agno.utils.log import log_error, log_info, log_warning
 from agno.utils.whatsapp import get_media_async, send_image_message_async, typing_indicator_async, upload_media_async
+import httpx
 
 from app.interfaces.whatsapp.security import validate_webhook_signature
 
@@ -212,6 +213,37 @@ def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Option
             else:
                 await _send_whatsapp_message(phone_number, response.content)  # type: ignore
 
+            # Handle Audio responses
+            if hasattr(response, 'audio') and response.audio:
+                log_info(f"Processing {len(response.audio)} audio files")
+                for audio_item in response.audio:
+                    try:
+                        audio_bytes = None
+                        if isinstance(audio_item.content, bytes):
+                             audio_bytes = audio_item.content
+                        elif hasattr(audio_item, 'filepath') and audio_item.filepath and os.path.exists(audio_item.filepath):
+                             # Ensure we have bytes
+                             with open(audio_item.filepath, "rb") as f:
+                                 audio_bytes = f.read()
+                        elif hasattr(audio_item, 'path') and audio_item.path and os.path.exists(audio_item.path):
+                             with open(audio_item.path, "rb") as f:
+                                 audio_bytes = f.read()
+                        
+                        if audio_bytes:
+                            # WhatsApp requires OGG/Opus for valid PTT (Push-to-Talk) behavior often, 
+                            # or just sends as audio file. 
+                            # We use audio/ogg mime type.
+                            media_id = await upload_media_async(media_data=audio_bytes, mime_type="audio/ogg", filename="audio.ogg")
+                            if media_id:
+                                await _send_audio_message_async(phone_number, media_id)
+                            else:
+                                log_error("Failed to upload audio media")
+                        else:
+                            log_warning("No audio content or file found in audio item")
+
+                    except Exception as e:
+                        log_error(f"Error sending audio: {e}")
+
         except Exception as e:
             log_error(f"Error processing message: {str(e)}")
 
@@ -219,6 +251,28 @@ def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Option
                 await _send_whatsapp_message(phone_number, "Desculpe, ocorreu um erro ao processar sua mensagem. Por favor, tente novamente mais tarde.")
             except Exception as send_error:
                 log_error(f"Error sending error message: {str(send_error)}")
+
+    async def _send_audio_message_async(recipient: str, media_id: str):
+        url = f"https://graph.facebook.com/v17.0/{os.getenv('WHATSAPP_PHONE_NUMBER_ID')}/messages"
+        headers = {
+            "Authorization": f"Bearer {os.getenv('WHATSAPP_ACCESS_TOKEN')}",
+            "Content-Type": "application/json",
+        }
+        data = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": recipient,
+            "type": "audio",
+            "audio": {
+                "id": media_id
+            }
+        }
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, headers=headers, json=data)
+            if response.status_code not in [200, 201]:
+                log_error(f"Failed to send audio message: {response.text}")
+            else:
+                log_info("Audio message sent successfully")
 
     async def _send_whatsapp_message(recipient: str, message: str, italics: bool = False):
         message_batches = textwrap.wrap(message, width=4000, replace_whitespace=False, drop_whitespace=False)
