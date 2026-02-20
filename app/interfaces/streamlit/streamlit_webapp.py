@@ -206,7 +206,11 @@ if user_query:
                 run_kwargs["images"] = image_paths 
             if audio_paths:
                 from agno.media import Audio
-                run_kwargs["audio"] = [Audio(filepath=p) for p in audio_paths if p.lower().endswith(('.wav', '.mp3', '.ogg', '.mp4'))]
+                run_kwargs["audio"] = []
+                for p in audio_paths:
+                    ext = p.lower().split('.')[-1]
+                    if ext in ('wav', 'mp3', 'ogg', 'mp4'):
+                        run_kwargs["audio"].append(Audio(filepath=p, format=ext))
 
             # TODO: Implementar files.
             with st.spinner("Analisando dados e gerando resposta..."):
@@ -300,6 +304,8 @@ if user_query:
             message_placeholder.markdown(full_response)
 
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             st.error(f"Erro ao processar: {e}")
             full_response = f"Desculpe, ocorreu um erro: {str(e)}"
         finally:

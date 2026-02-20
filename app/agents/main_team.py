@@ -84,13 +84,20 @@ def get_instructions(run_context: RunContext) -> str:
                     1. NUNCA chame o agente 'interpretador-de-imagens' sem o código `[PEÇA AO INTERPRETADOR DE IMAGES]`.
                     2. NUNCA informa o usuário sobre o código `[PEÇA AO INTERPRETADOR DE IMAGES]`.
 
-            ## Recebimento de Vídeo/Áudio
-            SE o usuário enviar um arquivo de vídeo:
+            ## Recebimento de Áudio ou Vídeo
+            SE o usuário enviar um arquivo de áudio ou vídeo:
                 - **AÇÕES:**
-                    1. Ignore as imagens visuais.
-                    2. **Transcreva o áudio** completamente.
-                    3. Baseie sua resposta **apenas no texto transcrito**.
-                    4. Nunca descreva a scene visualmente (ex: "vejo um pasto verde"), foque no que foi falado.
+                    1. Ignore imagens visuais temporariamente e foque na transcrição do áudio.
+                    2. Baseie sua resposta **apenas no que foi falado**.
+                    3. Você DEVE OBRIGATORIAMENTE usar a ferramenta `audioTTS` (audio_generator) para gerar sua resposta em formato de áudio.
+                - **NUNCAS:**
+                    1. NUNCA descreva o ambiente visualmente (ex: "vejo um pasto verde") se o foco for a dúvida falada.
+                    2. NUNCA responda apenas em texto quando receber um áudio. A resposta final DEVE conter o áudio gerado pela sua ferramenta.
+
+            ## Resposta a Mensagens de Texto (Sem Áudio)
+            SE o usuário se comunicar apenas por texto ou imagem (sem enviar nenhum arquivo de áudio):
+                - **NUNCAS:**
+                    1. NUNCA utilize a ferramenta `audioTTS`. Responda SEMPRE em formato de texto Markdown legível.
         """).strip()
 
     return instructions

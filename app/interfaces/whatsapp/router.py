@@ -141,7 +141,7 @@ def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Option
                     files=[File(content=await get_media_async(message_doc))] if message_doc else None,
                     images=[Image(content=await get_media_async(message_image))] if message_image else None,
                     videos=[Video(content=await get_media_async(message_video))] if message_video else None,
-                    audio=[Audio(content=await get_media_async(message_audio))] if message_audio else None,
+                    audio=[Audio(content=await get_media_async(message_audio), format="ogg")] if message_audio else None,
                 )
 
             if response.reasoning_content:
