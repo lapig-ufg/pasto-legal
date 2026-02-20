@@ -1,8 +1,7 @@
-import json
+import sqlite3
 import os
 from datetime import datetime
 
-# TODO: No futuro, migrar para uma tabela no banco de dados Postgres.
 def registrar_feedback(
     pergunta_original: str, 
     motivo_frustracao: str, 
@@ -21,19 +20,33 @@ def registrar_feedback(
     """
     try:
         # Diretório da base de dados do app (pode ser ajustado conforme a arquitetura)
-        log_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'database')
-        os.makedirs(log_dir, exist_ok=True)
-        log_file = os.path.join(log_dir, 'feedbacks.jsonl')
+        db_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'database')
+        os.makedirs(db_dir, exist_ok=True)
+        db_path = os.path.join(db_dir, 'feedbacks.db')
         
-        feedback_data = {
-            "timestamp": datetime.now().isoformat(),
-            "pergunta_original": pergunta_original,
-            "motivo_frustracao": motivo_frustracao,
-            "resposta_desejada": resposta_desejada
-        }
+        # Conecta ao SQLite (cria o arquivo se não existir)
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
         
-        with open(log_file, "a", encoding="utf-8") as f:
-            f.write(json.dumps(feedback_data, ensure_ascii=False) + "\n")
+        # Cria a tabela caso ainda não exista
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS feedbacks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT,
+                pergunta_original TEXT,
+                motivo_frustracao TEXT,
+                resposta_desejada TEXT
+            )
+        ''')
+        
+        # Insere o novo feedback
+        cursor.execute('''
+            INSERT INTO feedbacks (timestamp, pergunta_original, motivo_frustracao, resposta_desejada)
+            VALUES (?, ?, ?, ?)
+        ''', (datetime.now().isoformat(), pergunta_original, motivo_frustracao, resposta_desejada))
+        
+        conn.commit()
+        conn.close()
             
         return "Feedback registrado com sucesso no sistema. Muito obrigado por ajudar a melhorar o Pasto Legal!"
     except Exception as e:
