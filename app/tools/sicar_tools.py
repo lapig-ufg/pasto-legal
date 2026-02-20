@@ -78,8 +78,6 @@ def query_feature_by_coordinate(latitude: float, longitude: float, run_context: 
 
             return ToolResult(
                 content=textwrap.dedent("""
-                [STATUS: 1 PROPRIEDADE ENCONTRADA]
-
                 # INSTRUÇÕES PARA O AGENTE:
                 1. Informe ao usuário as informações das propriedades na integra:
                     {cars}
@@ -96,8 +94,6 @@ def query_feature_by_coordinate(latitude: float, longitude: float, run_context: 
 
             return ToolResult(
                 content=textwrap.dedent(f"""
-                [STATUS: {size_feat} PROPRIEDADES ENCONTRADAS]
-                
                 # INSTRUÇÕES PARA O AGENTE:
                 1. Informe ao usuário as informações das propriedades na integra:
                     {cars}

@@ -2,7 +2,9 @@ FROM python:3.12-slim
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-RUN apt-get update && apt-get -y install libpq-dev gcc git htop curl \
+RUN apt update && apt install ffmpeg -y
+
+RUN apt-get update && apt-get -y install libpq-dev gcc git htop curl ffmpeg\
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
