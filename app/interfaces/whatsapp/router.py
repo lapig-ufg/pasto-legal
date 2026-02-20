@@ -19,28 +19,6 @@ import httpx
 from app.interfaces.whatsapp.security import validate_webhook_signature
 
 
-if not (APP_ENV := os.environ.get('APP_ENV')):
-    raise ValueError("APP_ENV environment variables must be set.")
-
-
-def is_phone_number_authorized(number_to_check):
-    try:
-        with open(f'phone_numbers_{APP_ENV}.in', 'r', encoding='utf-8') as file:
-            
-            for l in file:
-                log_info(f"Arquivo número: {l.strip()}; Original número: {number_to_check}\n\n")
-                if l.strip() == str(number_to_check).strip():
-                    return True
-        return False
-    
-    except FileNotFoundError:
-        log_error(f"FileNotFoundError: phone_numbers_{APP_ENV}.in.")
-        return False
-    except Exception as e:
-        return False
-
-
-# TODO: O contato de desenvolvimento só deve responder números conhecidos.
 # TODO: No primeiro contato o sistema deve enviar o termo de consentimento. Interface: vídeo, voz e texto.
 def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Optional[Team] = None) -> APIRouter:
     if agent is None and team is None:
@@ -113,9 +91,6 @@ def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Option
         """Process a single WhatsApp message in the background"""
         log_info(message)
 
-        if not is_phone_number_authorized(message["from"]):
-            return
-
         try:
             message_text = ""
             message_image = None
@@ -132,6 +107,7 @@ def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Option
                 case "image":
                     try:
                         message_text = message["image"]["caption"]
+                        message_text = "[PEÇA AO INTERPRETADOR DE IMAGES] " + message_text
                     except Exception:
                         message_text = "Describe the image"
                     finally:
@@ -150,27 +126,14 @@ def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Option
                     message_text = "Process the document"
                     message_doc = message["document"]["id"]
                 case "location":
-                    # TODO: Alterar prompt para um mais adequado com armazenamento.
-                    message_text = f"""Peça ao agente Coletor que guarde as seguintes coordenadas Lat: {message['location']['latitude']} Long: {message['location']['longitude']}. Em seguida, peça ao agente Analista que gere uma visualização da minha propriedade rural."""
+                    message_text = f"""Minhas coordenadas são Lat: {message['location']['latitude']} Long: {message['location']['longitude']}."""
                 case _:
                     return
 
             phone_number = message["from"]
             log_info(f"Processing message from {phone_number}: {message_text}")
 
-            # TODO: Só temos Team, não precisa do agent.
-            # Generate and send response
-            if agent:
-                response = await agent.arun(
-                    message_text,
-                    user_id=phone_number,
-                    session_id=f"wa:{phone_number}",
-                    images=[Image(content=await get_media_async(message_image))] if message_image else None,
-                    files=[File(content=await get_media_async(message_doc))] if message_doc else None,
-                    videos=[Video(content=await get_media_async(message_video))] if message_video else None,
-                    audio=[Audio(content=await get_media_async(message_audio))] if message_audio else None,
-                )
-            elif team:
+            if team:
                 response = await team.arun(
                     message_text,
                     user_id=phone_number,
@@ -282,7 +245,6 @@ def attach_routes(router: APIRouter, agent: Optional[Agent] = None, team: Option
                 batch_message = f"[{i}/{len(message_batches)}] {batch}"
             else:
                 batch_message = f"{batch}"
-
 
             if italics:
                 # TODO: É possível que, caso o texto possua "\n\n", a menssagem gere um "__" literal.

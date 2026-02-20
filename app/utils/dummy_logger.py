@@ -13,7 +13,7 @@ APP_ENV = os.getenv("APP_ENV", "").lower()
 
 
 def _is_development() -> bool:
-    return APP_ENV == "development"
+    return APP_ENV == "development" or APP_ENV == "stagging"
 
 
 def _get_logger(name: str) -> logging.Logger:
