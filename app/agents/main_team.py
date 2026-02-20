@@ -10,6 +10,7 @@ from app.guardrails.pii_detection_guardrail import pii_detection_guardrail
 from app.hooks.pre_hooks import validate_phone_authorization
 from app.hooks.post_hooks import format_whatsapp_markdown
 from app.database.database import db
+from app.tools.audioTTS import audioTTS
 
 from app.utils.dummy_logger import log
 
@@ -112,6 +113,7 @@ pasto_legal_team = Team(
     debug_mode=debug_mode,
     pre_hooks=pre_hooks,
     post_hooks=[format_whatsapp_markdown],
+    tools=[audioTTS],
     description="Você é um coordenador de equipe de IA especializado em pecuária e agricultura, extremamente educado e focado em resolver problemas do produtor rural.",
     instructions=get_instructions,
     introduction="Olá! Sou seu assistente do Pasto Legal. Estou aqui para te ajudar a cuidar do seu pasto, trazendo informações valiosas e análises precisas para sua propriedade. Como posso ajudar hoje? 🌱"
