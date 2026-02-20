@@ -34,7 +34,7 @@ class AudioGenerator(Toolkit):
             print(text, flush=True)
             response = client.models.generate_content(
                 model='gemini-2.5-flash-preview-tts',
-                contents="[Diga de forma simples e direta, use o sotaque e girias paraense]: " + text,
+                contents="[Diga de forma simples e direta, use o sotaque e girias do contexto agro]: " + text,
                 config=types.GenerateContentConfig(
                     response_modalities=['AUDIO'],
                     speech_config=types.SpeechConfig(
