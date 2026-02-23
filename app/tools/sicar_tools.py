@@ -76,7 +76,7 @@ def query_feature_by_coordinate(latitude: float, longitude: float, run_context: 
 
             return ToolResult(
                 content=textwrap.dedent("""
-                Informe ao usuário as informações das propriedades na integra:
+                Informe ao usuário que a seguinte propriedade foi encontrada:
                     {cars}
                 Pergunte: "É esta a propriedade correta?"
                 """).strip(),
@@ -87,11 +87,11 @@ def query_feature_by_coordinate(latitude: float, longitude: float, run_context: 
             run_context.session_state['car_all'] = features
             run_context.session_state['car_selection_type'] = "MULTIPLE"
 
-            cars = "- ".join(f"Área {i + 1}, CAR {features[i]["properties"]["codigo"]}, Tamanho da área {round(features[i]["properties"]["area"])} ha, município de {features[i]["properties"]["municipio"]}.\n" for i in range(0, size_feat))
+            cars = "- ".join(f"Área {i + 1}, CAR {features[i]["properties"]["codigo"]}, Tamanho da área {round(features[i]["properties"]["area"])} ha, município de {features[i]["properties"]["municipio"]}.\n\n" for i in range(0, size_feat))
 
             return ToolResult(
                 content=textwrap.dedent(f"""
-                Informe ao usuário as informações das propriedades na integra:
+                Informe ao usuário que as seguintes propriedades foram encontradas:
                     {cars}
                 Pergunte: "Qual destas é a propriedade correta?"
                 """).strip(),
@@ -178,11 +178,11 @@ def query_feature_by_car(car: str, run_context: RunContext):
         car = f"- CAR {features[0]["properties"]["codigo"]}, Tamanho da área {round(features[0]["properties"]["area"])} ha, município de {features[0]["properties"]["municipio"]}.\n"
 
         return ToolResult(
-            content=textwrap.dedent(f"""
-                Informe ao usuário as informações da propriedade encontrada:
-                    {car}
-                Pergunte: "É esta a propriedade correta?"
-            """).strip(),
+            content=(
+                "A seguinte propriedade foi encontrada:\n\n"
+                f"{car}"
+                "É a propriedade correta?"
+            ),
             images=[Image(content=buffer.getvalue())]
             )
         

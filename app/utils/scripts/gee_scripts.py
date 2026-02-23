@@ -3,7 +3,6 @@ import ee
 import PIL
 import datetime
 import requests
-import textwrap
 import geemap as gee
 
 from io import BytesIO
@@ -11,7 +10,7 @@ from typing import List
 
 from app.utils.scripts.image_scripts import add_legend
 from app.utils.interfaces.ee_data_interfaces import PastureStatsResult
-from app.utils.exceptions.message_exception import MessageException
+from app.utils.dummy_logger import error, log
 
 
 if not (GEE_SERVICE_ACCOUNT := os.environ.get('GEE_SERVICE_ACCOUNT')):
@@ -187,7 +186,7 @@ def ee_query_pasture(coordinates: list) -> PastureStatsResult:
                     scale=30,
                     maxPixels=1e13)
 
-        biomass_data = BiomassData(amount=Value(value=stats.getInfo(), unity="toneladas"))
+        biomass_data = BiomassData(amount=Value(value=stats.getInfo()['biomass_2024'], unity="toneladas"))
 
         # ==================== Query Age ====================
         AGE_DICT = {'1':'1-10', '2':'10-20', '3':'20-30', '4':'30-40'}
@@ -252,7 +251,7 @@ def ee_query_pasture(coordinates: list) -> PastureStatsResult:
                 
                 area_value = round(float(group['sum']), 2)
                 
-                vigor_data = VigorData(vigor_level=vigor_name, amount=Value(value=area_value, unity="hectares (ha)"))
+                vigor_data = VigorData(vigor=vigor_name, amount=Value(value=area_value, unity="hectares (ha)"))
                 vigor_data_list.append(vigor_data)
 
         # ==================== Query Class ====================
@@ -293,7 +292,7 @@ def ee_query_pasture(coordinates: list) -> PastureStatsResult:
                 
                 area_value = round(float(group['sum']), 2)
                 
-                class_data = LULCClassData(land_class=class_name, amount=Value(value=area_value, unity="hectares"))
+                class_data = LULCClassData(lulc_class=class_name, amount=Value(value=area_value, unity="hectares"))
                 lulc_class_data_list.append(class_data)
 
         # ==================== Final Result ====================
@@ -307,10 +306,6 @@ def ee_query_pasture(coordinates: list) -> PastureStatsResult:
 
         return result
     except Exception as e:
-        raise MessageException(
-            title="Ocorreu um erro ao consultar a API do GEE.",
-            instructions=textwrap.dedent("""
-                1. Peça desculpas ao usuário.
-                2. Peça que o usuário tente novamente mais tarde.
-                """)
-            )
+        error(e)
+
+# [[[[-49.4348, -15.8289], [-49.4369, -15.828], [-49.4432, -15.8237], [-49.444, -15.8263], [-49.4319, -15.8341], [-49.4307, -15.8307], [-49.4348, -15.8289]]]]

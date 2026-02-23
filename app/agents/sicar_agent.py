@@ -39,6 +39,7 @@ def get_instructions(run_context: RunContext):
             instructions = "Ignore a menssagem do usuário. Informe educadamente que houve um erro e peça ao usuário que tente novamente mais tarde."
     else:
         instructions = instructions = textwrap.dedent("""
+            SEMPRE seja educado e siga as instruções dadas pelas ferramentas.
             NUNCA chame as ferramentas confirm_car_selection, select_car_from_list, reject_car_selection. Estas são ferramentas proibidas.
                                                     
             # Recebimento de Localização ou Coordenadas
