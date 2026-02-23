@@ -1,14 +1,13 @@
-import os
-import sqlite3
-
 from datetime import datetime
 
+from agno.tools import tool
 
-def record_feedback(
-    original_question: str, 
-    reason_frustration: str, 
-    desired_answer: str
-) -> str:
+from app.database.session import SessionLocal, engine
+from app.database.models import Feedback
+
+
+@tool
+def record_feedback(original_question: str, reason_frustration: str, desired_answer: str) -> str:
     """
     Registra o feedback de correção do usuário no banco de dados para melhorar a IA no futuro.
     Use esta ferramenta SEMPRE que o usuário demonstrar frustração com uma resposta,
@@ -20,33 +19,26 @@ def record_feedback(
         reason_frustration (str): O motivo pelo qual o usuário não gostou da resposta anterior.
         desired_answer (str): A resposta ideal ou a correção que o usuário forneceu para nos ensinar.
     """
-    try:
-        db_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'database')
-        os.makedirs(db_dir, exist_ok=True)
+    Feedback.metadata.create_all(bind=engine)
 
-        db_path = os.path.join(db_dir, 'feedbacks.db')
+    db = SessionLocal()
+    
+    try:
+        novo_feedback = Feedback(
+            timestamp=datetime.now().isoformat(),
+            pergunta_original=original_question,
+            motivo_frustracao=reason_frustration,
+            resposta_desejada=desired_answer
+        )
         
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
+        db.add(novo_feedback)
+        db.commit()
         
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS feedbacks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT,
-                pergunta_original TEXT,
-                motivo_frustracao TEXT,
-                resposta_desejada TEXT
-            )
-        ''')
-        
-        cursor.execute('''
-            INSERT INTO feedbacks (timestamp, pergunta_original, motivo_frustracao, resposta_desejada)
-            VALUES (?, ?, ?, ?)
-        ''', (datetime.now().isoformat(), original_question, reason_frustration, desired_answer))
-        
-        conn.commit()
-        conn.close()
-            
         return "Feedback registrado com sucesso no sistema. Muito obrigado por ajudar a melhorar o Pasto Legal!"
+    
     except Exception as e:
+        db.rollback()
         return f"Erro ao registrar feedback: {str(e)}"
+    
+    finally:
+        db.close()

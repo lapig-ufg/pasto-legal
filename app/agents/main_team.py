@@ -6,14 +6,12 @@ from agno.team.team import Team
 from agno.models.google import Gemini
 
 from app.agents import analyst_agent, generic_agent, sicar_agent
-from app.guardrails.pii_detection_guardrail import pii_detection_guardrail
-from app.hooks.pre_hooks import validate_phone_authorization
-from app.hooks.post_hooks import format_whatsapp_markdown
-from app.database.database import db
+from app.database.agno_db import db
 from app.tools.audioTTS import audioTTS
 from app.tools.feedback_tools import registrar_feedback
-
-from app.utils.dummy_logger import log
+from app.hooks.pre_hooks import validate_phone_authorization
+from app.hooks.post_hooks import format_whatsapp_markdown
+from app.guardrails.pii_detection_guardrail import pii_detection_guardrail
 
 
 if not (APP_ENV := os.environ.get('APP_ENV')):
@@ -36,8 +34,6 @@ def get_instructions(run_context: RunContext) -> str:
     session_state = run_context.session_state or {}
 
     is_selecting_car = session_state.get("is_selecting_car", False)
-
-    log(session_state)
 
     # TODO: Implementar uma linha de instruções para usuários novos aceitarem os termos e condições.
 
