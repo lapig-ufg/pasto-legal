@@ -75,7 +75,7 @@ def query_feature_by_coordinate(latitude: float, longitude: float, run_context: 
             cars = f"CAR {features[0]["properties"]["codigo"]}, Tamanho da área {round(features[0]["properties"]["area"])} ha, município de {features[0]["properties"]["municipio"]}."
 
             return ToolResult(
-                content=textwrap.dedent("""
+                content=textwrap.dedent(f"""
                 Informe ao usuário que a seguinte propriedade foi encontrada:
                     {cars}
                 Pergunte: "É esta a propriedade correta?"
@@ -87,7 +87,7 @@ def query_feature_by_coordinate(latitude: float, longitude: float, run_context: 
             run_context.session_state['car_all'] = features
             run_context.session_state['car_selection_type'] = "MULTIPLE"
 
-            cars = "- ".join(f"Área {i + 1}, CAR {features[i]["properties"]["codigo"]}, Tamanho da área {round(features[i]["properties"]["area"])} ha, município de {features[i]["properties"]["municipio"]}.\n\n" for i in range(0, size_feat))
+            cars = "- ".join(f"Opção {i + 1}, CAR {features[i]["properties"]["codigo"]}, Tamanho da área {round(features[i]["properties"]["area"])} ha, município de {features[i]["properties"]["municipio"]}.\n\n" for i in range(0, size_feat))
 
             return ToolResult(
                 content=textwrap.dedent(f"""
