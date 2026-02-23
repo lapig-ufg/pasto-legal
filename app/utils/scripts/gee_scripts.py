@@ -7,9 +7,10 @@ import textwrap
 import geemap as gee
 
 from io import BytesIO
-from pydantic import BaseModel
+from typing import List
 
 from app.utils.scripts.image_scripts import add_legend
+from app.utils.interfaces.ee_data_interfaces import PastureStatsResult
 from app.utils.exceptions.message_exception import MessageException
 
 
@@ -26,56 +27,6 @@ try:
     GEE_CONNECTED_FLAG = True
 except Exception as e:
     print(f"Authentication failed: {e}")
-
-
-CLASSES = {
-    'class':{
-        '3':'Formação Florestal',
-        '4':'Formação Savânica',
-        '5':'Mangue',
-        '6':'Floresta Alagável',
-        '9':'Silvicultura',
-        '11':'Campo Alagado e Área Pantanosa',
-        '12':'Formação Campestre',
-        '15':'Pastagem',
-        '19':'Lavoura Temporária',
-        '20':'Cana', 
-        '29':'Afloramento Rochoso',        
-        '39':'Soja',
-        '32':'Apicum',
-        '35':'Dendê', 
-        '36':'Lavoura Perene',
-        '40':'Arroz',
-        '41':'Outras Lavouras Temporárias',
-        '46':'Café',
-        '47':'Citrus',
-        '48':'Outras Lavouras Perenes',
-        '49':'Restinga Arbórea',
-        '50':'Restinga Herbácea',
-        '62':'Algodão',
-        '21':'Mosaico de Usos',
-        '23':'Praia, Duna e Areal',
-        '24':'Área Urbanizada',
-        '30':'Mineração',
-        '75':'Usina Fotovoltaica (beta)',
-        '25':'Outras Áreas não Vegetadas',
-        '26':"Corpo D'água",
-        '33':'Rio, Lago e Oceano',
-        '31':'Aquicultura',
-        '27':'Não observado'
-    },
-    'vigor':{
-        '1':'Baixo',
-        '2':'Médio',
-        '3':'Alto',
-    },
-    'age':{
-        '1':'1-10', 
-        '2':'10-20', 
-        '3':'20-30', 
-        '4':'30-40', 
-    }
-}
 
 
 # TODO: Otimizar e tornar mais legivel.
@@ -214,130 +165,145 @@ def retrieve_feature_biomass_image(coordinates: list) -> PIL.Image:
     except Exception as e:
         # TODO: Melhorar a menssagem de erro. Com motivo do erro e instrução de execução.
         raise Exception(f"Erro ao gerar imagem: {str(e)}")
-
-
-def ee_query_biomass(roi: ee.Geometry.Polygon):
-    biomass_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_biomass_v2')
-    selectedBand = biomass_asset.bandNames().size().subtract(1)
-
-    last = biomass_asset.select(selectedBand)
     
-    stats = last.reduceRegion(
-                  reducer=ee.Reducer.sum(),
-                  geometry=roi,
-                  scale=30,
-                  maxPixels=1e13)
-
-    return dict({'biomass': stats.getInfo()}) # ton->pixel 
-
-
-def ee_query_age(roi: ee.Geometry.Polygon):
-    age_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_age_v2')
-    selectedBand = age_asset.bandNames().size().subtract(1)
-
-    last = age_asset.select(selectedBand)
-    last = last.subtract(200)
-    last = last.where(last.eq(-100), 40)
-
-    #Agrupando as informações para 04 classe
-    last = (last.where(last.gte(1).And(last.lte(10)),1)
-                        .where(last.gt(10).And(last.lte(20)),2)
-                        .where(last.gt(20).And(last.lte(30)),3)
-                        .where(last.gt(30).And(last.lte(40)),4)
-                   ).rename('Anos');
-
-    #Cálculo das áreas
-    areaImg = ee.Image.pixelArea().divide(10000).addBands(last)
-
-    #Agregando dados
-    stats = areaImg.reduceRegion(
-        reducer=ee.Reducer.sum().group(groupField=1, groupName='class'),
-        geometry=roi,
-        scale=30,
-        maxPixels=1e13
-    )
-    groups = ee.List(stats.get('groups'));
-
-    #Template 
-    initialDict = ee.Dictionary()
-    
-    # Iterar para calcular porcentagens e nomear classes
-    yearDict = ee.Dictionary(groups.iterate(
-          lambda group, d: ee.Dictionary(d).set(
-              ee.Dictionary(CLASSES.get('age')).get(ee.String(ee.Number(ee.Dictionary(group).get('class')).toInt())),
-              ee.Number(ee.Dictionary(group).get('sum')).format('%.2f')
-          ), initialDict
-    ))
-    
-    return dict({'age': yearDict.getInfo()})
-
-
-def ee_query_vigor(roi: ee.Geometry.Polygon):
-    vigor_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_vigor_v3')
-    selectedBand = vigor_asset.bandNames().size().subtract(1)
-
-    last = vigor_asset.select(selectedBand)
-
-    areaImg = ee.Image.pixelArea().divide(10000).addBands(last)
-
-    stats = areaImg.reduceRegion(
-        reducer=ee.Reducer.sum().group(groupField=1, groupName='class'),
-        geometry=roi,
-        scale=30,
-        maxPixels=1e13
-    )
-    groups = ee.List(stats.get('groups'));
-
-    initialDict = ee.Dictionary();
-
-    yearDict = ee.Dictionary(groups.iterate(
-        lambda group, d: ee.Dictionary(d).set(
-            ee.Dictionary(CLASSES.get('vigor')).get(ee.String(ee.Number(ee.Dictionary(group).get('class')).toInt())),
-            ee.Number(ee.Dictionary(group).get('sum')).format('%.2f')
-        ), initialDict
-    ))
-
-    return dict({'vigor': yearDict.getInfo()})
-
-
-def ee_query_class(roi: ee.Geometry.Polygon):
-    
-    class_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_integration_v2')
-    selectedBand = class_asset.bandNames().size().subtract(1)
-    
-    last = class_asset.select(selectedBand)
-
-    areaImg = ee.Image.pixelArea().divide(10000).addBands(last)
-
-    stats = areaImg.reduceRegion(
-        reducer=ee.Reducer.sum().group(groupField=1, groupName='class'),
-        geometry=roi,
-        scale=30,
-        maxPixels=1e13
-    )
-    groups = ee.List(stats.get('groups'));
-
-    initialDict = ee.Dictionary();
-
-    yearDict = ee.Dictionary(groups.iterate(
-        lambda group, d: ee.Dictionary(d).set(
-            ee.Dictionary(CLASSES.get('class')).get(ee.String(ee.Number(ee.Dictionary(group).get('class')).toInt())),
-            ee.Number(ee.Dictionary(group).get('sum')).format('%.2f')
-        ), initialDict
-    ))
-
-    return dict({'class': yearDict.getInfo()})
-
 
 # TODO: Otimizar e tornar mais legivel. (Talvez criar uma função para cada operação)
-def ee_query_pasture(coordinates: list) -> str:
+def ee_query_pasture(coordinates: list) -> PastureStatsResult:
     """
     Extração de estatísticas de pastagem (biomassa, vigor, idade e chuva).
     """
+    from app.utils.interfaces.ee_data_interfaces import Value, BiomassData, AgeData, VigorData, LULCClassData
+
     try:
         roi = ee.Geometry.Polygon(coordinates)
 
-        result = [ee_query_biomass(roi), ee_query_age(roi), ee_query_vigor(roi), ee_query_class(roi)]
+        # ==================== Query Biomass ====================
+        biomass_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_biomass_v2')
+        last_biomass = biomass_asset.select(biomass_asset.bandNames().size().subtract(1))
+        
+        stats = last_biomass.reduceRegion(
+                    reducer=ee.Reducer.sum(),
+                    geometry=roi,
+                    scale=30,
+                    maxPixels=1e13)
+
+        biomass_data = BiomassData(amount=Value(value=stats.getInfo(), unity="toneladas"))
+
+        # ==================== Query Age ====================
+        AGE_DICT = {'1':'1-10', '2':'10-20', '3':'20-30', '4':'30-40'}
+
+        age_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_age_v2')
+        last_age = age_asset.select(age_asset.bandNames().size().subtract(1))
+
+        last_age = last_age.subtract(200)
+        last_age = last_age.where(last_age.eq(-100), 40)
+        last_age = (last_age.where(last_age.gte(1).And(last_age.lte(10)), 1)
+                            .where(last_age.gt(10).And(last_age.lte(20)), 2)
+                            .where(last_age.gt(20).And(last_age.lte(30)), 3)
+                            .where(last_age.gt(30).And(last_age.lte(40)), 4)
+                    ).rename('Anos');
+
+        areaImg = ee.Image.pixelArea().divide(10000).addBands(last_age)
+
+        stats = areaImg.reduceRegion(
+            reducer=ee.Reducer.sum().group(groupField=1, groupName='class'),
+            geometry=roi,
+            scale=30,
+            maxPixels=1e13
+        )
+
+        groups_info = stats.get('groups').getInfo()
+
+        age_data_list: List[AgeData] = []
+
+        if groups_info:
+            for group in groups_info:
+                class_id = str(int(group['class']))
+                class_name = AGE_DICT.get(class_id)
+                
+                area_value = round(float(group['sum']))
+                
+                age_data = AgeData(age=class_name, amount=Value(value=area_value, unity="hectares (ha)"))
+                age_data_list.append(age_data)
+
+        # ==================== Query Vigor ====================
+        VIGOR_DICT = {'1':'Baixo', '2':'Médio', '3':'Alto'}
+
+        vigor_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_vigor_v3')
+        last_vigor = vigor_asset.select(vigor_asset.bandNames().size().subtract(1))
+
+        areaImg = ee.Image.pixelArea().divide(10000).addBands(last_vigor)
+
+        stats = areaImg.reduceRegion(
+            reducer=ee.Reducer.sum().group(groupField=1, groupName='class'),
+            geometry=roi,
+            scale=30,
+            maxPixels=1e13
+        )
+
+        groups_info = stats.get('groups').getInfo()
+
+        vigor_data_list: List[VigorData] = []
+
+        if groups_info:
+            for group in groups_info:
+                class_id = str(int(group['class']))
+                vigor_name = VIGOR_DICT.get(class_id)
+                
+                area_value = round(float(group['sum']), 2)
+                
+                vigor_data = VigorData(vigor_level=vigor_name, amount=Value(value=area_value, unity="hectares (ha)"))
+                vigor_data_list.append(vigor_data)
+
+        # ==================== Query Class ====================
+        CLASSES = {
+            '3':'Formação Florestal', '4':'Formação Savânica', '5':'Mangue',
+            '6':'Floresta Alagável', '9':'Silvicultura', '11':'Campo Alagado e Área Pantanosa',
+            '12':'Formação Campestre', '15':'Pastagem', '19':'Lavoura Temporária',
+            '20':'Cana', '29':'Afloramento Rochoso', '39':'Soja', '46':'Café',
+            '32':'Apicum', '35':'Dendê', '36':'Lavoura Perene', '40':'Arroz',
+            '41':'Outras Lavouras Temporárias', '47':'Citrus',
+            '48':'Outras Lavouras Perenes', '49':'Restinga Arbórea', '50':'Restinga Herbácea',
+            '62':'Algodão', '21':'Mosaico de Usos', '23':'Praia, Duna e Areal',
+            '24':'Área Urbanizada', '30':'Mineração', '75':'Usina Fotovoltaica (beta)',
+            '25':'Outras Áreas não Vegetadas', '26':"Corpo D'água", '33':'Rio, Lago e Oceano',
+            '31':'Aquicultura', '27':'Não observado'
+        }
+
+        class_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_integration_v2')
+        last_class = class_asset.select(class_asset.bandNames().size().subtract(1))
+
+        areaImg = ee.Image.pixelArea().divide(10000).addBands(last_class)
+
+        stats = areaImg.reduceRegion(
+            reducer=ee.Reducer.sum().group(groupField=1, groupName='class'),
+            geometry=roi,
+            scale=30,
+            maxPixels=1e13
+        )
+
+        groups_info = stats.get('groups').getInfo()
+
+        lulc_class_data_list: List[LULCClassData] = []
+
+        if groups_info:
+            for group in groups_info:
+                class_id = str(int(group['class']))
+                class_name = CLASSES.get(class_id)
+                
+                area_value = round(float(group['sum']), 2)
+                
+                class_data = LULCClassData(land_class=class_name, amount=Value(value=area_value, unity="hectares"))
+                lulc_class_data_list.append(class_data)
+
+        # ==================== Final Result ====================
+
+        result = PastureStatsResult(
+            biomass=biomass_data,
+            age=age_data_list,
+            vigor=vigor_data_list,
+            lulc_class=lulc_class_data_list
+            )
 
         return result
     except Exception as e:

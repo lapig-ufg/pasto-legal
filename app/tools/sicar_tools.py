@@ -54,10 +54,8 @@ def query_feature_by_coordinate(latitude: float, longitude: float, run_context: 
 
         if not features:
             return ToolResult(content=textwrap.dedent("""
-                [FALHA] Nenhuma propriedade foi encontrada nesta coordenada. 
-                                                      
-                # INTRUÇÕES
-                - Informe ao usuário que o local indicado não consta na base pública do CAR. 
+                Peça desculpas ao usuário e informe que nenhuma propriedade foi encontrada nesta coordenada. 
+                Peça que tente novamente e verificar se as coordenadas estão corretas. 
             """).strip())
         
         size_feat = len(features)
@@ -78,10 +76,9 @@ def query_feature_by_coordinate(latitude: float, longitude: float, run_context: 
 
             return ToolResult(
                 content=textwrap.dedent("""
-                # INSTRUÇÕES PARA O AGENTE:
-                1. Informe ao usuário as informações das propriedades na integra:
+                Informe ao usuário as informações das propriedades na integra:
                     {cars}
-                2. Pergunte: "É esta a propriedade correta?"
+                Pergunte: "É esta a propriedade correta?"
                 """).strip(),
                 images=[Image(content=buffer.getvalue())]
                 )
@@ -94,27 +91,22 @@ def query_feature_by_coordinate(latitude: float, longitude: float, run_context: 
 
             return ToolResult(
                 content=textwrap.dedent(f"""
-                # INSTRUÇÕES PARA O AGENTE:
-                1. Informe ao usuário as informações das propriedades na integra:
+                Informe ao usuário as informações das propriedades na integra:
                     {cars}
-                2. Pergunte: "Qual destas é a propriedade correta?"
+                Pergunte: "Qual destas é a propriedade correta?"
                 """).strip(),
                 images=[Image(content=buffer.getvalue())]
                 )
         
     except requests.exceptions.Timeout:
         return ToolResult(content=textwrap.dedent("""
-                [FALHA] O servidor do SICAR demorou muito para responder.
-                                                      
-                # INTRUÇÕES
-                - Peça ao usuário para tentar novamente mais tarde.
+                Peça desculpas ao usuário e informe que o servidor do SICAR demorou muito para responder.
+                Peça ao usuário para tentar novamente mais tarde.
             """).strip())
     except requests.exceptions.ConnectionError:
         return ToolResult(content=textwrap.dedent("""
-                [FALHA] Falha na conexão com o site do SICAR.
-                                                      
-                # INTRUÇÕES
-                - Peça ao usuário para tentar novamente mais tarde.
+                Peça desculpas ao usuário e informe que houve uma falha na conexão com o site do SICAR.
+                Peça ao usuário para tentar novamente mais tarde.
             """).strip())
     except requests.exceptions.HTTPError as e:
         status = e.response.status_code
@@ -126,11 +118,8 @@ def query_feature_by_coordinate(latitude: float, longitude: float, run_context: 
     except Exception as e:
         error(e)
         return ToolResult(content=textwrap.dedent("""
-                [FALHA] Houve um erro interno. 
-                                                      
-                # INTRUÇÕES
-                - Peça desculpas ao usuário e informe que houve um erro interno.
-                - Peça que usuário tente novamente mais tarde.
+                Peça desculpas ao usuário e informe que houve um erro interno.
+                Peça que usuário tente novamente mais tarde.
             """).strip())
     
 @tool
@@ -172,10 +161,8 @@ def query_feature_by_car(car: str, run_context: RunContext):
 
         if not features:
             return ToolResult(content=textwrap.dedent("""
-                [FALHA] Nenhuma propriedade foi encontrada nesta coordenada. 
-                                                      
-                # INTRUÇÕES
-                - Informe ao usuário que o local indicado não consta na base pública do CAR. 
+                Peça desculpas ao usuário e informe que nenhuma propriedade foi encontrada nesta coordenada. 
+                Peça que tente novamente e verificar se as coordenadas estão corretas. 
             """).strip())
 
         img = retrieve_feature_images(result)
@@ -188,33 +175,26 @@ def query_feature_by_car(car: str, run_context: RunContext):
         run_context.session_state['is_selecting_car'] = True
         run_context.session_state['car_selection_type'] = "SINGLE"
 
-        car = f"CAR {features[0]["properties"]["codigo"]}, Tamanho da área {round(features[0]["properties"]["area"])} ha, município de {features[0]["properties"]["municipio"]}."
+        car = f"- CAR {features[0]["properties"]["codigo"]}, Tamanho da área {round(features[0]["properties"]["area"])} ha, município de {features[0]["properties"]["municipio"]}.\n"
 
         return ToolResult(
             content=textwrap.dedent(f"""
-                [STATUS: 1 PROPRIEDADE ENCONTRADA]
-
-                # INSTRUÇÕES PARA O AGENTE:
-                1. Informe ao usuário as informações das propriedades na integra:
+                Informe ao usuário as informações da propriedade encontrada:
                     {car}
-                2. Pergunte: "É esta a propriedade correta?"
+                Pergunte: "É esta a propriedade correta?"
             """).strip(),
             images=[Image(content=buffer.getvalue())]
             )
         
     except requests.exceptions.Timeout:
         return ToolResult(content=textwrap.dedent("""
-                [FALHA] O servidor do SICAR demorou muito para responder.
-                                                      
-                # INTRUÇÕES
-                - Peça ao usuário para tentar novamente mais tarde.
+                Peça desculpas ao usuário e informe que o servidor do SICAR demorou muito para responder.
+                Peça ao usuário para tentar novamente mais tarde.
             """).strip())
     except requests.exceptions.ConnectionError:
         return ToolResult(content=textwrap.dedent("""
-                [FALHA] Falha na conexão com o site do SICAR.
-                                                      
-                # INTRUÇÕES
-                - Peça ao usuário para tentar novamente mais tarde.
+                Peça desculpas ao usuário e informe que houve uma falha na conexão com o site do SICAR.
+                Peça ao usuário para tentar novamente mais tarde.
             """).strip())
     except requests.exceptions.HTTPError as e:
         status = e.response.status_code
@@ -226,11 +206,8 @@ def query_feature_by_car(car: str, run_context: RunContext):
     except Exception as e:
         error(e)
         return ToolResult(content=textwrap.dedent("""
-                [FALHA] Houve um erro interno. 
-                                                      
-                # INTRUÇÕES
-                - Peça desculpas ao usuário e informe que houve um erro interno.
-                - Peça que usuário tente novamente mais tarde.
+                Peça desculpas ao usuário e informe que houve um erro interno.
+                Peça que usuário tente novamente mais tarde.
             """).strip())
 
 

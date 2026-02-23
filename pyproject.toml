@@ -23,6 +23,7 @@ dependencies = [
     "pylance>=1.0.0",
     "pymongo[srv]>=4.15.5",
     "pypdf>=6.5.0",
+    "pytest>=9.0.2",
     "python-dotenv>=1.2.1",
     "qdrant-client>=1.16.2",
     "redis>=7.1.0",
