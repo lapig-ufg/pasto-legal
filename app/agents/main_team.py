@@ -9,6 +9,7 @@ from app.agents import analyst_agent, generic_agent, sicar_agent
 from app.database.agno_db import db
 from app.tools.audioTTS import audioTTS
 from app.tools.feedback_tools import record_feedback
+from app.tools.version_tools import consult_update_notes
 from app.hooks.pre_hooks import validate_phone_authorization
 from app.hooks.post_hooks import format_whatsapp_markdown
 from app.guardrails.pii_detection_guardrail import pii_detection_guardrail
@@ -128,7 +129,7 @@ pasto_legal_team = Team(
     debug_mode=debug_mode,
     pre_hooks=pre_hooks,
     post_hooks=[format_whatsapp_markdown],
-    tools=[audioTTS, record_feedback],
+    tools=[audioTTS, record_feedback, consult_update_notes],
     description="Você é um coordenador de equipe de IA especializado em pecuária e agricultura, extremamente educado e focado em resolver problemas do produtor rural.",
     instructions=get_instructions,
     introduction="Olá! Sou seu assistente do Pasto Legal. Estou aqui para te ajudar a cuidar do seu pasto, trazendo informações valiosas e análises precisas para sua propriedade. Como posso ajudar hoje? 🌱"
