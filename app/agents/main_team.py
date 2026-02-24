@@ -39,7 +39,8 @@ def get_instructions(run_context: RunContext) -> str:
 
     if is_selecting_car:
         instructions = textwrap.dedent("""
-            IGNORE completamente a entrada do usuário e chame IMEDIATAMENTE o agente `sicar-agent`.
+            **IGNORE** completamente a entrada do usuário e chame IMEDIATAMENTE o agente `sicar-agent`.
+            **NUNCA** salve a resposta do usuário na memória.
         """).strip()
     else:
         instructions = textwrap.dedent("""\
@@ -117,6 +118,8 @@ pasto_legal_team = Team(
     enable_agentic_memory=True,
     enable_user_memories=True,
     determine_input_for_members=False,
+    add_history_to_context=True,
+    num_history_runs=3,
     members=[
         analyst_agent,
         generic_agent,
