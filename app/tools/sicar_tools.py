@@ -273,6 +273,7 @@ def confirm_car_selection(run_context: RunContext):
         "📊 *Visualização de biomassa*"
         )
 
+
 @tool
 def reject_car_selection(run_context: RunContext):
     """
