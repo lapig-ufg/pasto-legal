@@ -10,7 +10,7 @@ from typing import List
 
 from app.utils.scripts.image_scripts import add_legend
 from app.utils.interfaces.ee_data_interfaces import PastureStatsResult
-from app.utils.dummy_logger import error, log
+from app.utils.dummy_logger import error
 
 
 if not (GEE_SERVICE_ACCOUNT := os.environ.get('GEE_SERVICE_ACCOUNT')):

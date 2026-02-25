@@ -11,7 +11,7 @@ from agno.media import Image
 
 from app.utils.scripts.image_scripts import get_mosaic
 from app.utils.scripts.gee_scripts import retrieve_feature_images
-from app.utils.dummy_logger import log, error
+from app.utils.dummy_logger import error
 
 
 @tool

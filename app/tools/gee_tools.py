@@ -10,7 +10,7 @@ from agno.media import Image
 from app.hooks.tool_hooks import validate_car_hook
 from app.utils.scripts.gee_scripts import retrieve_feature_images, retrieve_feature_biomass_image, ee_query_pasture
 
-from app.utils.dummy_logger import log, error
+from app.utils.dummy_logger import error
 
 
 # TODO: Escrever ferramenta para visualização da área de pastagem do usuário.
@@ -95,8 +95,6 @@ def query_pasture(run_context: RunContext) -> dict:
         coordinates = run_context.session_state['car_selected']['geometry']['coordinates'][0][0]
 
         query = ee_query_pasture(coordinates)
-
-        log(obj=query)
     
         return query
     except Exception as e:

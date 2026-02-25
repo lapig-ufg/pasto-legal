@@ -4,16 +4,12 @@ from typing import Callable, Dict, Any
 
 from agno.run import RunContext
 
-from app.utils.dummy_logger import log
-
 
 def validate_car_hook(run_context: RunContext, function_call: Callable, arguments: Dict[str, Any]) -> Any:
     """
     Hook de validação para garantir que há uma propriedade armazenada no sistema.
     """
     session_state = run_context.session_state
-
-    log(session_state)
 
     if session_state and 'car_selected' in session_state:
         return function_call(**arguments)

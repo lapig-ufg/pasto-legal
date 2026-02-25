@@ -7,7 +7,7 @@ from agno.models.google import Gemini
 
 from app.agents import analyst_agent, generic_agent, sicar_agent
 from app.database.agno_db import db
-from app.tools.audioTTS import audioTTS
+from app.tools.tts_tools import audioTTS
 from app.tools.feedback_tools import record_feedback
 from app.tools.version_tools import consult_update_notes
 from app.hooks.pre_hooks import validate_phone_authorization

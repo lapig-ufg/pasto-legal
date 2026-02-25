@@ -8,8 +8,6 @@ import requests
 
 from typing import List
 
-from app.utils.dummy_logger import log
-
 from app.agents.main_team import pasto_legal_team
 
 st.set_page_config(page_title="Pasto Legal", page_icon="🐂")

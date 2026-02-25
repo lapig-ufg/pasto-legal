@@ -10,7 +10,7 @@ from agno.team import Team
 from agno.agent import Agent
 from agno.models.google import Gemini
 
-from app.utils.dummy_logger import log, error
+from app.utils.dummy_logger import error
 
 
 if not (APP_ENV := os.environ.get('APP_ENV')):
@@ -116,8 +116,6 @@ def validate_car_selection(run_context: RunContext, function_call: Callable, arg
     Hook de validação para garantir que o CAR (Cadastro Ambiental Rural) esteja presente.
     """
     session_state = run_context.session_state
-
-    log(session_state)
 
     if session_state and hasattr(session_state, "car_selected"):
         return function_call(**arguments)
