@@ -38,10 +38,10 @@ def query_feature_by_coordinate(latitude: float, longitude: float, run_context: 
     base_url = "https://consultapublica.car.gov.br/publico/imoveis/index"
 
     try:
-        sess.get(base_url, verify=False, headers=headers, timeout=5)
+        sess.get(base_url, verify=False, headers=headers, timeout=10)
 
         url_api = f'https://consultapublica.car.gov.br/publico/imoveis/getImovel?lat={latitude}&lng={longitude}'
-        response = sess.get(url_api, verify=False, headers=headers, timeout=5)
+        response = sess.get(url_api, verify=False, headers=headers, timeout=10)
 
         response.raise_for_status()
 
@@ -145,10 +145,10 @@ def query_feature_by_car(car: str, run_context: RunContext):
     base_url = "https://consultapublica.car.gov.br/publico/imoveis/index"
 
     try:
-        sess.get(base_url, verify=False, headers=headers, timeout=5)
+        sess.get(base_url, verify=False, headers=headers, timeout=10)
 
         url_api = f'https://consultapublica.car.gov.br/publico/imoveis/search?text={car}'
-        response = sess.get(url_api, verify=False, headers=headers, timeout=5)
+        response = sess.get(url_api, verify=False, headers=headers, timeout=10)
 
         response.raise_for_status()
 
@@ -238,11 +238,13 @@ def select_car_from_list(selection: int, run_context: RunContext):
         run_context.session_state['is_selecting_car'] = False
         run_context.session_state['car_selection_type'] = None
 
-        return ToolResult(content="Perfeito! A propriedade foi selecionada. ✅\n\n"
-            "Como deseja seguir agora? Posso ajudar com:\n\n"
-            "🌱 *Análise de pastagem*\n"
-            "🗺️ *Uso e cobertura da terra*\n"
-            "📊 *Visualização de biomassa*"
+        return ToolResult(content=(
+                "Informe ao usuário que a propriedade foi selecionada corretamente. ✅\n"
+                "Pergunte ao usuário como ele deseja prosseguir. Algumas opções são:\n"
+                "- 🌱 *Análise de pastagem*\n"
+                "- 🗺️ *Uso e cobertura da terra*\n"
+                "- 📊 *Visualização de biomassa*"
+            )
         )
     except Exception as e:
         return ToolResult(content=f"[ERRO] Falha ao selecionar: {str(e)}")
@@ -266,11 +268,13 @@ def confirm_car_selection(run_context: RunContext):
     run_context.session_state['is_selecting_car'] = False
     run_context.session_state['car_selection_type'] = None
 
-    return ToolResult(content="Perfeito! A propriedade foi confirmada. ✅\n\n"
-        "Como deseja seguir agora? Posso ajudar com:\n\n"
-        "🌱 *Análise de pastagem*\n"
-        "🗺️ *Uso e cobertura da terra*\n"
-        "📊 *Visualização de biomassa*"
+    return ToolResult(content=(
+                "Informe ao usuário que a propriedade foi selecionada corretamente. ✅\n"
+                "Pergunte ao usuário como ele deseja prosseguir. Algumas opções são:\n"
+                "- 🌱 *Análise de pastagem*\n"
+                "- 🗺️ *Uso e cobertura da terra*\n"
+                "- 📊 *Visualização de biomassa*"
+            )
         )
 
 
@@ -287,10 +291,8 @@ def reject_car_selection(run_context: RunContext):
     run_context.session_state['car_selection_type'] = None
 
     return ToolResult(
-        content=textwrap.dedent("""
-        Seleção limpa.
-
-        # INSTRUÇÕES PARA O AGENTE:
-        1. Peça desculpas por não ter encontrado a propriedade correta.
-        """).strip()
+        content=(
+            "Peça desculpas por não ter encontrado a propriedade correta.\n"
+            "Peça ao usuário que verifica se as coordenadas ou car estão corretos."
+        )
     )

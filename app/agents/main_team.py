@@ -39,10 +39,13 @@ def get_instructions(run_context: RunContext) -> str:
     # TODO: Implementar uma linha de instruções para usuários novos aceitarem os termos e condições.
 
     if is_selecting_car:
-        instructions = textwrap.dedent("""
-            **IGNORE** completamente a entrada do usuário e chame IMEDIATAMENTE o agente `sicar-agent`.
-            **NUNCA** salve a resposta do usuário na memória.
-        """).strip()
+        instructions = (
+            "- O usuário está em um fluxo de atendimento focado na seleção de propriedade rural (CAR).\n"
+            "- Sua função exclusiva nesta etapa é atuar como um roteador. Você DEVE OBRIGATORIAMENTE usar a ferramenta `delegate_task_to_member` para repassar o controle da conversa ao 'sicar-agent'.\n"
+            "- NÃO responda diretamente ao usuário com mensagens de texto.\n"
+            "- NÃO use a ferramenta `update_user_memory`.\n"
+            "- NÃO memorize, salve ou interprete a resposta do usuário no seu banco de dados.\n"
+        )
     else:
         instructions = textwrap.dedent("""\
             # DIRETRIZES PRIMÁRIAS (IDENTIDADE & COMPORTAMENTO)
@@ -65,15 +68,10 @@ def get_instructions(run_context: RunContext) -> str:
                 - **AÇÃO:** Chame IMEDIATAMENTE o agente `analista-agent`
                 - **NUNCA:** Não diga que não possui a propriedade, apenas chame IMEDIATAMENTE o agente `analista-agent`.  
                                        
-            ## Recebimento de Localização ou Coordenadas
-            SE o usuário enviar uma localização (coordenadas):
-                - **AÇÃO:** Chame IMEDIATAMENTE o agente `sicar-agent`
-                - **NUNCA:** Não adicionar as coordenadas da propriedade do usuário na memória. 
-                            
-            ## Recebimento de Cadastro Ambiental Rural (CAR)
-            SE usuário enviar um CAR no modelo UF-XXXXXXX-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX:
-                - **AÇÃO:** Chame IMEDIATAMENTE o agente `sicar-agent`
-                - **NUNCA:** Não adicionar o CAR da propriedade do usuário na memória.
+            ## Recebimento de Localização/Coordenadas ou Cadastro Ambiental Rural (CAR)
+            SE o usuário enviar uma localização (coordenadas) ou CAR no modelo UF-XXXXXXX-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX:
+                - Chame IMEDIATAMENTE o agente `sicar-agent`.
+                - NÃO use a ferramenta `update_user_memory`. 
                             
             ## Recebimento de Imagem
             APENAS SE usuário disser EXPLICITAMENTE `[PEÇA AO INTERPRETADOR DE IMAGES]`:

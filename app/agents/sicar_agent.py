@@ -32,12 +32,9 @@ def get_instructions(run_context: RunContext):
                 {car}
 
                 Atue exclusivamente na etapa de confirmação desta propriedade.
-                Regras:
-                    1. Acione a ferramenta confirm_car_selection ou reject_car_selection com base na resposta.
-                    2. Ignore assuntos paralelos. Se o usuário fugir do tema, redirecione-o educadamente para a seleção do imóvel rural.
-                    3. Se o usuário estiver confuso, instrua-o a confirmar ou rejeitar CAR ou a cancelar a operação.
-                    4. Recuse educadamente toda solicitação até que o usuário selecione, recuse ou cancele a operação.
-                    5. NUNCA acione membros e agentes.
+                Acione a ferramenta confirm_car_selection ou reject_car_selection com base na resposta.
+                Ignore assuntos paralelos. Se o usuário fugir do tema, redirecione-o educadamente para a seleção do imóvel rural.
+                Se o usuário estiver confuso, instrua-o a confirmar ou rejeitar CAR ou a cancelar a operação.
             """).strip()
         elif car_selection_type == "MULTIPLE":
             features = run_context.session_state['car_all']
@@ -50,15 +47,10 @@ def get_instructions(run_context: RunContext):
                 {cars}
                                            
                 Atue exclusivamente na etapa de seleção da propriedade.
-                Regras:
-                    1. Acione a ferramenta select_car_from_list ou reject_car_selection com base na resposta.
-                    2. Ignore assuntos paralelos. Se o usuário fugir do tema, redirecione-o educadamente para a seleção do imóvel rural.
-                    3. Se o usuário estiver confuso, instrua-o a digitar o número correspondente ao CAR desejado ou a cancelar a operação.
-                    4. Recuse educadamente toda solicitação até que o usuário confirme, recuse ou cancele a operação.
-                    5. NUNCA acione membros e agentes.
+                Acione a ferramenta select_car_from_list ou reject_car_selection com base na resposta.
+                Ignore assuntos paralelos. Se o usuário fugir do tema, redirecione-o educadamente para a seleção do imóvel rural.
+                Se o usuário estiver confuso, instrua-o a digitar o número da opção desejada ou a cancelar a operação.
             """).strip()
-        else:
-            instructions = "Ignore a menssagem do usuário. Informe educadamente que houve um erro e peça ao usuário que tente novamente mais tarde."
     else:
         instructions = instructions = textwrap.dedent("""
             Seja SEMPRE educado e siga as instruções dadas pelas ferramentas.
