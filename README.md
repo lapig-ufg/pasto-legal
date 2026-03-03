@@ -12,18 +12,7 @@
 
 2. **Configure environment variables**
 
-   Create a `.env` file at the project root with the following content:
-
-   ```
-   WHATSAPP_ACCESS_TOKEN=<>
-   WHATSAPP_VERIFY_TOKEN=<>
-   WHATSAPP_WEBHOOK_URL=<>
-   WHATSAPP_PHONE_NUMBER_ID=<>
-   WHATSAPP_APP_SECRET=<>
-   APP_ENV="development"
-   GOOGLE_API_KEY=<>
-
-   ```
+   Create a `.env` file at the project root.
 
 3. **To run with FastAPI Server (WhatsApp Bot):**
 
