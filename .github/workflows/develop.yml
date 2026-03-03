@@ -55,18 +55,18 @@ jobs:
 
   deploy:
     needs: build
-    runs-on: self-hosted
+    runs-on: vm3-github-runner
      
     steps:
-      - name: Pull Image on Server
-        run: |
-          docker pull lapig/${{ needs.build.outputs.APPLICATION_NAME }}:${{ needs.build.outputs.DOCKER_PATH }}_latest
-
       - name: Restart Application
         run: |
-          /compose/resetapp.sh --title "Pasto Legal Dev" \
-          --container "app_pasto_legal_dev" \
-          --file "develop" \
-          --github "https://github.com/${{ github.repository }}" \
-          --commit "${{ needs.build.outputs.LAST_COMMIT_HASH }}" \
-          ${{ needs.build.outputs.APPLICATION_NAME }}
+          caretaker ${{ needs.build.outputs.APPLICATION_NAME }}  ${{ needs.build.outputs.DOCKER_PATH }} \
+            --title="Agente Pasto Legal"   \
+           --commit=${{ needs.build.outputs.LAST_COMMIT_HASH }} \
+           --repo=${{ github.repository }}                                              
+
+      - name: Verify deployment
+        run: |
+          echo "Deployment completed successfully"
+          echo "Application: ${{ needs.build.outputs.APPLICATION_NAME }}"
+          echo "Version: ${{ needs.build.outputs.DOCKER_PATH }}_${{ needs.build.outputs.LAST_COMMIT_HASH }}"
