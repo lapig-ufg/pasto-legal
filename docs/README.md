@@ -68,23 +68,35 @@ O **Pasto Legal Team** (`pasto_legal_team`) atua como o cérebro central e coord
 - **Ferramentas**: Utiliza `query_pasture` para métricas e `generate_property_image` para visualização.
 - **Diretriz**: Baseia-se estritamente em ferramentas. Não inventa dados ("Alucinação Zero").
 
+### 2.3 Agente SICAR (SICAR Agent)
+É o Processador de Entradas Geográficas e Registros CAR.
+- **Papel**: Responsável por conduzir interações relacionadas à localização, validação e seleção de propriedades rurais, utilizando o código CAR ou coordenadas geográficas como base.
+- **Ferramentas**: Utiliza `query_feature_by_car` e `query_feature_by_coordinate` para buscas, além de `confirm_car_selection`, `select_car_from_list` e `reject_car_selection` para gerenciar a escolha do usuário.
+- **Diretriz**: Atua estritamente na etapa em que o usuário se encontra (busca, seleção em lista ou confirmação). Ignora assuntos paralelos, redirecionando o usuário educadamente para a seleção do imóvel rural, e obedece rigidamente ao estado da sessão para acionar as ferramentas corretas.
+
 ---
 
 ## 3. Ferramentas (Tools)
 
 ### 3.1 SICAR Tools (`sicar_tools.py`)
 Ferramentas para integração com o Cadastro Ambiental Rural (CAR).
-- **`query_car`**: Localiza propriedades rurais a partir de coordenadas geográficas.
-- **`confirm_car_selection` / `select_car_from_list`**: Gerenciam a seleção da propriedade correta pelo usuário.
+- **`query_feature_by_coordinate`**: Localiza propriedades rurais a partir de coordenadas geográficas.
+- **`query_feature_by_car`**: Localiza propriedades rurais a partir do registro CAR.
+- **`confirm_car_selection` / `select_car_from_list` / `reject_car_selection`**: Gerenciam a seleção da propriedade correta pelo usuário.
 
 ### 3.2 GEE Tools (`gee_tools.py`)
 Integração com Google Earth Engine para análise de dados geoespaciais.
-- **`query_pasture`**: Retorna dados de biomassa, degradação e vigor da pastagem.
+- **`query_pasture`**: Retorna dados de biomassa, degradação e vigor da pastagem, idade da pastagem e uso e cobertura da terra.
 - **`generate_property_image`**: Cria imagens de satélite com o contorno da propriedade.
+- **`generate_property_biomass_image`**: Cria imagem de satélite com a distribuição de biomassa da propriedade.
 
 ### 3.3 Audio Tools (`audioTTS.py`)
 Interface de comunicação por voz.
 - **`audioTTS`**: Converte texto em fala com sotaque personalizado e transcreve áudios enviados pelos usuários.
+
+### 3.4 Feedback Tools
+Ferramentas para coleta de feedback do usuário.
+- **`record_feedback`**: Registra o feedback de correção do usuário no banco de dados para melhorar a IA no futuro.
 
 ---
 

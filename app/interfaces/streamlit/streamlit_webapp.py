@@ -8,9 +8,7 @@ import requests
 
 from typing import List
 
-from app.utils.dummy_logger import log
-
-from app.agents.main_agent import pasto_legal_team
+from app.agents.main_team import pasto_legal_team
 
 st.set_page_config(page_title="Pasto Legal", page_icon="🐂")
 
@@ -138,6 +136,11 @@ files_uploaded = st.file_uploader(
     accept_multiple_files=True,
 )
 
+if "audio_key" not in st.session_state:
+    st.session_state.audio_key = 0
+
+audio_value = st.audio_input("🎤 Gravar áudio", key=f"audio_recorder_{st.session_state.audio_key}")
+
 chat_input_value = st.chat_input("Pergunte sobre pastagem...")
 
 col_btn, _ = st.columns([0.4, 0.6])
@@ -147,11 +150,15 @@ with col_btn:
 loc_message = """Minhas coordenadas são Lat: -15.82994 S Long: -49.43353."""
 
 user_query = None
+using_audio_input = False
 
 if loc_btn_clicked:
     user_query = loc_message
 elif chat_input_value:
     user_query = chat_input_value
+elif audio_value:
+    user_query = "🎙️ [Áudio recebido]"
+    using_audio_input = True
 
 def process_uploaded_files(uploaded_files) -> List[str]:
     """Salva arquivos temporariamente e retorna os caminhos para o Agente."""
@@ -167,8 +174,19 @@ if user_query:
     st.session_state.messages.append({"role": "user", "content": user_query})
     with st.chat_message("user"):
         st.markdown(user_query)
+        if using_audio_input and audio_value:
+            st.audio(audio_value)
 
-    image_paths = process_uploaded_files(files_uploaded)
+    files_to_process = []
+    if files_uploaded:
+        files_to_process.extend(files_uploaded)
+    if using_audio_input and audio_value:
+        files_to_process.append(audio_value)
+
+    all_file_paths = process_uploaded_files(files_to_process)
+    
+    image_paths = [p for p in all_file_paths if p.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
+    audio_paths = [p for p in all_file_paths if p.lower().endswith(('.wav', '.mp3', '.ogg', '.mp4'))]
 
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
@@ -184,6 +202,13 @@ if user_query:
 
             if image_paths:
                 run_kwargs["images"] = image_paths 
+            if audio_paths:
+                from agno.media import Audio
+                run_kwargs["audio"] = []
+                for p in audio_paths:
+                    ext = p.lower().split('.')[-1]
+                    if ext in ('wav', 'mp3', 'ogg', 'mp4'):
+                        run_kwargs["audio"].append(Audio(filepath=p, format=ext))
 
             # TODO: Implementar files.
             with st.spinner("Analisando dados e gerando resposta..."):
@@ -277,6 +302,8 @@ if user_query:
             message_placeholder.markdown(full_response)
 
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             st.error(f"Erro ao processar: {e}")
             full_response = f"Desculpe, ocorreu um erro: {str(e)}"
         finally:
@@ -308,3 +335,7 @@ if user_query:
                             new_message["audio"].append(aud.content)
         
         st.session_state.messages.append(new_message)
+
+    if using_audio_input:
+        st.session_state.audio_key += 1
+        st.rerun()

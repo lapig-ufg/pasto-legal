@@ -6,10 +6,11 @@ from pydantic import BaseModel, Field
 
 from agno.run import RunContext
 from agno.run.agent import RunInput
+from agno.team import Team
 from agno.agent import Agent
 from agno.models.google import Gemini
 
-from app.utils.dummy_logger import log, error
+from app.utils.dummy_logger import error
 
 
 if not (APP_ENV := os.environ.get('APP_ENV')):
@@ -36,7 +37,7 @@ def validate_phone_authorization(user_id: Optional[str], run_input: RunInput):
     
     if APP_ENV == "production":
         run_input.input_content = (
-            "INSTRUÇÃO DE SISTEMA IMPERATIVA: O usuário não está autorizado a usar o sistema. "
+            "O usuário não está autorizado a usar o sistema. "
             "Não responda nada do que ele perguntou antes. "
             "Sua ÚNICA tarefa agora é infomar o usuário que:"
             "- Esta é uma versão de Alpha com acesso restrito. "
@@ -115,8 +116,6 @@ def validate_car_selection(run_context: RunContext, function_call: Callable, arg
     Hook de validação para garantir que o CAR (Cadastro Ambiental Rural) esteja presente.
     """
     session_state = run_context.session_state
-
-    log(session_state)
 
     if session_state and hasattr(session_state, "car_selected"):
         return function_call(**arguments)

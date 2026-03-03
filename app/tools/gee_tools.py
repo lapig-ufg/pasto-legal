@@ -10,7 +10,7 @@ from agno.media import Image
 from app.hooks.tool_hooks import validate_car_hook
 from app.utils.scripts.gee_scripts import retrieve_feature_images, retrieve_feature_biomass_image, ee_query_pasture
 
-from app.utils.dummy_logger import log, error
+from app.utils.dummy_logger import error
 
 
 # TODO: Escrever ferramenta para visualização da área de pastagem do usuário.
@@ -68,7 +68,7 @@ def generate_property_biomass_image(run_context: RunContext) -> ToolResult:
         img.save(buffer, format="PNG")
                 
         return ToolResult(
-            content=f"Aqui está o mapa de biomassa da propriedade. As áreas em tons de azul claro indicam maior quantidade de biomassa, tons de roxo quantidade moderada de biomassa e tons de roxo escuro pouca biomassa.",
+            content=f"Mapa de biomassa gerado. Legenda: Azul claro (Alta concentração) a Roxo escuro (Baixa concentração).",
             images=[Image(content=buffer.getvalue())]
         )
 
@@ -95,24 +95,8 @@ def query_pasture(run_context: RunContext) -> dict:
         coordinates = run_context.session_state['car_selected']['geometry']['coordinates'][0][0]
 
         query = ee_query_pasture(coordinates)
-
-        # TODO: Fazer com pydantic.
-        biomass_str = f"- {round(query[0]['biomass']['biomass_2024']  * 0.09)} tonelada(s) de matéria seca"
-        pasture_age_str = "\n".join(f"- {r} anos: {round(float(query[1]['age'][r]))} ha." for r in query[1]['age'].keys())
-        pasture_vigor_str = "\n".join(f"- {v}: {round(float(query[2]['vigor'][v]))} ha." for v in query[2]['vigor'].keys())
-        lulc_str = "\n".join(f"- {c}: {round(float(query[3]['class'][c]))} ha." for c in query[3]['class'].keys())
     
-        # TODO: Texto explicando melhor os dados para a ia não se confundir.
-        return textwrap.dedent(f"""
-            Biomassa total:
-                {biomass_str}
-            Idade da pastagem:
-                {pasture_age_str}
-            Vigor da pastagem:
-                {pasture_vigor_str}
-            Uso e cobertura da terra:
-                {lulc_str}
-            """).strip()
+        return query
     except Exception as e:
         # TODO: Retornar menssagem de erro quando todos os erros forem mapeados dentro da função ee_query_pasture;
         error(f"Não foi possível concluir a função 'query_pasture': {e}")
