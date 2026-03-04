@@ -28,7 +28,7 @@ def consult_update_notes() -> str:
             conteudo = f.read()
             
         return (
-            f"Conteúdo do patch lido com sucesso:\n\n{conteudo}\n\nBuild: XXXX001\n\n"
+            f"Conteúdo do patch lido com sucesso:\n\n{conteudo}\n\n"
             "INSTRUÇÃO DO SISTEMA: Repasse essas informações ao usuário utilizando "
             "ESTRITAMENTE a formatação de texto do WhatsApp (*negrito*, _itálico_). "
             "Não utilize formatação Markdown como #, ## ou **."
