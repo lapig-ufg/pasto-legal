@@ -37,7 +37,7 @@ def validate_phone_authorization(user_id: Optional[str], run_input: RunInput):
     
     if APP_ENV == "production":
         run_input.input_content = (
-            "INSTRUÇÃO DE SISTEMA IMPERATIVA: O usuário não está autorizado a usar o sistema. "
+            "O usuário não está autorizado a usar o sistema. "
             "Não responda nada do que ele perguntou antes. "
             "Sua ÚNICA tarefa agora é infomar o usuário que:"
             "- Esta é uma versão de Alpha com acesso restrito. "
