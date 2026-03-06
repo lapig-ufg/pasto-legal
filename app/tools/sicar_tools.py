@@ -9,10 +9,10 @@ from agno.tools import tool
 from agno.tools.function import ToolResult
 from agno.media import Image
 
+from app.utils.scripts.sicar_scripts import fetch_property_by_coordinates, fetch_property_by_car
 from app.utils.scripts.image_scripts import get_mosaic
 from app.utils.scripts.gee_scripts import retrieve_feature_images
-from app.utils.dummy_logger import error
-
+from app.utils.dummy_logger import error, log
 
 @tool
 def query_feature_by_coordinate(latitude: float, longitude: float, run_context: RunContext):
@@ -47,6 +47,7 @@ def query_feature_by_coordinate(latitude: float, longitude: float, run_context: 
 
         try:
             result = response.json()
+            log(result)
         except json.JSONDecodeError:
             raise ValueError("O servidor retornou uma resposta inválida (não é JSON).")
 
@@ -110,7 +111,6 @@ def query_feature_by_coordinate(latitude: float, longitude: float, run_context: 
             """).strip())
     except requests.exceptions.HTTPError as e:
         status = e.response.status_code
-
         if status == 403:
             return "Erro: Acesso negado pelo servidor."
         
