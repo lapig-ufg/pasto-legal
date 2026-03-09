@@ -1,17 +1,33 @@
-import geopandas as gpd
-
+import duckdb
 from pathlib import Path
-from shapely.geometry import Point, mapping
+from shapely.geometry import mapping
 
 from app.utils.interfaces.sicar_data_interfaces import PropertyRecord, AreaProperties, SICARProperties
+
+# =====================================================================
+# Configuração do Banco de Dados (Engine DuckDB)
+# =====================================================================
+conn = duckdb.connect(database=':memory:')
+
+conn.execute("INSTALL spatial; LOAD spatial;")
+conn.execute("PRAGMA memory_limit='1GB'")
+conn.execute("PRAGMA threads=1")
 
 
 def _map_row_to_property_record(row: dict) -> PropertyRecord:
     """
-    Mapeia uma linha do banco de dados (dict plano) para a estrutura aninhada do PropertyRecord.
-    Também converte a geometria do Shapely para a lista de coordenadas do GeoJSON.
+    Mapeia uma linha do banco de dados para a estrutura aninhada PropertyRecord.
+    
+    Recebe um dicionário achatado representando a linha retornada pelo DuckDB e 
+    converte a geometria extraída em uma lista de coordenadas padrão GeoJSON.
+
+    Args:
+        row (dict): Dicionário contendo os dados do imóvel, incluindo a chave 'geometry'.
+
+    Returns:
+        PropertyRecord: Entidade tipada contendo os dados do imóvel divididos 
+                        entre AreaProperties e SICARProperties.
     """
-    # Extrai as coordenadas da geometria do Shapely usando a função mapping
     geom_geojson = mapping(row['geometry'])
     coordenadas = geom_geojson.get('coordinates', [])
 
@@ -31,77 +47,88 @@ def _map_row_to_property_record(row: dict) -> PropertyRecord:
     )
 
 
-def fetch_property_by_car(car: str) -> dict:
+def fetch_property_by_car(car: str) -> list[dict]:
     """
-    Busca as informações de um imóvel rural utilizando o código do CAR.
+    Busca as informações de um imóvel rural utilizando o código único do CAR.
 
-    Esta função realiza a leitura otimizada de um dataset em formato Parquet,
-    aplicando um filtro de metadados direto na leitura (predicate pushdown).
-    Isso impede que o arquivo inteiro seja carregado na memória, mantendo 
-    o consumo de RAM estritamente baixo.
+    Lê diretamente de arquivos Parquet particionados utilizando o DuckDB.
 
     Args:
-        car (str): O código do Cadastro Ambiental Rural (CAR) a ser buscado.
+        car (str): O código string de registro do imóvel no CAR.
 
     Returns:
-        dict: Um dicionário contendo os atributos do imóvel encontrado 
-        (sem a geometria). Retorna um dicionário vazio caso o imóvel não 
-        seja encontrado ou ocorra algum erro.
+        list[PropertyRecord]: Lista contendo o registro do imóvel encontrado, 
+                              ou lista vazia se não encontrar ou ocorrer erro.
     """
+    cursor = conn.cursor()
+    
     try:
-        dataset_path = Path.cwd() / 'data' / 'car-br-dataset'
+        dataset_path = str(Path.cwd() / 'data' / 'car-br-dataset' / '**' / '*.parquet')
+
+        query = """
+            SELECT *
+            FROM read_parquet(?)
+            WHERE cod_imovel = ?
+        """
         
-        car_filter = [('cod_imovel', '==', car)]
+        df = cursor.execute(query, [dataset_path, car]).fetchdf()
         
-        gdf = gpd.read_parquet(dataset_path, filters=car_filter)
+        if df.empty:
+            return []
         
-        if gdf.empty:
-            return {}
-        
-        records_dicts = gdf.to_dict('records')
-        return [_map_row_to_property_record(row) for row in records_dicts]
+        records_dicts = df.to_dict('records')
+        result = [_map_row_to_property_record(row) for row in records_dicts] 
         
     except Exception as e:
-        print(f"❌ Erro ao buscar pelo código CAR: {e}")
-        return {}
+        result = []
+    finally:
+        cursor.close()
+        return result
 
 
-def fetch_property_by_coordinates(latitude: float, longitude: float):
+def fetch_property_by_coordinates(latitude: float, longitude: float) -> list[dict]:
     """
-    Busca as informações de um imóvel rural a partir de uma coordenada geográfica.
+    Realiza busca geoespacial de imóveis rurais a partir de um ponto (Lat/Lon).
 
-    A função utiliza o bounding box (bbox) do ponto para carregar apenas os
-    polígonos daquela região específica do dataset Parquet, otimizando o uso de RAM.
-    Em seguida, realiza a interseção espacial fina para garantir que o ponto
-    está contido no polígono do imóvel.
+    Utiliza Predicate Pushdown (checagem de min/max bounds) antes de 
+    aplicar funções geométricas pesadas para otimizar a leitura do Parquet.
 
     Args:
-        latitude (float): Latitude do ponto de busca.
-        longitude (float): Longitude do ponto de busca.
+        latitude (float): Latitude do ponto de busca (Eixo Y).
+        longitude (float): Longitude do ponto de busca (Eixo X).
 
     Returns:
-        dict: Um dicionário contendo os atributos do imóvel que intersecta 
-        a coordenada (sem a geometria). Retorna um dicionário vazio se não 
-        houver interseção ou em caso de erro.
+        list[PropertyRecord]: Lista de imóveis que interceptam a coordenada fornecida.
     """
-    point = Point(longitude, latitude)
-    point_bbox = (longitude, latitude, longitude, latitude)
-
+    cursor = conn.cursor()
+    
     try:
-        dataset_path = Path.cwd() / 'data' / 'car-br-dataset'
-
-        gdf = gpd.read_parquet(dataset_path, bbox=point_bbox)
+        dataset_path = str(Path.cwd() / 'data' / 'car-br-dataset' / '**' / '*.parquet')
         
-        if gdf.empty:
-            return {}
+        query = """
+            SELECT *
+            FROM read_parquet(?)
+            WHERE 
+                ? BETWEEN min_x AND max_x 
+                AND ? BETWEEN min_y AND max_y
+                AND ST_Intersects(geometry, ST_Point(?, ?))
+        """
+        
+        df = cursor.execute(query, [
+            dataset_path, 
+            longitude, latitude, 
+            longitude, latitude
+        ]).fetchdf()
+        
+        if df.empty:
+            return []
             
-        intersections = gdf[gdf.intersects(point)]
-        
-        if not intersections.empty:
-            records_dicts = intersections.to_dict('records')
-            return [_map_row_to_property_record(row) for row in records_dicts]
-        else:
-            return {}
+        records_dicts = df.to_dict('records')
+        result = [_map_row_to_property_record(row) for row in records_dicts] 
             
     except Exception as e:
-        print(f"❌ Erro ao ler o dataset: {e}")
+        print(f"❌ Erro ao buscar pela coordenada: {e}")
+        result = []
+    finally:
+        cursor.close()
+        return result
