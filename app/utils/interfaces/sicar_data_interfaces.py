@@ -14,7 +14,7 @@ class AreaProperties(BaseModel):
         description="Nome do município onde o imóvel está localizado.", 
         examples=["Jaraguá"]
     )
-    coordinates: List[List[List[float]]] = Field(
+    coordinates: List[List[List[List[float]]]] = Field(
         ..., 
         description="Coordenadas geográficas do polígono do imóvel (padrão GeoJSON)."
     )
@@ -48,7 +48,7 @@ class PropertyRecord(BaseModel):
     """
     Modelo Pydantic para representar os dados consolidados do Imóvel Rural.
     """
-    codigo: str = Field(
+    code: str = Field(
         ..., 
         pattern=r"^[A-Z]{2}-\d{7}-[A-Z0-9]{32}$",
         description="Código único do Cadastro Ambiental Rural (CAR).",

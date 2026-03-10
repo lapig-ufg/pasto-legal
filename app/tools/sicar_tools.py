@@ -10,21 +10,22 @@ from agno.tools.function import ToolResult
 from agno.media import Image
 
 from app.utils.scripts.sicar_scripts import (
-    featch_property_by_coordinates_remote, 
+    fetch_property_by_coordinates_remote, 
     fetch_property_by_coordinates_locally,
     fetch_property_by_car_remote,
     fetch_property_by_car_locally,
     )
 from app.utils.scripts.image_scripts import get_mosaic
 from app.utils.scripts.gee_scripts import retrieve_feature_images
-from app.utils.dummy_logger import error, log
 
 @tool
 def query_feature_by_coordinate(latitude: float, longitude: float, run_context: RunContext):
     """
     Busca imóveis no Cadastro Ambiental Rural (CAR) baseando-se nas coordenadas fornecidas.
     
-    Use esta ferramenta quando o usuário fornecer uma localização (latitude/longitude) e quiser verificar propriedades rurais.
+    Use esta ferramenta quando o usuário fornecer uma localização (latitude/longitude) 
+    e quiser verificar as propriedades rurais daquela região. Converta as coordenadas para
+    graus decimais.
     
     Args:
         latitude (float): Latitude em graus decimais.
@@ -34,35 +35,38 @@ def query_feature_by_coordinate(latitude: float, longitude: float, run_context: 
         ToolResult: Resultado da busca contendo imagem e instruções para o próximo passo.
     """
     try:
-        properties = featch_property_by_coordinates_remote(latitude=latitude, longitude=longitude)
-    except Exception as e:
+        properties = fetch_property_by_coordinates_remote(latitude=latitude, longitude=longitude)
+    except Exception:
         properties = fetch_property_by_coordinates_locally(latitude=latitude, longitude=longitude)
 
     if not properties:
-        return ToolResult(content=textwrap.dedent("""
-            Peça desculpas ao usuário e informe que nenhuma propriedade foi encontrada nesta coordenada. 
-            Peça que tente novamente e verificar se as coordenadas estão corretas. 
-        """).strip())
+        return (
+            "Peça desculpas ao usuário e informe que nenhuma propriedade foi encontrada nesta coordenada.\n"
+            "Peça que tente novamente e verificar se as coordenadas estão corretas."
+        )
     
-    size_feat = len(features)
-
-    imgs = retrieve_feature_images(result)
-    mosaic = get_mosaic(imgs)
-
-    buffer = BytesIO()
-    mosaic.save(buffer, format="PNG")
-
+    n_properties = len(properties)
     run_context.session_state['is_selecting_car'] = True
+
+    coords = [prop.area_properties.coordinates[0] for prop in properties]
+    imgs = retrieve_feature_images(coords)
     
-    if size_feat == 1:
-        run_context.session_state['car_candidate'] = properties[0]
+    if n_properties == 1:
+        prop = properties[0]
+
+        run_context.session_state['car_candidate'] = prop
         run_context.session_state['car_selection_type'] = "SINGLE"
 
+        img = imgs[0]
+
+        buffer = BytesIO()
+        img.save(buffer, format="PNG")
+
         result_text = (
-            f"CAR {properties[0].codigo}, "
-            f"Tamanho da área {round(properties[0].area_properties.total_area)} ha, "
-            f"município de {properties[0].area_properties.municipality}."
-            )
+            f"CAR {prop.code}, "
+            f"Tamanho da área {round(prop.area_properties.total_area)} ha, "
+            f"município de {prop.area_properties.municipality}."
+        )
 
         return ToolResult(
             content=(
@@ -73,16 +77,23 @@ def query_feature_by_coordinate(latitude: float, longitude: float, run_context: 
             images=[Image(content=buffer.getvalue())]
             )
     
-    elif size_feat > 1:
+    elif n_properties > 1:
         run_context.session_state['car_all'] = properties
         run_context.session_state['car_selection_type'] = "MULTIPLE"
 
-        result_text = "- ".join((
-            f"Opção {i + 1}, "
-            f"CAR {properties[0].codigo}, "
-            f"Tamanho da área {round(properties[0].area_properties.total_area)} ha, "
-            f"município de {properties[0].area_properties.municipality}.\n\n"
-            ) for i in range(0, size_feat))
+        mosaic = get_mosaic(imgs)
+
+        buffer = BytesIO()
+        mosaic.save(buffer, format="PNG")
+
+        options_text = []
+        for i, p in enumerate(properties):
+            options_text.append(
+                f"- Opção {i + 1}: CAR {p.code}, "
+                f"Tamanho da área {round(p.area_properties.total_area)} ha, "
+                f"município de {p.area_properties.municipality}."
+            )
+        result_text = "\n".join(options_text)
 
         return ToolResult(
             content=(
@@ -107,80 +118,42 @@ def query_feature_by_car(car: str, run_context: RunContext):
     Returns:
         ToolResult: Resultado da busca contendo imagem e instruções para o próximo passo.
     """
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Referer': 'https://consultapublica.car.gov.br/publico/imoveis/index'
-    }
-
-    sess = requests.Session()
-
-    base_url = "https://consultapublica.car.gov.br/publico/imoveis/index"
-
     try:
-        sess.get(base_url, verify=False, headers=headers, timeout=10)
+        prop = fetch_property_by_car_remote(car=car)
+    except Exception:
+        prop = fetch_property_by_car_locally(car=car)
 
-        url_api = f'https://consultapublica.car.gov.br/publico/imoveis/search?text={car}'
-        response = sess.get(url_api, verify=False, headers=headers, timeout=10)
-
-        response.raise_for_status()
-
-        try:
-            result = response.json()
-        except json.JSONDecodeError:
-            raise ValueError("O servidor retornou uma resposta inválida (não é JSON).")
-
-        features = result.get("features", [])
-
-        if not features:
-            return ToolResult(content=textwrap.dedent("""
-                Peça desculpas ao usuário e informe que nenhuma propriedade foi encontrada nesta coordenada. 
-                Peça que tente novamente e verificar se as coordenadas estão corretas. 
-            """).strip())
-
-        img = retrieve_feature_images(result)
-        mosaic = get_mosaic(img)
-
-        buffer = BytesIO()
-        mosaic.save(buffer, format="PNG")
-        
-        run_context.session_state['car_candidate'] = features[0]
-        run_context.session_state['is_selecting_car'] = True
-        run_context.session_state['car_selection_type'] = "SINGLE"
-
-        car = f"- CAR {features[0]["properties"]["codigo"]}, Tamanho da área {round(features[0]["properties"]["area"])} ha, município de {features[0]["properties"]["municipio"]}.\n"
-
+    if not prop:
         return ToolResult(
             content=(
-                "A seguinte propriedade foi encontrada:\n\n"
-                f"{car}"
-                "É a propriedade correta?"
-            ),
-            images=[Image(content=buffer.getvalue())]
+                "Peça desculpas ao usuário e informe que nenhuma propriedade foi encontrada nesta coordenada.\n"
+                "Peça que tente novamente e verificar se as coordenadas estão corretas."
             )
-        
-    except requests.exceptions.Timeout:
-        return ToolResult(content=textwrap.dedent("""
-                Peça desculpas ao usuário e informe que o servidor do SICAR demorou muito para responder.
-                Peça ao usuário para tentar novamente mais tarde.
-            """).strip())
-    except requests.exceptions.ConnectionError:
-        return ToolResult(content=textwrap.dedent("""
-                Peça desculpas ao usuário e informe que houve uma falha na conexão com o site do SICAR.
-                Peça ao usuário para tentar novamente mais tarde.
-            """).strip())
-    except requests.exceptions.HTTPError as e:
-        status = e.response.status_code
+        )
 
-        if status == 403:
-            return "Erro: Acesso negado pelo servidor."
-        
-        return f"Erro HTTP {status}: Ocorreu um problema técnico ao acessar a base do CAR."
-    except Exception as e:
-        error(e)
-        return ToolResult(content=textwrap.dedent("""
-                Peça desculpas ao usuário e informe que houve um erro interno.
-                Peça que usuário tente novamente mais tarde.
-            """).strip())
+    img = retrieve_feature_images(prop.area_properties.coordinates)[0]
+
+    buffer = BytesIO()
+    img.save(buffer, format="PNG")
+    
+    run_context.session_state['car_candidate'] = prop
+    run_context.session_state['is_selecting_car'] = True
+    run_context.session_state['car_selection_type'] = "SINGLE"
+
+    result_text = (
+        f"- CAR {prop.code}, "
+        f"Tamanho da área {round(prop.area_properties.total_area)} ha, "
+        f"município de {prop.area_properties.municipality}.\n"
+    )
+
+    return ToolResult(
+        content=(
+            "A seguinte propriedade foi encontrada:\n\n"
+            f"{result_text}"
+            "É a propriedade correta?"
+        ),
+        images=[Image(content=buffer.getvalue())]
+        )
 
 
 @tool
