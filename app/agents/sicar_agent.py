@@ -67,6 +67,7 @@ def get_instructions(run_context: RunContext):
         instructions = instructions = textwrap.dedent("""
             Seja SEMPRE educado e SEMPRE SIGA as instruções dadas pelas ferramentas.
             NUNCA chame as ferramentas confirm_car_selection, select_car_from_list, reject_car_selection. Estas são ferramentas proibidas.
+            Você tem suporte apenas para o CAR Federal. Explique isso ao usuário caso ele pergunte.
                                                     
             # Recebimento de Localização ou Coordenadas
             SE o usuário enviar uma localização (coordenadas):
