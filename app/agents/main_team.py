@@ -69,7 +69,7 @@ def get_instructions(run_context: RunContext) -> str:
                 - **NUNCA:** Não diga que não possui a propriedade, apenas chame IMEDIATAMENTE o agente `analista-agent`.  
                                        
             ## Recebimento de Localização/Coordenadas ou Cadastro Ambiental Rural (CAR)
-            SE o usuário enviar uma localização (coordenadas) ou CAR no modelo UF-XXXXXXX-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX:
+            SE o usuário enviar uma localização (coordenadas), código CAR (ex: UF-XXXXXXX-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX, ...) ou URL do Google Maps:
                 - Chame IMEDIATAMENTE o agente `sicar-agent`.
                 - NÃO use a ferramenta `update_user_memory`. 
                             

@@ -14,6 +14,7 @@ from app.utils.scripts.sicar_scripts import (
     fetch_property_by_coordinates_locally,
     fetch_property_by_car_remote,
     fetch_property_by_car_locally,
+    fetch_coordinates_by_url
     )
 from app.utils.scripts.image_scripts import get_mosaic
 from app.utils.scripts.gee_scripts import retrieve_feature_images
@@ -48,7 +49,7 @@ def query_feature_by_coordinate(latitude: float, longitude: float, run_context: 
     n_properties = len(properties)
     run_context.session_state['is_selecting_car'] = True
 
-    coords = [prop.area_properties.coordinates[0] for prop in properties]
+    coords = [prop['area_info']['coordinates'][0] for prop in properties]
     imgs = retrieve_feature_images(coords)
     
     if n_properties == 1:
@@ -63,9 +64,9 @@ def query_feature_by_coordinate(latitude: float, longitude: float, run_context: 
         img.save(buffer, format="PNG")
 
         result_text = (
-            f"CAR {prop.code}, "
-            f"Tamanho da área {round(prop.area_properties.total_area)} ha, "
-            f"município de {prop.area_properties.municipality}."
+            f"CAR {prop['code']}, "
+            f"Tamanho da área {round(prop['area_info']['total_area'])} ha, "
+            f"município de {prop['area_info']['municipality']}."
         )
 
         return ToolResult(
@@ -87,11 +88,11 @@ def query_feature_by_coordinate(latitude: float, longitude: float, run_context: 
         mosaic.save(buffer, format="PNG")
 
         options_text = []
-        for i, p in enumerate(properties):
+        for i, prop in enumerate(properties):
             options_text.append(
-                f"- Opção {i + 1}: CAR {p.code}, "
-                f"Tamanho da área {round(p.area_properties.total_area)} ha, "
-                f"município de {p.area_properties.municipality}."
+                f"- Opção {i + 1}: CAR {prop['code']}, "
+                f"Tamanho da área {round(prop['area_info']['total_area'])} ha, "
+                f"município de {prop['area_info']['municipality']}."
             )
         result_text = "\n".join(options_text)
 
@@ -118,10 +119,12 @@ def query_feature_by_car(car: str, run_context: RunContext):
     Returns:
         ToolResult: Resultado da busca contendo imagem e instruções para o próximo passo.
     """
+    _car = car.replace('.', '')
+
     try:
-        prop = fetch_property_by_car_remote(car=car)
+        prop = fetch_property_by_car_remote(car=_car)
     except Exception:
-        prop = fetch_property_by_car_locally(car=car)
+        prop = fetch_property_by_car_locally(car=_car)
 
     if not prop:
         return ToolResult(
@@ -131,7 +134,7 @@ def query_feature_by_car(car: str, run_context: RunContext):
             )
         )
 
-    img = retrieve_feature_images(prop.area_properties.coordinates)[0]
+    img = retrieve_feature_images(prop['area_info']['coordinates'])[0]
 
     buffer = BytesIO()
     img.save(buffer, format="PNG")
@@ -141,9 +144,9 @@ def query_feature_by_car(car: str, run_context: RunContext):
     run_context.session_state['car_selection_type'] = "SINGLE"
 
     result_text = (
-        f"- CAR {prop.code}, "
-        f"Tamanho da área {round(prop.area_properties.total_area)} ha, "
-        f"município de {prop.area_properties.municipality}.\n"
+        f"- CAR {prop['code']}, "
+        f"Tamanho da área {round(prop['area_info']['total_area'])} ha, "
+        f"município de {prop['area_info']['municipality']}.\n"
     )
 
     return ToolResult(
@@ -157,6 +160,101 @@ def query_feature_by_car(car: str, run_context: RunContext):
 
 
 @tool
+def query_feature_by_url(url: str, run_context: RunContext) -> ToolResult:
+    """
+    Busca imóveis no Cadastro Ambiental Rural (CAR) baseando-se nas coordenadas fornecidas.
+    
+    Use esta ferramenta quando o usuário fornecer uma localização (latitude/longitude) 
+    e quiser verificar as propriedades rurais daquela região. Converta as coordenadas para
+    graus decimais.
+    
+    Args:
+        latitude (float): Latitude em graus decimais.
+        longitude (float): Longitude em graus decimais.
+
+    Returns:
+        ToolResult: Resultado da busca contendo imagem e instruções para o próximo passo.
+    """
+    try:
+        latitude, longitude = fetch_coordinates_by_url(url=url)
+
+        if latitude == None or longitude == None:
+            raise RuntimeError()
+    except Exception as error:
+        return ToolResult(content=str(error))
+    
+    try:
+        properties = fetch_property_by_coordinates_remote(latitude=latitude, longitude=longitude)
+    except Exception:
+        properties = fetch_property_by_coordinates_locally(latitude=latitude, longitude=longitude)
+
+    if not properties:
+        return (
+            "Peça desculpas ao usuário e informe que nenhuma propriedade foi encontrada nesta coordenada.\n"
+            "Peça que tente novamente e verificar se as coordenadas estão corretas."
+        )
+    
+    n_properties = len(properties)
+    run_context.session_state['is_selecting_car'] = True
+
+    coords = [prop['area_info']['coordinates'][0] for prop in properties]
+    imgs = retrieve_feature_images(coords)
+    
+    if n_properties == 1:
+        prop = properties[0]
+
+        run_context.session_state['car_candidate'] = prop
+        run_context.session_state['car_selection_type'] = "SINGLE"
+
+        img = imgs[0]
+
+        buffer = BytesIO()
+        img.save(buffer, format="PNG")
+
+        result_text = (
+            f"CAR {prop['code']}, "
+            f"Tamanho da área {round(prop['area_info']['total_area'])} ha, "
+            f"município de {prop['area_info']['municipality']}."
+        )
+
+        return ToolResult(
+            content=(
+                "Informe ao usuário que a seguinte propriedade foi encontrada:\n\n"
+                f"{result_text}\n\n"
+                "Pergunte: 'É esta a propriedade correta?'"
+            ),
+            images=[Image(content=buffer.getvalue())]
+            )
+    
+    elif n_properties > 1:
+        run_context.session_state['car_all'] = properties
+        run_context.session_state['car_selection_type'] = "MULTIPLE"
+
+        mosaic = get_mosaic(imgs)
+
+        buffer = BytesIO()
+        mosaic.save(buffer, format="PNG")
+
+        options_text = []
+        for i, prop in enumerate(properties):
+            options_text.append(
+                f"- Opção {i + 1}: CAR {prop['code']}, "
+                f"Tamanho da área {round(prop['area_info']['total_area'])} ha, "
+                f"município de {prop['area_info']['municipality']}."
+            )
+        result_text = "\n".join(options_text)
+
+        return ToolResult(
+            content=(
+                "Informe ao usuário que as seguintes propriedades foram encontradas:\n\n"
+                f"{result_text}"
+                "Pergunte: 'Qual destas é a propriedade correta?'"
+            ),
+            images=[Image(content=buffer.getvalue())]
+            )
+
+
+@tool
 def select_car_from_list(selection: int, run_context: RunContext):
     """
     Seleciona uma propriedade específica quando a busca retorna múltiplos resultados.
@@ -167,18 +265,17 @@ def select_car_from_list(selection: int, run_context: RunContext):
         selection (int): O número da opção escolhida pelo usuário (ex: 1, 2, 3...).
     """
     try:
-        features = run_context.session_state.get('car_all', [])
+        car_all = run_context.session_state.get('car_all', [])
         
-        if not features:
+        if not car_all:
             return ToolResult(content="Nenhuma busca foi realizada ainda. Informe uma localização primeiro.")
 
-        if selection < 1 or selection > len(features):
-            return ToolResult(content=f"Seleção inválida. Escolha um número válido entre 1 e {len(features)}.")
+        if selection < 1 or selection > len(car_all):
+            return ToolResult(content=f"Seleção inválida. Escolha um número válido entre 1 e {len(car_all)}.")
 
-        selected_feature = features[selection - 1]
-        selected_feature['properties']['area'] = round(selected_feature['properties']['area'])
+        selected_feature = car_all[selection - 1]
+
         run_context.session_state['car_selected'] = selected_feature
-
         run_context.session_state['car_all'] = []
         run_context.session_state['is_selecting_car'] = False
         run_context.session_state['car_selection_type'] = None
@@ -208,19 +305,18 @@ def confirm_car_selection(run_context: RunContext):
         return ToolResult(content="Não há propriedade pendente de confirmação. Realize uma busca primeiro.")
 
     run_context.session_state['car_selected'] = candidate
-
     run_context.session_state['car_candidate'] = None
     run_context.session_state['is_selecting_car'] = False
     run_context.session_state['car_selection_type'] = None
 
     return ToolResult(content=(
-                "Informe ao usuário que a propriedade foi selecionada corretamente. ✅\n"
-                "Pergunte ao usuário como ele deseja prosseguir. Algumas opções são:\n"
-                "- 🌱 *Análise de pastagem*\n"
-                "- 🗺️ *Uso e cobertura da terra*\n"
-                "- 📊 *Visualização de biomassa*"
-            )
+            "Informe ao usuário que a propriedade foi selecionada corretamente. ✅\n\n"
+            "Pergunte ao usuário como ele deseja prosseguir. Algumas opções são:\n"
+            "- 🌱 *Análise de pastagem*\n"
+            "- 🗺️ *Uso e cobertura da terra*\n"
+            "- 📊 *Visualização de biomassa*"
         )
+    )
 
 
 @tool

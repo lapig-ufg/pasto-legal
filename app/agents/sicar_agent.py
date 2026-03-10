@@ -5,6 +5,7 @@ from agno.agent import Agent
 from agno.models.google import Gemini
 
 from app.tools.sicar_tools import (
+    query_feature_by_url,
     query_feature_by_car,
     query_feature_by_coordinate,
     select_car_from_list,
@@ -22,14 +23,18 @@ def get_instructions(run_context: RunContext):
         car_selection_type = session_state.get("car_selection_type")
 
         if car_selection_type == "SINGLE":
-            feature = run_context.session_state['car_candidate']
+            candidate = run_context.session_state['car_candidate']
 
-            car = f"*CAR* {feature["properties"]["codigo"]}\n*Tamanho da área*: {round(feature["properties"]["area"])} ha\n*Município*: {feature["properties"]["municipio"]}"
+            candidate_text = (
+                f"*CAR* {candidate["code"]}\n"
+                f"*Tamanho da área*: {round(candidate["area_info"]["total_area"])} ha\n"
+                f"*Município*: {candidate["area_info"]["municipality"]}"
+            )
 
             instructions = textwrap.dedent(f"""
                 Foi pedido ao usuário para confirmar ou rejeitar a seguinte propriedade:
                                            
-                {car}
+                {candidate_text}
 
                 Atue exclusivamente na etapa de confirmação desta propriedade.
                 Acione a ferramenta confirm_car_selection ou reject_car_selection com base na resposta.
@@ -37,14 +42,21 @@ def get_instructions(run_context: RunContext):
                 Se o usuário estiver confuso, instrua-o a confirmar ou rejeitar CAR ou a cancelar a operação.
             """).strip()
         elif car_selection_type == "MULTIPLE":
-            features = run_context.session_state['car_all']
+            car_all = run_context.session_state['car_all']
 
-            cars = "\n\n".join(f"*Opção {i + 1}*:\n*CAR*: {features[i]["properties"]["codigo"]}\n*Tamanho da área*: {round(features[i]["properties"]["area"])} ha\n*Município*: {features[i]["properties"]["municipio"]}" for i in range(0, len(features)))
+            options_text = []
+            for i, prop in enumerate(car_all):
+                options_text.append(
+                    f"- Opção {i + 1}: CAR {prop['code']}, "
+                    f"Tamanho da área {round(prop['area_info']['total_area'])} ha, "
+                    f"município de {prop['area_info']['municipality']}."
+                )
+            result_text = "\n".join(options_text)
 
             instructions = textwrap.dedent(f"""
                 Foi pedido ao usuário para escolher entre as seguintes propriedades:
                                            
-                {cars}
+                {result_text}
                                            
                 Atue exclusivamente na etapa de seleção da propriedade.
                 Acione a ferramenta select_car_from_list ou reject_car_selection com base na resposta.
@@ -53,29 +65,38 @@ def get_instructions(run_context: RunContext):
             """).strip()
     else:
         instructions = instructions = textwrap.dedent("""
-            Seja SEMPRE educado e siga as instruções dadas pelas ferramentas.
+            Seja SEMPRE educado e SEMPRE SIGA as instruções dadas pelas ferramentas.
             NUNCA chame as ferramentas confirm_car_selection, select_car_from_list, reject_car_selection. Estas são ferramentas proibidas.
                                                     
             # Recebimento de Localização ou Coordenadas
             SE o usuário enviar uma localização (coordenadas):
             - **AÇÕES:**
-                1. Chame a ferramenta 'query_feature_by_coordinates' ajudar o usuário.
-                2. Depois, IMEDIATAMENTE SIGA as intruções da ferramenta.
+                1. Se o usuário fornecer coordenadas no formato de Graus, Minutos e Segundos (GMS), converta-as para Graus Decimais (DD) antes de prosseguir. 
+                1. Chame a ferramenta 'query_feature_by_coordinates'.
+                2. Depois, SIGA as intruções da ferramenta.
                             
             # Recebimento de Cadastro Ambiental Rural (CAR)
-            SE usuário enviar um CAR no modelo UF-XXXXXXX-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX:
+            SE o usuário enviar um CAR no modelo UF-XXXXXXX-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX ou UF-XXXXXXX-CCCC.CCCC.CCCC.CCCC.CCCC.CCCC.CCCC.CCCC:
             - **AÇÕES:**
-                1. Chame a ferramenta 'query_feature_by_car' ajudar o usuário.
-                2. Depois, IMEDIATAMENTE SIGA as intruções da ferramenta.
+                1. Chame a ferramenta 'query_feature_by_car'.
+                2. Depois, SIGA as intruções da ferramenta.
+                                                      
+            # Recebimento de URL do Google Maps
+            SE o usuário enviar uma URL do Google Maps
+            - **Ações:**
+                1. Chame a ferramenta 'query_feature_by_url'
+                2. Depois, SIGA as intruções da ferramenta.
         """).strip()
     
     return instructions
+
 
 sicar_agent = Agent(
     name="sicar-agent",
     role="Processador de Entradas Geográficas e Registros CAR",
     description="Analista técnico responsável por localizar, validar e confirmar propriedades rurais via código CAR ou coordenadas geográficas.",
     tools=[
+        query_feature_by_url,
         query_feature_by_car,
         query_feature_by_coordinate,
         confirm_car_selection,

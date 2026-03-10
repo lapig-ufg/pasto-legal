@@ -1,13 +1,12 @@
+import re
 import json
 import duckdb
 import requests
 
 from pathlib import Path
 from typing import List
-from shapely.geometry import mapping
 
-from app.utils.interfaces.sicar_data_interfaces import PropertyRecord, AreaProperties, SICARProperties
-from app.utils.dummy_logger import log
+from app.utils.interfaces.sicar_data_interfaces import PropertyRecord, AreaInfo, SicarInfo
 
 # =====================================================================
 # Configuração do Banco de Dados (Engine DuckDB)
@@ -38,13 +37,13 @@ def _map_feature_to_property_record(feature: json) -> PropertyRecord:
     properties = feature.get('properties', {})
 
     return PropertyRecord(
-        codigo=properties.get('codigo', ''),
-        area_properties=AreaProperties(
+        code=properties.get('codigo', ''),
+        area_info=AreaInfo(
             total_area=properties.get('area', 0.0),
             municipality=properties.get('municipio', ''),
             coordinates=feature.get('geometry', {}).get('coordinates', None)
         ),
-        sicar_properties=SICARProperties(
+        sicar_info=SicarInfo(
             tipo=properties.get('tipo', ''),
             status=properties.get('status', ''),
             availability_date=properties.get('dataDisponibilizacao', ''),
@@ -70,13 +69,13 @@ def _map_row_to_property_record(row: dict) -> PropertyRecord:
     geom_geojson = json.loads(row['geometry'])
 
     return PropertyRecord(
-        codigo=row.get('cod_imovel', ''),
-        area_properties=AreaProperties(
+        code=row.get('cod_imovel', ''),
+        area_info=AreaInfo(
             total_area=row.get('num_area', 0.0),
             municipality=row.get('municipio', ''),
             coordinates=[geom_geojson.get('coordinates', [])]
         ),
-        sicar_properties=SICARProperties(
+        sicar_info=SicarInfo(
             tipo=row.get('ind_tipo', ''),
             status=row.get('ind_status', ''),
             availability_date=row.get('dat_atuali', ''),
@@ -85,7 +84,7 @@ def _map_row_to_property_record(row: dict) -> PropertyRecord:
     )
 
 
-def fetch_property_by_car_remote(car: str) -> PropertyRecord:
+def fetch_property_by_car_remote(car: str) -> dict[str, any]:
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Referer': 'https://consultapublica.car.gov.br/publico/imoveis/index'
@@ -107,7 +106,10 @@ def fetch_property_by_car_remote(car: str) -> PropertyRecord:
             
             features = geo_json.get('features', [])
 
-            return _map_feature_to_property_record(features).model_dump(mode='json')
+            if not features:
+                return None
+
+            return _map_feature_to_property_record(features[0]).model_dump(mode='json')
 
     except requests.exceptions.HTTPError as e:
         raise RuntimeError(f"O servidor do CAR retornou um erro HTTP. Detalhes: {str(e)}")
@@ -119,7 +121,7 @@ def fetch_property_by_car_remote(car: str) -> PropertyRecord:
         raise RuntimeError(f"Erro inesperado ao buscar a propriedade remotamente: {str(e)}")
 
 
-def fetch_property_by_car_locally(car: str) -> PropertyRecord:
+def fetch_property_by_car_locally(car: str) -> dict[str, any]:
     """
     Busca as informações de um imóvel rural utilizando o código único do CAR.
 
@@ -150,16 +152,16 @@ def fetch_property_by_car_locally(car: str) -> PropertyRecord:
             return None
         
         records_dicts = df.to_dict('records')
-        result = [_map_row_to_property_record(row) for row in records_dicts][0]
+        result = _map_row_to_property_record(records_dicts[0]).model_dump(mode='json')
         
-    except Exception as e:
+    except Exception:
         result = None
     finally:
         cursor.close()
         return result
 
 
-def fetch_property_by_coordinates_remote(latitude: float, longitude: float) -> List[PropertyRecord]:
+def fetch_property_by_coordinates_remote(latitude: float, longitude: float) -> List[dict[str, any]]:
     """
     Busca os dados de uma propriedade rural na base pública remota do CAR usando coordenadas.
     
@@ -191,8 +193,11 @@ def fetch_property_by_coordinates_remote(latitude: float, longitude: float) -> L
             geo_json = response.json()
             
             features = geo_json.get('features', [])
+
+            if not features:
+                return []
             
-            return [_map_feature_to_property_record(feature) for feature in features]
+            return [_map_feature_to_property_record(feature).model_dump(mode='json') for feature in features]
     except requests.exceptions.HTTPError as e:
         raise RuntimeError(f"O servidor do CAR retornou um erro HTTP. Detalhes: {str(e)}")
     except requests.exceptions.RequestException as e:
@@ -243,11 +248,47 @@ def fetch_property_by_coordinates_locally(latitude: float, longitude: float) -> 
             return []
             
         records_dicts = df.to_dict('records')
-        result = [_map_row_to_property_record(row) for row in records_dicts] 
+        result = [_map_row_to_property_record(row).model_dump(mode='json') for row in records_dicts] 
             
-    except Exception as e:
-        print(f"❌ Erro ao buscar pela coordenada: {e}")
+    except Exception:
         result = []
     finally:
         cursor.close()
         return result
+    
+
+def fetch_coordinates_by_url(url: str) -> tuple[float | None, float | None]:
+    """
+    Acessa uma URL, segue os redirecionamentos e extrai as coordenadas geográficas 
+    (latitude e longitude) da URL final.
+
+    Args:
+        url (str): A URL de origem a ser acessada e inspecionada.
+
+    Returns:
+        tuple[float | None, float | None]: Uma tupla contendo (latitude, longitude) 
+        como números de ponto flutuante. Retorna (None, None) se as coordenadas não 
+        forem encontradas na URL final ou se ocorrer um erro na requisição.
+    """
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+    }
+
+    try:
+        response = requests.get(url, headers=headers, allow_redirects=True, timeout=15)
+        response.raise_for_status()
+
+        url_final = response.url
+        print(url_final, flush=True)
+
+        match_url = re.search(r'(-?\d+\.\d+)(?:,|%2C)\s*\+?(-?\d+\.\d+)', url_final)
+        if match_url:
+            return float(match_url.group(1)), float(match_url.group(2))
+
+        raise RuntimeError(f"Nenhuma coordenada foi encontrada para essa URL.")
+
+    except requests.RequestException as e:
+        raise RuntimeError((
+            f"Erro ao acessar a URL: {e}"
+            "Peça desculpa e peça que o usuário tente novamente mais tarde."
+        ))

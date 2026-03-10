@@ -2,7 +2,7 @@ from typing import List
 from pydantic import BaseModel, Field
 
 
-class AreaProperties(BaseModel):
+class AreaInfo(BaseModel):
     """Propriedades espaciais e territoriais do imóvel."""
     total_area: float = Field(
         ..., 
@@ -20,7 +20,7 @@ class AreaProperties(BaseModel):
     )
 
 
-class SICARProperties(BaseModel):
+class SicarInfo(BaseModel):
     """Dados administrativos e de status do imóvel no SICAR."""
     tipo: str = Field(
         ..., 
@@ -54,11 +54,11 @@ class PropertyRecord(BaseModel):
         description="Código único do Cadastro Ambiental Rural (CAR).",
         examples=["GO-5211800-987B29E7E47A4454BAEF582557AB89F3"]
     )
-    area_properties: AreaProperties = Field(
+    area_info: AreaInfo = Field(
         ..., 
         description="Objeto contendo as informações de área, município e coordenadas."
     )
-    sicar_properties: SICARProperties = Field(
+    sicar_info: SicarInfo = Field(
         ..., 
         description="Objeto contendo os metadados administrativos do sistema SICAR."
     )
