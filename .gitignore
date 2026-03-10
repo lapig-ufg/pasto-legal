@@ -216,12 +216,10 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Folders
-tmp
+tmp/
+data/
 
+# Data
 global-pasture-watch-f46d09d13b4e.json
-
 users_db.json
-
 phone_numbers.in
-
-gde-luizcf14-c33182bc0aff.json

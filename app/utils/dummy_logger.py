@@ -1,7 +1,7 @@
 # TODO: É fundamental pensar na lógica de um logger real junto ao Agente e AgnOS.
-import logging
 import os
 import sys
+import logging
 
 # Códigos ANSI para cores
 BLUE = "\033[94m"

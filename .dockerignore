@@ -89,5 +89,5 @@ venv/
 .vscode/
 
 # Folders
-./tmp
-./experimental
+tmp/
+data/

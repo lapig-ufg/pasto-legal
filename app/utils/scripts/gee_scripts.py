@@ -28,153 +28,206 @@ except Exception as e:
     print(f"Authentication failed: {e}")
 
 
-# TODO: Otimizar e tornar mais legivel.
-def retrieve_feature_images(geo_json: dict) -> list[PIL.Image]:
+def retrieve_feature_images(coords: List[List[List[List[float]]]]) -> List[PIL.Image]:
     """
-    Gera uma imagem de satélite da propriedade rural baseada nos dados do CAR do usuário
-    armazenados na sessão. Esta função não requer parâmetros, pois recupera 
-    automaticamente a geometria da fazenda do estado atual da conversa.
+    Gera imagens de satélite individuais para cada polígono da propriedade rural.
+    
+    Args:
+        coords: Lista de coordenadas representando o MultiPolygon da fazenda.
+        
+    Returns:
+        List[PIL.Image]: Uma lista de imagens (PIL.Image) correspondentes a cada polígono.
     """
-    # TODO: Será que da pra mudar para ee.Geometry.MultiPolygon? Se for possivel remover geemap da lista de bibliotecas do uv.
-    roi = gee.geojson_to_ee(geo_json)
-    rows = roi.aggregate_array('codigo').getInfo()
-
-    sDate = ee.Date.fromYMD(datetime.date.today().year - 1, datetime.date.today().month, 1)
-    eDate= sDate.advance(1, 'year')
-
-    sentinel = (
-        ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
-        .filterBounds(roi)
-        .filterDate(sDate, eDate)
-        .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',10))
-        .median()
-    )
-
-    sentinel = sentinel.visualize(**{"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000})
-
     try:
-        result = []
+        # 1. Cria a geometria total para otimizar a busca da imagem base
+        roi = ee.Geometry.MultiPolygon(coords)
 
-        for idx, row in enumerate(rows, 1):
+        today = datetime.date.today()
+        s_date = ee.Date.fromYMD(today.year - 1, today.month, 1)
+        e_date = s_date.advance(1, 'year')
+
+        # 2. Configura e processa a imagem base (feita apenas 1x para toda a fazenda)
+        base_collection = (
+            ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+            .filterBounds(roi)
+            .filterDate(s_date, e_date)
+            .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',10))
+            .median()
+        )
+        base_collection = base_collection.visualize(**{"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000})
+
+        geometries = roi.geometries().getInfo()
+
+        result_imgs = []
+
+        # 3. Itera diretamente sobre a lista Python (evita o .getInfo() que custa tempo e rede)
+        for geometry in geometries:
+            # Instancia apenas o polígono atual
+            feature = ee.Feature(geometry)
+
+            # 4. Desenha o contorno
             empty = ee.Image().byte()
-
-            feat = roi.filter(ee.Filter.eq('codigo', row))
-
-            outline = empty.paint(ee.FeatureCollection([ee.Feature(feat.geometry())]), 1, 3)
+            outline = empty.paint(ee.FeatureCollection([feature]), 1, 3)
             outline = outline.updateMask(outline)
             outline_rgb = outline.visualize(**{"palette":['FF0000']})
 
-            # Unificando os dados
-            final_image = sentinel.blend(outline_rgb).clip(feat.geometry().buffer(400).bounds())
+            # 5. Mescla as imagens e recorta com a margem de 256m
+            final_image = base_collection.blend(outline_rgb).clip(feature.buffer(256).bounds())
 
-            # Gerando a url
+            # 6. Gera URL e faz download
             url = final_image.getThumbURL({"dimensions": 256,"format": "png"})
 
-            # 5. Download
-            resposta = requests.get(url, timeout=60)
-            resposta.raise_for_status()
-        
-            # 6. Converter para PIL.Image
-            img_pil = PIL.Image.open(BytesIO(resposta.content))
+            response = requests.get(url, timeout=60)
+            response.raise_for_status() # Levanta requests.exceptions.HTTPError em caso de falha HTTP
 
-            result.append(img_pil)
+            # 7. Converte e armazena
+            img_pil = PIL.Image.open(BytesIO(response.content))
+            result_imgs.append(img_pil)
 
-        return result
-    # TODO: Mapear possíveis erros.
+        return result_imgs
+    
+    except ee.EEException as e:
+        raise RuntimeError(
+            f"Falha ao processar as coordenadas no satélite. "
+            f"Verifique se as coordenadas da área estão corretas. Detalhes: {str(e)}"
+        )
+    except requests.exceptions.HTTPError as e:
+        raise RuntimeError(
+            f"O servidor de imagens do satélite retornou um erro. "
+            f"Tente solicitar a imagem novamente em alguns instantes. Detalhes: {str(e)}"
+        )
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(
+            f"Não foi possível baixar a imagem por falha de conexão. "
+            f"Pode haver instabilidade na rede. Detalhes: {str(e)}"
+        )
+    except PIL.UnidentifiedImageError as e:
+        raise RuntimeError(
+            f"O arquivo recebido do satélite está corrompido ou num formato inesperado. Detalhes: {str(e)}"
+        )
     except Exception as e:
-        # TODO: Melhorar a menssagem de erro. Com motivo do erro e instrução de execução.
-        raise Exception(f"Erro ao gerar imagem: {str(e)}")
+        raise RuntimeError(
+            f"Ocorreu um erro inesperado ao gerar a imagem da fazenda. Detalhes: {str(e)}"
+        )
 
 
 # TODO: Otimizar e tornar mais legivel.
-def retrieve_feature_biomass_image(coordinates: list) -> PIL.Image:
+def retrieve_feature_biomass_image(coords: List[List[List[List[float]]]]) -> PIL.Image:
     """
-    Gera uma imagem de satélite da propriedade rural baseada nos dados do CAR do usuário
-    armazenados na sessão. Esta função não requer parâmetros, pois recupera 
-    automaticamente a geometria da fazenda do estado atual da conversa.
+    Gera uma imagem de satélite com a camada de biomassa de pastagem sobreposta,
+    baseada na geometria da propriedade rural fornecida.
+    
+    Args:
+        coords: Lista de coordenadas representando o MultiPolygon da fazenda.
+        
+    Returns:
+        PIL.Image: Imagem final mesclada contendo satélite, biomassa, contorno e legenda.
     """
-    roi = ee.Geometry.Polygon(coordinates)
-
-    sDate = ee.Date.fromYMD(datetime.date.today().year - 1, datetime.date.today().month, 1)
-    eDate= sDate.advance(1, 'year')
-
-    sentinel = (
-        ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
-        .filterBounds(roi)
-        .filterDate(sDate, eDate)
-        .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',10))
-        .median()
-    )
-
-    sentinel = sentinel.visualize(**{"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}) 
-
-    #Coletando informações de biomassa
-    biomass = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_biomass_v2')
-    biomass = biomass.select(biomass.bandNames().size().subtract(1)).clip(roi)  
-    
-    #Paleta de cores na biomassa
-    paletteBiomassa = ['#000033','#9400D3','#FF00FF','#00FFFF','#FFFFFF']
-    
     try:
-        empty = ee.Image().byte()
+        # 1. Geometria e Datas
+        roi = ee.Geometry.MultiPolygon(coords)
 
-        #Agregando informação de biomassa
-        statsbiomass = biomass.reduceRegion(
+        today = datetime.date.today()
+        s_date = ee.Date.fromYMD(today.year - 1, today.month, 1)
+        e_date = s_date.advance(1, 'year')
+
+        # 2. Imagem Base (Sentinel-2)
+        base_collection = (
+            ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+            .filterBounds(roi)
+            .filterDate(s_date, e_date)
+            .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',10))
+            .median()
+        )
+        base_collection = base_collection.visualize(**{"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}) 
+
+        # 3. Camada de Biomassa (MapBiomas)
+        biomass_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_biomass_v2')
+        last_band_idx = biomass_asset.bandNames().size().subtract(1)
+        biomass = biomass_asset.select([last_band_idx]).clip(roi)
+        
+        palette_biomass = ['#000033','#9400D3','#FF00FF','#00FFFF','#FFFFFF']
+    
+        # 4. Cálculo de Estatísticas (Otimização do getInfo)
+        stats_biomass_ee = biomass.reduceRegion(
                 reducer=ee.Reducer.minMax(),
                 geometry=roi,
                 scale=30,
                 maxPixels=1e13
         )
 
-        #Valor maximo e minimo da biomassa
-        minBio = statsbiomass.get(ee.String(biomass.bandNames().get(0)).cat('_min'))
-        maxBio = statsbiomass.get(ee.String(biomass.bandNames().get(0)).cat('_max'))               
+        stats_dict = stats_biomass_ee.getInfo()
+
+        # Busca as chaves dinamicamente (para não depender do nome exato da banda)
+        min_key = next((k for k in stats_dict if k.endswith('_min')), None)
+        max_key = next((k for k in stats_dict if k.endswith('_max')), None)
+
+        if not min_key or stats_dict[min_key] is None:
+            raise ValueError("Não foi possível calcular a biomassa. A área pode não conter pastagem mapeada.")
+
+        min_bio_val = stats_dict[min_key]
+        max_bio_val = stats_dict[max_key]    
         
-        bioprop = biomass.visualize(**{"min": minBio, "max": maxBio,"palette": paletteBiomassa})        
+        bioprop = biomass.visualize(**{"min": min_bio_val, "max": max_bio_val, "palette": palette_biomass})        
         
+        # 6. Contorno da Propriedade
+        empty = ee.Image().byte()
         outline = empty.paint(ee.FeatureCollection([ee.Feature(roi)]), 1, 3)
         outline = outline.updateMask(outline)
         outline_rgb = outline.visualize(**{"palette":['FF0000']})
 
-        # Unificando os dados
-        final_image = sentinel.blend(bioprop.clip(roi))
-        final_image = final_image.blend(outline_rgb).clip(roi.buffer(400).bounds());
+        # 7. Unificação e Recorte (Buffer de 400m para contexto)
+        final_image = base_collection.blend(bioprop.clip(roi))
+        final_image = final_image.blend(outline_rgb).clip(roi.buffer(256).bounds());
         
-        # Gerando a url
-        url = final_image.getThumbURL({"dimensions": 256,"format": "png"})
+        # 8. Geração de URL e Download (Resolução ajustada para 512)
+        url = final_image.getThumbURL({"dimensions": 512,"format": "png"})
         
-        # Download
         resposta = requests.get(url, timeout=60)
         resposta.raise_for_status()
     
-        # Converter para PIL.Image
+        # 9. Conversão PIL
         img = PIL.Image.open(BytesIO(resposta.content))
 
-        # Inserção da Legenda: Usamos os valores capturados do GEE
+        # 10. Inserção da Legenda (Usando os valores que já temos em memória)
         img = add_legend(
             img, 
             title=f"Biomassa\npasto ({str(2024)})", 
-            vmin=round(float(minBio.getInfo()) * 0.09), # ton->pixel 
-            vmax=round(float(maxBio.getInfo()) * 0.09), # ton->pixel
-            palette=paletteBiomassa
+            vmin=round(float(min_bio_val) * 0.09), # ton->pixel 
+            vmax=round(float(max_bio_val) * 0.09), # ton->pixel
+            palette=palette_biomass
         )
 
         return img
-    # TODO: Mapear possíveis erros.
+
+    except ValueError as e:
+        raise RuntimeError(f"Aviso sobre a área: {str(e)}")
+    except ee.EEException as e:
+        raise RuntimeError(
+            f"Falha de processamento no satélite ao gerar mapa de biomassa. "
+            f"Verifique as coordenadas informadas. Detalhes: {str(e)}"
+        )
+    except requests.exceptions.HTTPError as e:
+        raise RuntimeError(
+            f"O servidor de imagens do satélite falhou. Tente novamente mais tarde. Detalhes: {str(e)}"
+        )
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(
+            f"Problema de conexão ao baixar o mapa de biomassa. Detalhes: {str(e)}"
+        )
     except Exception as e:
-        # TODO: Melhorar a menssagem de erro. Com motivo do erro e instrução de execução.
-        raise Exception(f"Erro ao gerar imagem: {str(e)}")
+        raise RuntimeError(f"Erro inesperado ao gerar a análise de biomassa: {str(e)}")
     
 
 # TODO: Otimizar e tornar mais legivel. (Talvez criar uma função para cada operação)
-def ee_query_pasture(coordinates: list) -> PastureStatsResult:
+def ee_query_pasture(coords: List[List[List[List[float]]]]) -> PastureStatsResult:
     """
     Extração de estatísticas de pastagem (biomassa, vigor, idade e chuva).
     """
     from app.utils.interfaces.ee_data_interfaces import Value, BiomassData, AgeData, VigorData, LULCClassData
 
     try:
-        roi = ee.Geometry.Polygon(coordinates)
+        roi = ee.Geometry.MultiPolygon(coords)
 
         # ==================== Query Biomass ====================
         biomass_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_biomass_v2')
@@ -308,4 +361,135 @@ def ee_query_pasture(coordinates: list) -> PastureStatsResult:
     except Exception as e:
         error(e)
 
-# [[[[-49.4348, -15.8289], [-49.4369, -15.828], [-49.4432, -15.8237], [-49.444, -15.8263], [-49.4319, -15.8341], [-49.4307, -15.8307], [-49.4348, -15.8289]]]]
+#def ee_query_pasture(coords: List[List[List[List[float]]]]) -> PastureStatsResult:
+#    """
+#    Extração unificada e paralela de estatísticas de pastagem (biomassa, vigor, idade e uso do solo).
+#    Otimizado para executar todas as agregações do Earth Engine em uma única requisição (single .getInfo).
+#    """
+#    try:
+#        roi = ee.Geometry.MultiPolygon(coords)
+#        area_img = ee.Image.pixelArea().divide(10000) # Reutilizado em todas as métricas de área
+#
+#        # ==================== Dicionários de Tradução ====================
+#        AGE_DICT = {'1':'1-10', '2':'10-20', '3':'20-30', '4':'30-40'}
+#        VIGOR_DICT = {'1':'Baixo', '2':'Médio', '3':'Alto'}
+#        CLASSES = {
+#            '3':'Formação Florestal', '4':'Formação Savânica', '5':'Mangue',
+#            '6':'Floresta Alagável', '9':'Silvicultura', '11':'Campo Alagado e Área Pantanosa',
+#            '12':'Formação Campestre', '15':'Pastagem', '19':'Lavoura Temporária',
+#            '20':'Cana', '29':'Afloramento Rochoso', '39':'Soja', '46':'Café',
+#            '32':'Apicum', '35':'Dendê', '36':'Lavoura Perene', '40':'Arroz',
+#            '41':'Outras Lavouras Temporárias', '47':'Citrus',
+#            '48':'Outras Lavouras Perenes', '49':'Restinga Arbórea', '50':'Restinga Herbácea',
+#            '62':'Algodão', '21':'Mosaico de Usos', '23':'Praia, Duna e Areal',
+#            '24':'Área Urbanizada', '30':'Mineração', '75':'Usina Fotovoltaica (beta)',
+#            '25':'Outras Áreas não Vegetadas', '26':"Corpo D'água", '33':'Rio, Lago e Oceano',
+#            '31':'Aquicultura', '27':'Não observado'
+#        }
+#
+#        # ==================== Montagem das Queries (Lado Servidor) ====================
+#
+#        # 1. Biomassa
+#        biomass_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_biomass_v2')
+#        last_biomass = biomass_asset.select([biomass_asset.bandNames().size().subtract(1)])
+#        
+#        red_biomass = last_biomass.reduceRegion(
+#            reducer=ee.Reducer.sum(), geometry=roi, scale=30, maxPixels=1e13
+#        )
+#
+#        # 2. Idade
+#        age_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_age_v2')
+#        last_age = age_asset.select([age_asset.bandNames().size().subtract(1)])
+#        last_age = last_age.subtract(200)
+#        last_age = last_age.where(last_age.eq(-100), 40)
+#        last_age = (last_age.where(last_age.gte(1).And(last_age.lte(10)), 1)
+#                            .where(last_age.gt(10).And(last_age.lte(20)), 2)
+#                            .where(last_age.gt(20).And(last_age.lte(30)), 3)
+#                            .where(last_age.gt(30).And(last_age.lte(40)), 4)
+#                    ).rename('class')
+#
+#        red_age = area_img.addBands(last_age).reduceRegion(
+#            reducer=ee.Reducer.sum().group(groupField=1, groupName='class'),
+#            geometry=roi, scale=30, maxPixels=1e13
+#        )
+#
+#        # 3. Vigor
+#        vigor_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_vigor_v3')
+#        last_vigor = vigor_asset.select([vigor_asset.bandNames().size().subtract(1)]).rename('class')
+#
+#        red_vigor = area_img.addBands(last_vigor).reduceRegion(
+#            reducer=ee.Reducer.sum().group(groupField=1, groupName='class'),
+#            geometry=roi, scale=30, maxPixels=1e13
+#        )
+#
+#        # 4. Uso do Solo (Classes)
+#        class_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_integration_v2')
+#        last_class = class_asset.select([class_asset.bandNames().size().subtract(1)]).rename('class')
+#
+#        red_class = area_img.addBands(last_class).reduceRegion(
+#            reducer=ee.Reducer.sum().group(groupField=1, groupName='class'),
+#            geometry=roi, scale=30, maxPixels=1e13
+#        )
+#
+#        # ==================== O GRANDE PULO DO GATO: Execução Única ====================
+#        
+#        # Agrupamos todas as reduções em um dicionário EE e fazemos um único .getInfo()
+#        combined_stats = ee.Dictionary({
+#            'biomass': red_biomass,
+#            'age': red_age.get('groups'),
+#            'vigor': red_vigor.get('groups'),
+#            'lulc': red_class.get('groups')
+#        }).getInfo()
+#
+#        # ==================== Parsing dos Resultados (Lado Cliente/Python) ====================
+#
+#        # 1. Extração Biomassa (Seguro contra mudança do nome da banda)
+#        biomass_dict = combined_stats.get('biomass', {})
+#        biomass_raw = list(biomass_dict.values())[0] if biomass_dict and list(biomass_dict.values()) else 0
+#        biomass_val = biomass_raw if biomass_raw is not None else 0
+#        
+#        biomass_data = BiomassData(
+#            amount=Value(value=round(biomass_val * 0.09, 2), unity="tonelada(s) de matéria seca")
+#        )
+#
+#        # 2. Extração Idade
+#        age_data_list = []
+#        for group in (combined_stats.get('age') or []):
+#            if group is not None and 'class' in group:
+#                class_id = str(int(group['class']))
+#                class_name = AGE_DICT.get(class_id, f"Desconhecido ({class_id})")
+#                area_value = round(float(group['sum']), 2)
+#                age_data_list.append(AgeData(age=class_name, amount=Value(value=area_value, unity="hectares (ha)")))
+#
+#        # 3. Extração Vigor
+#        vigor_data_list = []
+#        for group in (combined_stats.get('vigor') or []):
+#            if group is not None and 'class' in group:
+#                class_id = str(int(group['class']))
+#                vigor_name = VIGOR_DICT.get(class_id, f"Desconhecido ({class_id})")
+#                area_value = round(float(group['sum']), 2)
+#                vigor_data_list.append(VigorData(vigor=vigor_name, amount=Value(value=area_value, unity="hectares (ha)")))
+#
+#        # 4. Extração Uso do Solo
+#        lulc_class_data_list = []
+#        for group in (combined_stats.get('lulc') or []):
+#            if group is not None and 'class' in group:
+#                class_id = str(int(group['class']))
+#                class_name = CLASSES.get(class_id, f"Desconhecido ({class_id})")
+#                area_value = round(float(group['sum']), 2)
+#                lulc_class_data_list.append(LULCClassData(lulc_class=class_name, amount=Value(value=area_value, unity="hectares")))
+#
+#        # ==================== Retorno Final ====================
+#        return PastureStatsResult(
+#            biomass=biomass_data,
+#            age=age_data_list,
+#            vigor=vigor_data_list,
+#            lulc=lulc_class_data_list
+#        )
+#
+#    except ee.EEException as e:
+#        # Tratamento claro para o Agno Agent saber que o erro foi geográfico/dados
+#        raise RuntimeError(f"Falha na consulta ao Google Earth Engine. A geometria informada pode estar inválida ou muito grande. Detalhes: {str(e)}")
+#    except Exception as e:
+#        # Substituindo o "error(e)" antigo por um throw real, senão a tipagem de retorno quebra
+#        raise RuntimeError(f"Erro inesperado na extração de dados da pastagem: {str(e)}")

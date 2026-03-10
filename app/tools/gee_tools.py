@@ -1,5 +1,3 @@
-import textwrap
-
 from io import BytesIO
 
 from agno.tools import tool
@@ -28,9 +26,9 @@ def generate_property_image(run_context: RunContext) -> ToolResult:
         ToolResult: Objeto contendo a imagem PNG da visão aérea e uma confirmação textual.
     """
     try:
-        coordinates = run_context.session_state['car_selected']['geometry']['coordinates'][0][0]
+        coords = run_context.session_state['car_selected']['area_info']['coordinates']
 
-        img = retrieve_feature_images(coordinates)
+        img = retrieve_feature_images(coords=coords)
 
         buffer = BytesIO()
         img.save(buffer, format="PNG")
@@ -60,9 +58,9 @@ def generate_property_biomass_image(run_context: RunContext) -> ToolResult:
         ToolResult: Objeto contendo o mapa renderizado em formato PNG e uma mensagem de confirmação para o usuário.
     """
     try:
-        coordinates = run_context.session_state['car_selected']['geometry']['coordinates'][0][0]
+        coords = run_context.session_state['car_selected']['area_info']['coordinates']
 
-        img = retrieve_feature_biomass_image(coordinates)
+        img = retrieve_feature_biomass_image(coords=coords)
 
         buffer = BytesIO()
         img.save(buffer, format="PNG")
@@ -92,9 +90,9 @@ def query_pasture(run_context: RunContext) -> dict:
         Dicionário contendo a área de pastagem, vigor da pastagem, áreas de pastagem degradadas (baixo vigor), biomassa total e a idade.
     """
     try:
-        coordinates = run_context.session_state['car_selected']['geometry']['coordinates'][0][0]
+        coords = run_context.session_state['car_selected']['area_info']['coordinates']
 
-        query = ee_query_pasture(coordinates)
+        query = ee_query_pasture(coords=coords)
     
         return query
     except Exception as e:
