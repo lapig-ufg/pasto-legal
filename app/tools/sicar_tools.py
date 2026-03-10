@@ -191,7 +191,7 @@ def query_feature_by_url(url: str, run_context: RunContext) -> ToolResult:
     if not properties:
         return (
             "Peça desculpas ao usuário e informe que nenhuma propriedade foi encontrada nesta coordenada.\n"
-            "Peça que tente novamente e verificar se as coordenadas estão corretas."
+            "Peça que tente novamente e verificar se a URL do Google Maps esta correta."
         )
     
     n_properties = len(properties)
