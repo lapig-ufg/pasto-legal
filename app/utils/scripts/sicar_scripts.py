@@ -1,4 +1,7 @@
+import json
 import duckdb
+import requests
+
 from pathlib import Path
 from shapely.geometry import mapping
 
@@ -12,6 +15,10 @@ conn = duckdb.connect(database=':memory:')
 conn.execute("INSTALL spatial; LOAD spatial;")
 conn.execute("PRAGMA memory_limit='1GB'")
 conn.execute("PRAGMA threads=1")
+
+
+def _map_json_to_property_record(dict: json) -> PropertyRecord:
+    pass
 
 
 def _map_row_to_property_record(row: dict) -> PropertyRecord:
@@ -47,7 +54,11 @@ def _map_row_to_property_record(row: dict) -> PropertyRecord:
     )
 
 
-def fetch_property_by_car(car: str) -> list[dict]:
+def fetch_property_by_car_remote(car: str) -> PropertyRecord:
+    pass
+
+
+def fetch_property_by_car_locally(car: str) -> PropertyRecord:
     """
     Busca as informações de um imóvel rural utilizando o código único do CAR.
 
@@ -74,19 +85,46 @@ def fetch_property_by_car(car: str) -> list[dict]:
         df = cursor.execute(query, [dataset_path, car]).fetchdf()
         
         if df.empty:
-            return []
+            return None
         
         records_dicts = df.to_dict('records')
-        result = [_map_row_to_property_record(row) for row in records_dicts] 
+        result = [_map_row_to_property_record(row) for row in records_dicts][0]
         
     except Exception as e:
-        result = []
+        result = None
     finally:
         cursor.close()
         return result
 
 
-def fetch_property_by_coordinates(latitude: float, longitude: float) -> list[dict]:
+def featch_property_by_coordinates_remote(latitude: float, longitude: float) -> list[PropertyRecord]:
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://consultapublica.car.gov.br/publico/imoveis/index'
+    }
+
+    sess = requests.Session()
+
+    base_url = "https://consultapublica.car.gov.br/publico/imoveis/index"
+
+    sess.get(base_url, verify=False, headers=headers, timeout=10)
+
+    url_api = f'https://consultapublica.car.gov.br/publico/imoveis/getImovel?lat={latitude}&lng={longitude}'
+    response = sess.get(url_api, verify=False, headers=headers, timeout=10)
+
+    response.raise_for_status()
+
+    try:
+        result = response.json()
+    except json.JSONDecodeError:
+        raise ValueError("O servidor retornou uma resposta inválida (não é JSON).")
+
+    properties = result
+
+    return properties
+
+
+def fetch_property_by_coordinates_locally(latitude: float, longitude: float) -> list[PropertyRecord]:
     """
     Realiza busca geoespacial de imóveis rurais a partir de um ponto (Lat/Lon).
 
