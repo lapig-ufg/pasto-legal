@@ -39,13 +39,14 @@ def get_instructions(run_context: RunContext) -> str:
     # TODO: Implementar uma linha de instruções para usuários novos aceitarem os termos e condições.
 
     if is_selecting_car:
-        instructions = (
-            "- O usuário está em um fluxo de atendimento focado na seleção de propriedade rural (CAR).\n"
-            "- Sua função exclusiva nesta etapa é atuar como um roteador. Você DEVE OBRIGATORIAMENTE usar a ferramenta `delegate_task_to_member` para repassar o controle da conversa ao 'sicar-agent'.\n"
-            "- NÃO responda diretamente ao usuário com mensagens de texto.\n"
-            "- NÃO use a ferramenta `update_user_memory`.\n"
-            "- NÃO memorize, salve ou interprete a resposta do usuário no seu banco de dados.\n"
-        )
+        instructions = textwrap.dedent("""\
+            - O usuário está em um fluxo de atendimento focado na seleção de propriedade rural (CAR).
+            - Você DEVE OBRIGATORIAMENTE usar a ferramenta `delegate_task_to_member` para repassar o controle da conversa ao 'sicar-agent'.
+            - NUNCA chame o agente 'analista-agent'.
+            - NÃO responda diretamente ao usuário com mensagens de texto.
+            - NÃO use a ferramenta `update_user_memory`.
+            - NÃO memorize, salve ou interprete a resposta do usuário no seu banco de dados.
+        """).strip()
     else:
         instructions = textwrap.dedent("""\
             # DIRETRIZES PRIMÁRIAS (IDENTIDADE & COMPORTAMENTO)
@@ -111,13 +112,13 @@ def get_instructions(run_context: RunContext) -> str:
 pasto_legal_team = Team(
     db=db,
     name="Equipe Pasto Legal",
-    model=Gemini(id="gemini-3-flash-preview"),
+    model=Gemini(id="gemini-3-flash-preview", temperature=0),
     respond_directly=True,
     enable_agentic_memory=True,
     enable_user_memories=True,
     determine_input_for_members=False,
     add_history_to_context=True,
-    num_history_runs=3,
+    num_history_runs=1,
     members=[
         analyst_agent,
         generic_agent,

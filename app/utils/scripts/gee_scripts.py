@@ -239,7 +239,7 @@ def ee_query_pasture(coords: List[List[List[List[float]]]]) -> PastureStatsResul
                     scale=30,
                     maxPixels=1e13)
 
-        biomass_data = BiomassData(amount=Value(value=stats.getInfo()['biomass_2024'] * 0.09, unity="tonelada(s) de matéria seca"))
+        biomass_data = BiomassData(amount=Value(value=stats.getInfo()['biomass_2024'] * 0.09, unity="tonelada(s) de matéria seca anual"))
 
         # ==================== Query Age ====================
         AGE_DICT = {'1':'1-10', '2':'10-20', '3':'20-30', '4':'30-40'}

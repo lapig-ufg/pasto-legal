@@ -10,6 +10,7 @@ analyst_agent = Agent(
     name="analista-agent",
     role="Especialista central em Agropecuária e Geoprocessamento. Responsável por todas as demandas voltadas a propriedades rurais, desde análises espaciais e geração de dados/mapas até o esclarecimento amplo de dúvidas agronômicas.",
     description="Especialista Técnico em Análise Espacial, Métricas de Pastagem, ferramentas de geração de mapas e análise de imagens. Responsável por executar ferramentas técnicas para gerar mapas, imagens de satélite, levantar estatísticas, análisar imagens sobre uso e cobertura da terra e esclarecer dúvidas com base na Embrapa.",
+    debug_mode=True,
     tools=[
         generate_property_biomass_image,
         query_pasture,
