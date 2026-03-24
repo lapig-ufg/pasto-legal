@@ -203,6 +203,7 @@ if user_query:
             run_kwargs = {
                 "input": user_query,
                 "user_id": st.session_state.session_id,
+                "session_id": st.session_state.session_id,
                 "stream": False,
             }
 
