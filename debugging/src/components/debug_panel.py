@@ -2,60 +2,6 @@ import streamlit as st
 
 from datetime import datetime
 
-from src.service import get_all_session_ids, get_runs_by_session_id
-
-st.set_page_config(page_title="WhatsApp Agent Debbuger", layout="wide")
-
-if "selected_session_id" not in st.session_state:
-    st.session_state.selected_session_id = None
-
-if "selected_run" not in st.session_state:
-    st.session_state.selected_run = None
-
-# ==========================================
-# 1. COLUNA 1: SIDEBAR (Esquerda)
-# ==========================================
-def render_sidebar():
-    with st.sidebar:
-        session_ids = get_all_session_ids()
-
-        st.header("Sessões Ativas")
-        st.session_state.selected_session_id = st.selectbox('IDs das sessões', session_ids)
-        
-        st.divider()
-        st.subheader("Filtros")
-        st.selectbox("Status", ["Todos", "Aguardando", "Erro", "Completos"])
-
-# ==========================================
-# 3. COLUNA 2: CHAT (Meio)
-# ==========================================
-def render_chat(col):
-    if not 'selected_session_id' in st.session_state:
-        return
-
-    # TODO: Seleção dinâmica da quantidade de runs para exibir.
-    runs = get_runs_by_session_id(st.session_state.selected_session_id)[:-15]
-
-    with col:
-        st.caption(f"Sessão ID: wa:{st.session_state.selected_session_id}")
-        
-        chat_container = st.container(height=800)
-        
-        with chat_container:
-            for run in runs:
-                with st.chat_message('user'):
-                    if 'input' in run:
-                        st.write(run['input']['input_content'])
-                
-                with st.chat_message('assistant'):
-                    st.write(run['content'])
-
-                    if st.button("🔍 Inspecionar Fluxo", key=run["run_id"]):
-                        st.session_state.selected_run = run
-
-# ==========================================
-# 4. COLUNA 3: INFORMAÇÕES/DEBUG (Direita)
-# ==========================================
 def render_debug_panel(col):
     with col:
         if not st.session_state.selected_run:
@@ -111,17 +57,3 @@ def render_debug_panel(col):
 
         with tab3:
             st.text("Goodbye, World!")
-
-# ==========================================
-# FUNÇÃO PRINCIPAL
-# ==========================================
-def main():
-    render_sidebar()
-    
-    chat_col, debug_col = st.columns(2)
-    
-    render_chat(chat_col)
-    render_debug_panel(debug_col)
-
-if __name__ == "__main__":
-    main()
