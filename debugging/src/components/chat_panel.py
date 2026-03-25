@@ -12,16 +12,15 @@ def render_chat_panel(col):
     with col:
         st.caption(f"Sessão ID: wa:{st.session_state.selected_session_id}")
         
-        chat_container = st.container(height=800)
+        chat_container = st.container(height='stretch')
         
         with chat_container:
             for run in runs:
                 with st.chat_message('user'):
-                    if 'input' in run:
-                        st.write(run['input']['input_content'])
+                    st.write(run.input.input_content)
                 
                 with st.chat_message('assistant'):
-                    st.write(run['content'])
+                    st.write(run.content)
 
-                    if st.button("🔍 Inspecionar Fluxo", key=run["run_id"]):
+                    if st.button("+", key=run.run_id):
                         st.session_state.selected_run = run

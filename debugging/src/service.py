@@ -14,7 +14,7 @@ def get_all_session_ids() -> list[str]:
         return [linha[0] for linha in resultados]
 
 @st.cache_data
-def get_runs_by_session_id(session_id: str) -> dict | None:
+def get_runs_by_session_id(session_id: str) -> list[Run]:
     """
     Função bônus: Retorna os dados de run de uma sessão específica.
     Muito útil para quando você clicar no botão do sidebar no Streamlit.

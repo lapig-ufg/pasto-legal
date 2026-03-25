@@ -11,11 +11,6 @@ class Message(BaseModel, ABC):
     from_history: Optional[bool] = None
     stop_after_tool_call: Optional[bool] = None
 
-    @abstractmethod
-    def to_component(self) -> None:
-        """Método abstrato que deve ser implementado por todas as subclasses."""
-        pass
-
     @property
     def formatted_date(self) -> str:
         """Converte o timestamp do JSON para uma data legível."""
@@ -44,21 +39,8 @@ class AssistantMessage(Message):
     metrics: Optional[Dict[str, int]] = None
     tool_calls: Optional[List[Dict[str, Any]]] = None
 
-    def to_component(self) -> None:
-        print(f"🤖 [ASSISTANT] {self.id}")
-        if self.content:
-            print(f"Content: {self.content}")
-        if self.tool_calls:
-            print(f"Tool Calls: {len(self.tool_calls)} request(s)")
-        print('-'*40)
-
 
 class ToolMessage(Message):
     tool_name: str
     content: Union[List[str], str]
     tool_calls: List[Dict[str, Any]]
-
-    def to_component(self) -> None:
-        print(f"🛠️ [TOOL: {self.tool_name}] {self.id}")
-        content_str = self.content[0] if isinstance(self.content, list) and self.content else self.content
-        print(f"Result: {content_str}\n{'-'*40}")
