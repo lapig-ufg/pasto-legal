@@ -41,8 +41,8 @@ def get_instructions(run_context: RunContext) -> str:
     if is_selecting_car:
         instructions = textwrap.dedent("""\
             - O usuário está em um fluxo de atendimento focado na seleção de propriedade rural (CAR).
-            - Você DEVE OBRIGATORIAMENTE usar a ferramenta `delegate_task_to_member` para repassar o controle da conversa ao 'sicar-agent'.
-            - NUNCA chame o agente 'analista-agent'.
+            - Você DEVE OBRIGATORIAMENTE usar a ferramenta `delegate_task_to_member` para repassar o controle da conversa ao 'Agente Sicar'.
+            - NUNCA chame o agente 'Agente Analista'.
             - NÃO responda diretamente ao usuário com mensagens de texto.
             - NÃO use a ferramenta `update_user_memory`.
             - NÃO memorize, salve ou interprete a resposta do usuário no seu banco de dados.
@@ -66,12 +66,12 @@ def get_instructions(run_context: RunContext) -> str:
                                        
             ## Requisições técnicas
             SE usuário fizer requisições técnicas como análises, visualização de imagens, dúvidas técnicas sobre pastagem e pecuária:
-                - **AÇÃO:** Chame IMEDIATAMENTE o agente `analista-agent`
-                - **NUNCA:** Não diga que não possui a propriedade, apenas chame IMEDIATAMENTE o agente `analista-agent`.  
+                - **AÇÃO:** Chame IMEDIATAMENTE o agente `Agente Analista`
+                - **NUNCA:** Não diga que não possui a propriedade, apenas chame IMEDIATAMENTE o agente `Agente Analista`.  
                                        
             ## Recebimento de Localização/Coordenadas ou Cadastro Ambiental Rural (CAR)
             SE o usuário enviar uma localização (coordenadas), código CAR (ex: UF-XXXXXXX-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX, ...) ou URL do Google Maps:
-                - Chame IMEDIATAMENTE o agente `sicar-agent`.
+                - Chame IMEDIATAMENTE o agente `Agente Sicar`.
                 - NÃO use a ferramenta `update_user_memory`. 
                             
             ## Recebimento de Imagem

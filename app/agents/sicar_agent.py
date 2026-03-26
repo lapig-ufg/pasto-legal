@@ -93,7 +93,7 @@ def get_instructions(run_context: RunContext):
 
 
 sicar_agent = Agent(
-    name="sicar-agent",
+    name="Agente SICAR",
     role="Processador de Entradas Geográficas e Registros CAR",
     description="Analista técnico responsável por localizar, validar e confirmar propriedades rurais via código CAR ou coordenadas geográficas.",
     tools=[

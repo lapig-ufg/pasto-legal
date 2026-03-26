@@ -7,7 +7,7 @@ from app.tools.gee_tools import query_pasture, generate_property_biomass_image
 
 
 analyst_agent = Agent(
-    name="analista-agent",
+    name="Agente Analista",
     role="Especialista central em Agropecuária e Geoprocessamento. Responsável por todas as demandas voltadas a propriedades rurais, desde análises espaciais e geração de dados/mapas até o esclarecimento amplo de dúvidas agronômicas.",
     description="Especialista Técnico em Análise Espacial, Métricas de Pastagem, ferramentas de geração de mapas e análise de imagens. Responsável por executar ferramentas técnicas para gerar mapas, imagens de satélite, levantar estatísticas, análisar imagens sobre uso e cobertura da terra e esclarecer dúvidas com base na Embrapa.",
     debug_mode=True,

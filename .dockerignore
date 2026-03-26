@@ -91,3 +91,4 @@ venv/
 # Folders
 tmp/
 data/
+debug/
