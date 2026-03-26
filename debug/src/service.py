@@ -1,8 +1,9 @@
 import streamlit as st
 
+from agno.agent import RunOutput
+
 from src.database.session import SessionLocal
 from src.database.models import AgentSession
-from src.models.run import Run
 
 @st.cache_data
 def get_all_session_ids() -> list[str]:
@@ -14,7 +15,7 @@ def get_all_session_ids() -> list[str]:
         return [linha[0] for linha in resultados]
 
 @st.cache_data
-def get_runs_by_session_id(session_id: str) -> list[Run]:
+def get_runs_by_session_id(session_id: str, n_messages: int) -> list[RunOutput]:
     """
     Função bônus: Retorna os dados de run de uma sessão específica.
     Muito útil para quando você clicar no botão do sidebar no Streamlit.
@@ -25,13 +26,13 @@ def get_runs_by_session_id(session_id: str) -> list[Run]:
         if not raw or not raw[0]:
             return None
         
-        run_map: dict[str, Run] = {}
+        run_map: dict[str, RunOutput] = {}
         for element in raw[0]:
-            run = Run.model_validate(element)
+            run = RunOutput.from_dict(element)
             run.childs = []
             run_map[run.run_id] = run
 
-        root_runs: list[Run] = []
+        root_runs: list[RunOutput] = []
         for run in run_map.values():
             if run.parent_run_id and run.parent_run_id in run_map:
                 parent = run_map[run.parent_run_id]
@@ -39,4 +40,4 @@ def get_runs_by_session_id(session_id: str) -> list[Run]:
             else:
                 root_runs.append(run)
 
-        return root_runs[-10:]
+        return root_runs[-n_messages:]

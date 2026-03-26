@@ -15,7 +15,7 @@ def main():
     
     chat_col, debug_col = st.columns(2)
     
-    render_chat_panel(chat_col)
+    render_chat_panel(chat_col, 5)
     render_debug_panel(debug_col)
 
 if __name__ == "__main__":
