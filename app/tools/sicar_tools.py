@@ -1,6 +1,4 @@
-import json
-import requests
-import textwrap
+import re
 
 from io import BytesIO
 
@@ -19,14 +17,14 @@ from app.utils.scripts.sicar_scripts import (
 from app.utils.scripts.image_scripts import get_mosaic
 from app.utils.scripts.gee_scripts import retrieve_feature_images
 
+# TODO: Registrar em logs todos os erros levantados pelos fetchs_*.
+
 @tool
 def query_feature_by_coordinate(latitude: float, longitude: float, run_context: RunContext):
     """
-    Busca imóveis no Cadastro Ambiental Rural (CAR) baseando-se nas coordenadas fornecidas.
+    Recupera imóveis no Cadastro Ambiental Rural (CAR) baseando-se nas coordenadas fornecidas.
     
-    Use esta ferramenta quando o usuário fornecer uma localização (latitude/longitude) 
-    e quiser verificar as propriedades rurais daquela região. Converta as coordenadas para
-    graus decimais.
+    Use esta ferramenta quando o usuário fornecer uma localização (latitude/longitude).
     
     Args:
         latitude (float): Latitude em graus decimais.
@@ -109,22 +107,41 @@ def query_feature_by_coordinate(latitude: float, longitude: float, run_context: 
 @tool
 def query_feature_by_car(car: str, run_context: RunContext):
     """
-    Busca imóveis no Cadastro Ambiental Rural (CAR) baseando-se nas coordenadas fornecidas.
+    Recupera imóveis no Cadastro Ambiental Rural (CAR) baseando-se nas coordenadas fornecidas.
     
-    Use esta ferramenta quando o usuário fornecer um valor de CAR válido.
+    Use esta ferramenta quando o usuário fornecer um valor de CAR.
     
     Args:
-        car (str): Valor de Cadastro Ambiental Rural (CAR) válido.
+        car (str): Código de Cadastro Ambiental Rural (CAR) padrão SICAR.
 
     Returns:
         ToolResult: Resultado da busca contendo imagem e instruções para o próximo passo.
     """
-    _car = car.replace('.', '')
+    _car = car.replace('-', '').replace('.', '')
+
+    if len(_car) != 41:
+        return ToolResult(
+            content=(
+                f"O código CAR digitado parece incompleto ou longo demais.\n"
+                f"A entrada possui {len(_car)} caracteres, mas um CAR válido precisa ter exatamente 41 caracteres\n"
+                f"(sem contar os hífens ou pontos). Peça para ele conferir o código e enviar novamente."
+            )
+        )
+
+    formatted_car = f"{_car[:2]}-{_car[2:9]}-{_car[9:]}"
+
+    if not re.fullmatch(r"^[A-Z]{2}-\d{7}-[0-9A-F]{32}$", formatted_car):
+        return ToolResult(
+            content=(
+                "Peça desculpas e informe que o sistema aceita exclusivamente o **CAR Federal** (padrão SICAR).\n"
+                "Explique que o padrão exige: 2 letras do Estado, seguidas por 7 números, e terminando com 32 caracteres."
+            )
+        ) 
 
     try:
-        prop = fetch_property_by_car_remote(car=_car)
+        prop = fetch_property_by_car_remote(car=formatted_car)
     except Exception:
-        prop = fetch_property_by_car_locally(car=_car)
+        prop = fetch_property_by_car_locally(car=formatted_car)
 
     if not prop:
         return ToolResult(
@@ -162,15 +179,12 @@ def query_feature_by_car(car: str, run_context: RunContext):
 @tool
 def query_feature_by_url(url: str, run_context: RunContext) -> ToolResult:
     """
-    Busca imóveis no Cadastro Ambiental Rural (CAR) baseando-se nas coordenadas fornecidas.
+    Recupera imóveis no Cadastro Ambiental Rural (CAR) baseando-se na URL de compartilhamento do Google Maps.
     
-    Use esta ferramenta quando o usuário fornecer uma localização (latitude/longitude) 
-    e quiser verificar as propriedades rurais daquela região. Converta as coordenadas para
-    graus decimais.
+    Use esta ferramenta quando o usuário fornecer uma URL de compartilhamento do Google Maps.
     
     Args:
-        latitude (float): Latitude em graus decimais.
-        longitude (float): Longitude em graus decimais.
+        url (str): URL de compartilhamento do Google Maps
 
     Returns:
         ToolResult: Resultado da busca contendo imagem e instruções para o próximo passo.
@@ -178,8 +192,13 @@ def query_feature_by_url(url: str, run_context: RunContext) -> ToolResult:
     try:
         latitude, longitude = fetch_coordinates_by_url(url=url)
 
-        if latitude == None or longitude == None:
-            raise RuntimeError()
+        if latitude is None or longitude is None:
+            return ToolResult(
+                content=(
+                    "Peça desculpas ao usuário e informe que não foi possível extrair coordenadas geográficas válidas deste link.\n"
+                    "Sugira ao usuário que envie o link novamente (verificando se é um link de compartilhamento do Google Maps)"
+                )
+            )
     except Exception as error:
         return ToolResult(content=str(error))
     
@@ -310,7 +329,7 @@ def confirm_car_selection(run_context: RunContext):
     run_context.session_state['car_selection_type'] = None
 
     return ToolResult(content=(
-            "Informe ao usuário que a propriedade foi selecionada corretamente. ✅\n\n"
+            f"Informe ao usuário que a propriedade de CAR {candidate['code']} foi selecionada corretamente. ✅\n\n"
             "Pergunte ao usuário como ele deseja prosseguir. Algumas opções são:\n"
             "- 🌱 *Análise de pastagem*\n"
             "- 🗺️ *Uso e cobertura da terra*\n"

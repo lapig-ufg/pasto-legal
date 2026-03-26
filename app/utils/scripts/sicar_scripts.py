@@ -97,11 +97,9 @@ def fetch_property_by_car_remote(car: str) -> dict[str, any]:
         with requests.Session() as sess:
             sess.get(base_url, verify=False, headers=headers, timeout=10)
 
-            # 2. Faz a chamada real à API
             response = sess.get(url_api, verify=False, headers=headers, timeout=10)
             response.raise_for_status()
 
-            # 3. Parse e validação do JSON
             geo_json = response.json()
             
             features = geo_json.get('features', [])
@@ -182,14 +180,11 @@ def fetch_property_by_coordinates_remote(latitude: float, longitude: float) -> L
 
     try:
         with requests.Session() as sess:
-            # 1. Acessa a página inicial para capturar cookies de sessão necessários
             sess.get(base_url, verify=False, headers=headers, timeout=10)
 
-            # 2. Faz a chamada real à API
             response = sess.get(url_api, verify=False, headers=headers, timeout=10)
             response.raise_for_status()
 
-            # 3. Parse e validação do JSON
             geo_json = response.json()
             
             features = geo_json.get('features', [])
