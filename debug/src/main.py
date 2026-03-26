@@ -11,6 +11,9 @@ def main():
     if "selected_run" not in st.session_state:
         st.session_state.selected_run = None
 
+    if "timestamp" not in st.session_state:
+        st.session_state.timestamp = 0
+
     render_sidebar()
     
     chat_col, debug_col = st.columns(2)

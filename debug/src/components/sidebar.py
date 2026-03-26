@@ -1,3 +1,4 @@
+import time
 import streamlit as st
 
 from src.service import get_all_session_ids
@@ -12,3 +13,8 @@ def render_sidebar():
         st.divider()
         st.subheader("Filtros")
         st.selectbox("Status", ["Todos", "Aguardando", "Erro", "Completos"])
+
+        st.divider()
+        is_refresh = st.button("Atualizar")
+        if is_refresh:
+            st.session_state.timestamp = time.time()

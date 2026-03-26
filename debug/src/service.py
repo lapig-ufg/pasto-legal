@@ -12,14 +12,15 @@ def get_all_session_ids() -> list[str]:
     """
     with SessionLocal() as db:
         resultados = db.query(AgentSession.session_id).all()
-        return [linha[0] for linha in resultados]
+        return [None] + [linha[0] for linha in resultados]
 
 @st.cache_data
-def get_runs_by_session_id(session_id: str, n_messages: int) -> list[RunOutput]:
+def get_runs_by_session_id_v2(session_id: str, n_messages: int, timestamp: int) -> list[RunOutput]:
     """
     Função bônus: Retorna os dados de run de uma sessão específica.
     Muito útil para quando você clicar no botão do sidebar no Streamlit.
     """
+    print("Hello WOrld")
     with SessionLocal() as db:
         raw = db.query(AgentSession.runs).filter(AgentSession.session_id == session_id).first()
 
