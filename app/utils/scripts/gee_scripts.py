@@ -200,23 +200,31 @@ def retrieve_feature_biomass_image(coords: List[List[List[List[float]]]]) -> PIL
 
         return img
 
-    except ValueError as e:
-        raise RuntimeError(f"Aviso sobre a área: {str(e)}")
-    except ee.EEException as e:
+    except ValueError:
         raise RuntimeError(
-            f"Falha de processamento no satélite ao gerar mapa de biomassa. "
-            f"Verifique as coordenadas informadas. Detalhes: {str(e)}"
+            f"Peça desculpas e informe que houve um erro.\n"
+            "Peça ao usuário que tente novamente mais tarde."
         )
-    except requests.exceptions.HTTPError as e:
+    except ee.EEException:
         raise RuntimeError(
-            f"O servidor de imagens do satélite falhou. Tente novamente mais tarde. Detalhes: {str(e)}"
+            f"Peça desculpas e informe que houve uma falha de processamento.\n"
+            "Peça ao usuário que tente novamente mais tarde."
         )
-    except requests.exceptions.RequestException as e:
+    except requests.exceptions.HTTPError:
         raise RuntimeError(
-            f"Problema de conexão ao baixar o mapa de biomassa. Detalhes: {str(e)}"
+            f"Peça desculpas e informe que o servidor de imagens do satélite falhou.\n"
+            "Peça ao usuário que tente novamente mais tarde."
         )
-    except Exception as e:
-        raise RuntimeError(f"Erro inesperado ao gerar a análise de biomassa: {str(e)}")
+    except requests.exceptions.RequestException:
+        raise RuntimeError(
+            f"Peça desculpas e informe que houve um problema de conexão ao baixar o mapa de biomassa.\n"
+            "Peça ao usuário que tente novamente mais tarde."
+        )
+    except Exception:
+        raise RuntimeError(
+            f"Peça desculpas e informe que houve um erro inesperado.\n"
+            "Peça ao usuário que tente novamente mais tarde."
+        )
     
 
 # TODO: Otimizar e tornar mais legivel. (Talvez criar uma função para cada operação)
@@ -358,138 +366,29 @@ def ee_query_pasture(coords: List[List[List[List[float]]]]) -> PastureStatsResul
             )
 
         return result
-    except Exception as e:
-        error(e)
-
-#def ee_query_pasture(coords: List[List[List[List[float]]]]) -> PastureStatsResult:
-#    """
-#    Extração unificada e paralela de estatísticas de pastagem (biomassa, vigor, idade e uso do solo).
-#    Otimizado para executar todas as agregações do Earth Engine em uma única requisição (single .getInfo).
-#    """
-#    try:
-#        roi = ee.Geometry.MultiPolygon(coords)
-#        area_img = ee.Image.pixelArea().divide(10000) # Reutilizado em todas as métricas de área
-#
-#        # ==================== Dicionários de Tradução ====================
-#        AGE_DICT = {'1':'1-10', '2':'10-20', '3':'20-30', '4':'30-40'}
-#        VIGOR_DICT = {'1':'Baixo', '2':'Médio', '3':'Alto'}
-#        CLASSES = {
-#            '3':'Formação Florestal', '4':'Formação Savânica', '5':'Mangue',
-#            '6':'Floresta Alagável', '9':'Silvicultura', '11':'Campo Alagado e Área Pantanosa',
-#            '12':'Formação Campestre', '15':'Pastagem', '19':'Lavoura Temporária',
-#            '20':'Cana', '29':'Afloramento Rochoso', '39':'Soja', '46':'Café',
-#            '32':'Apicum', '35':'Dendê', '36':'Lavoura Perene', '40':'Arroz',
-#            '41':'Outras Lavouras Temporárias', '47':'Citrus',
-#            '48':'Outras Lavouras Perenes', '49':'Restinga Arbórea', '50':'Restinga Herbácea',
-#            '62':'Algodão', '21':'Mosaico de Usos', '23':'Praia, Duna e Areal',
-#            '24':'Área Urbanizada', '30':'Mineração', '75':'Usina Fotovoltaica (beta)',
-#            '25':'Outras Áreas não Vegetadas', '26':"Corpo D'água", '33':'Rio, Lago e Oceano',
-#            '31':'Aquicultura', '27':'Não observado'
-#        }
-#
-#        # ==================== Montagem das Queries (Lado Servidor) ====================
-#
-#        # 1. Biomassa
-#        biomass_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_biomass_v2')
-#        last_biomass = biomass_asset.select([biomass_asset.bandNames().size().subtract(1)])
-#        
-#        red_biomass = last_biomass.reduceRegion(
-#            reducer=ee.Reducer.sum(), geometry=roi, scale=30, maxPixels=1e13
-#        )
-#
-#        # 2. Idade
-#        age_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_age_v2')
-#        last_age = age_asset.select([age_asset.bandNames().size().subtract(1)])
-#        last_age = last_age.subtract(200)
-#        last_age = last_age.where(last_age.eq(-100), 40)
-#        last_age = (last_age.where(last_age.gte(1).And(last_age.lte(10)), 1)
-#                            .where(last_age.gt(10).And(last_age.lte(20)), 2)
-#                            .where(last_age.gt(20).And(last_age.lte(30)), 3)
-#                            .where(last_age.gt(30).And(last_age.lte(40)), 4)
-#                    ).rename('class')
-#
-#        red_age = area_img.addBands(last_age).reduceRegion(
-#            reducer=ee.Reducer.sum().group(groupField=1, groupName='class'),
-#            geometry=roi, scale=30, maxPixels=1e13
-#        )
-#
-#        # 3. Vigor
-#        vigor_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_vigor_v3')
-#        last_vigor = vigor_asset.select([vigor_asset.bandNames().size().subtract(1)]).rename('class')
-#
-#        red_vigor = area_img.addBands(last_vigor).reduceRegion(
-#            reducer=ee.Reducer.sum().group(groupField=1, groupName='class'),
-#            geometry=roi, scale=30, maxPixels=1e13
-#        )
-#
-#        # 4. Uso do Solo (Classes)
-#        class_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_integration_v2')
-#        last_class = class_asset.select([class_asset.bandNames().size().subtract(1)]).rename('class')
-#
-#        red_class = area_img.addBands(last_class).reduceRegion(
-#            reducer=ee.Reducer.sum().group(groupField=1, groupName='class'),
-#            geometry=roi, scale=30, maxPixels=1e13
-#        )
-#
-#        # ==================== O GRANDE PULO DO GATO: Execução Única ====================
-#        
-#        # Agrupamos todas as reduções em um dicionário EE e fazemos um único .getInfo()
-#        combined_stats = ee.Dictionary({
-#            'biomass': red_biomass,
-#            'age': red_age.get('groups'),
-#            'vigor': red_vigor.get('groups'),
-#            'lulc': red_class.get('groups')
-#        }).getInfo()
-#
-#        # ==================== Parsing dos Resultados (Lado Cliente/Python) ====================
-#
-#        # 1. Extração Biomassa (Seguro contra mudança do nome da banda)
-#        biomass_dict = combined_stats.get('biomass', {})
-#        biomass_raw = list(biomass_dict.values())[0] if biomass_dict and list(biomass_dict.values()) else 0
-#        biomass_val = biomass_raw if biomass_raw is not None else 0
-#        
-#        biomass_data = BiomassData(
-#            amount=Value(value=round(biomass_val * 0.09, 2), unity="tonelada(s) de matéria seca")
-#        )
-#
-#        # 2. Extração Idade
-#        age_data_list = []
-#        for group in (combined_stats.get('age') or []):
-#            if group is not None and 'class' in group:
-#                class_id = str(int(group['class']))
-#                class_name = AGE_DICT.get(class_id, f"Desconhecido ({class_id})")
-#                area_value = round(float(group['sum']), 2)
-#                age_data_list.append(AgeData(age=class_name, amount=Value(value=area_value, unity="hectares (ha)")))
-#
-#        # 3. Extração Vigor
-#        vigor_data_list = []
-#        for group in (combined_stats.get('vigor') or []):
-#            if group is not None and 'class' in group:
-#                class_id = str(int(group['class']))
-#                vigor_name = VIGOR_DICT.get(class_id, f"Desconhecido ({class_id})")
-#                area_value = round(float(group['sum']), 2)
-#                vigor_data_list.append(VigorData(vigor=vigor_name, amount=Value(value=area_value, unity="hectares (ha)")))
-#
-#        # 4. Extração Uso do Solo
-#        lulc_class_data_list = []
-#        for group in (combined_stats.get('lulc') or []):
-#            if group is not None and 'class' in group:
-#                class_id = str(int(group['class']))
-#                class_name = CLASSES.get(class_id, f"Desconhecido ({class_id})")
-#                area_value = round(float(group['sum']), 2)
-#                lulc_class_data_list.append(LULCClassData(lulc_class=class_name, amount=Value(value=area_value, unity="hectares")))
-#
-#        # ==================== Retorno Final ====================
-#        return PastureStatsResult(
-#            biomass=biomass_data,
-#            age=age_data_list,
-#            vigor=vigor_data_list,
-#            lulc=lulc_class_data_list
-#        )
-#
-#    except ee.EEException as e:
-#        # Tratamento claro para o Agno Agent saber que o erro foi geográfico/dados
-#        raise RuntimeError(f"Falha na consulta ao Google Earth Engine. A geometria informada pode estar inválida ou muito grande. Detalhes: {str(e)}")
-#    except Exception as e:
-#        # Substituindo o "error(e)" antigo por um throw real, senão a tipagem de retorno quebra
-#        raise RuntimeError(f"Erro inesperado na extração de dados da pastagem: {str(e)}")
+    
+    except ValueError:
+        raise RuntimeError(
+            f"Peça desculpas e informe que houve um erro.\n"
+            "Peça ao usuário que tente novamente mais tarde."
+        )
+    except ee.EEException:
+        raise RuntimeError(
+            f"Peça desculpas e informe que houve uma falha de processamento.\n"
+            "Peça ao usuário que tente novamente mais tarde."
+        )
+    except requests.exceptions.HTTPError:
+        raise RuntimeError(
+            f"Peça desculpas e informe que o servidor de imagens do satélite falhou.\n"
+            "Peça ao usuário que tente novamente mais tarde."
+        )
+    except requests.exceptions.RequestException:
+        raise RuntimeError(
+            f"Peça desculpas e informe que houve um problema de conexão ao baixar o mapa de biomassa.\n"
+            "Peça ao usuário que tente novamente mais tarde."
+        )
+    except Exception:
+        raise RuntimeError(
+            f"Peça desculpas e informe que houve um erro inesperado.\n"
+            "Peça ao usuário que tente novamente mais tarde."
+        )

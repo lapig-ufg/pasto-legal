@@ -15,15 +15,14 @@ from app.utils.dummy_logger import error
 @tool(tool_hooks=[validate_car_hook])
 def generate_property_image(run_context: RunContext) -> ToolResult:
     """
-    Gera uma imagem de satélite em alta resolução (RGB) da propriedade rural, 
-    incluindo a delimitação geográfica do CAR.
+    Gera uma imagem de satélite em alta resolução (RGB) da propriedade rural, incluindo a delimitação geográfica.
 
     Esta ferramenta deve ser chamada quando:
     - O usuário quiser ver uma "foto", "imagem real" ou "visão aérea" da fazenda.
     - For solicitado o contorno da propriedade (CAR) sobreposto ao terreno natural.
 
     Return:
-        ToolResult: Objeto contendo a imagem PNG da visão aérea e uma confirmação textual.
+        ToolResult: Imagem PNG da visão aérea com delimitação geográfica.
     """
     try:
         coords = run_context.session_state['car_selected']['area_info']['coordinates']
@@ -34,7 +33,7 @@ def generate_property_image(run_context: RunContext) -> ToolResult:
         img.save(buffer, format="PNG")
                 
         return ToolResult(
-            content=f"Aqui está a imagem de satélite da área. O contorno vermelho indica a zona de amortecimento de 5km.",
+            content=f"O contorno vermelho indica a delimitação geográfica da propriedade rural.",
             images=[Image(content=buffer.getvalue())]
         )
 
@@ -45,17 +44,14 @@ def generate_property_image(run_context: RunContext) -> ToolResult:
 @tool(tool_hooks=[validate_car_hook])
 def generate_property_biomass_image(run_context: RunContext) -> ToolResult:
     """
-    Gera um mapa geoespacial temático da biomassa (vegetação) sobre os limites da propriedade rural.
+    Gera um mapa geoespacial temático da biomassa (vegetação) sobre os limites da propriedade rural do usuário.
     
     Esta ferramenta deve ser acionada quando:
     - O usuário solicitar visualização espacial, mapas ou imagens da biomassa.
     - Termos como "ver a foto da biomassa" ou "ver distribuição de biomassa" forem utilizados.
-    - For necessário complementar uma análise numérica de biomassa com uma evidência visual do terreno.
-
-    A função utiliza automaticamente os dados geográficos do CAR selecionado no contexto da sessão para processar as imagens de satélite mais recentes.
 
     Return:
-        ToolResult: Objeto contendo o mapa renderizado em formato PNG e uma mensagem de confirmação para o usuário.
+        ToolResult: Mapa renderizado em formato PNG.
     """
     try:
         coords = run_context.session_state['car_selected']['area_info']['coordinates']
@@ -71,7 +67,7 @@ def generate_property_biomass_image(run_context: RunContext) -> ToolResult:
         )
 
     except Exception as e:
-        return ToolResult(content=f"Erro ao gerar imagem: {str(e)}")
+        return ToolResult(content=str(e))
 
 
 @tool(tool_hooks=[validate_car_hook])
@@ -94,8 +90,6 @@ def query_pasture(run_context: RunContext) -> dict:
 
         query = ee_query_pasture(coords=coords)
     
-        return query
+        return ToolResult(content=query)
     except Exception as e:
-        # TODO: Retornar menssagem de erro quando todos os erros forem mapeados dentro da função ee_query_pasture;
-        error(f"Não foi possível concluir a função 'query_pasture': {e}")
-        return ToolResult(content='Erro')
+        return ToolResult(content=str(e))

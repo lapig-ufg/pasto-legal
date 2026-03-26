@@ -118,7 +118,9 @@ pasto_legal_team = Team(
     enable_user_memories=True,
     determine_input_for_members=False,
     add_history_to_context=True,
-    num_history_runs=1,
+    num_history_runs=3,
+    add_team_history_to_members=True,
+    num_team_history_runs=3,
     members=[
         analyst_agent,
         generic_agent,
