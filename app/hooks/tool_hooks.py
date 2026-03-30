@@ -1,5 +1,3 @@
-import textwrap
-
 from typing import Callable, Dict, Any
 
 from agno.run import RunContext
@@ -14,12 +12,8 @@ def validate_car_hook(run_context: RunContext, function_call: Callable, argument
     if session_state and 'car_selected' in session_state:
         return function_call(**arguments)
 
-    return textwrap.dedent("""
-        [SISTEMA] Bloqueio de Execução: Falta o CAR da propriedade.
-        
-        Motivo: A ferramenta solicitada requer o Cadastro Ambiental Rural (CAR), mas ele não está no contexto atual.
-        
-        Ação obrigatória para o Agente:
-        1. Informe que o sistema não sabe qual é a propriedade.
-        2. Solicite que o usuário envie a **localização** por meio do pino de localização do WhatsApp para que o sistema identifique o CAR automaticamente.
-    """).strip()
+    return (
+        "Não foi possível completar a análise, pois a propriedade rural ainda não foi identificada.\n"
+        "Peça desculpas ao usuário e solicite que o usuário envie a localização da propriedade rural."
+        "Informe que, após a identificação da propriedade, será possível prosseguir com esta análise."
+    )

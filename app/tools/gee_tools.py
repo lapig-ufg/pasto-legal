@@ -89,6 +89,8 @@ def query_pasture(run_context: RunContext) -> dict:
         coords = run_context.session_state['car_selected']['area_info']['coordinates']
 
         query = ee_query_pasture(coords=coords)
+
+        # TODO: Corrigir erro de tipagem.
     
         return ToolResult(content=query)
     except Exception as e:

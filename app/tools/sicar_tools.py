@@ -17,7 +17,6 @@ from app.utils.scripts.sicar_scripts import (
 from app.utils.scripts.image_scripts import get_mosaic
 from app.utils.scripts.gee_scripts import retrieve_feature_images
 
-# TODO: Registrar em logs todos os erros levantados pelos fetchs_*.
 
 @tool
 def query_feature_by_coordinate(latitude: float, longitude: float, run_context: RunContext):
@@ -117,27 +116,19 @@ def query_feature_by_car(car: str, run_context: RunContext):
     Returns:
         ToolResult: Resultado da busca contendo imagem e instruções para o próximo passo.
     """
-    _car = car.replace('-', '').replace('.', '')
+    pattern = r"\b([A-Z]{2})-?(\d{7})-([A-Z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\b"
 
-    if len(_car) != 41:
-        return ToolResult(
-            content=(
-                f"O código CAR digitado parece incompleto ou longo demais.\n"
-                f"A entrada possui {len(_car)} caracteres, mas um CAR válido precisa ter exatamente 41 caracteres\n"
-                f"(sem contar os hífens ou pontos). Peça para ele conferir o código e enviar novamente."
-            )
-        )
-
-    formatted_car = f"{_car[:2]}-{_car[2:9]}-{_car[9:]}"
-
-    if not re.fullmatch(r"^[A-Z]{2}-\d{7}-[0-9A-F]{32}$", formatted_car):
+    search = re.search(pattern, car, flags=re.IGNORECASE)
+    if not search:
         return ToolResult(
             content=(
                 "Peça desculpas e informe que o sistema aceita exclusivamente o **CAR Federal** (padrão SICAR).\n"
                 "Explique que o padrão exige: 2 letras do Estado, seguidas por 7 números, e terminando com 32 caracteres."
             )
-        ) 
-
+        )
+    
+    formatted_car = re.sub(pattern, r"\1-\2-\3\4\5\6\7\8\9\10", search[0], flags=re.IGNORECASE)
+        
     try:
         prop = fetch_property_by_car_remote(car=formatted_car)
     except Exception:
