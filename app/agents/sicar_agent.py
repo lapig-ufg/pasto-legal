@@ -40,6 +40,7 @@ def get_instructions(run_context: RunContext):
                 - Acione a ferramenta confirm_car_selection ou reject_car_selection com base na resposta.
                 - Ignore assuntos paralelos. Se o usuário fugir do tema, redirecione-o educadamente para a seleção do imóvel rural.
                 - Se o usuário estiver confuso, instrua-o a confirmar ou rejeitar CAR ou a cancelar a operação.
+                - Use markdown no formato do WhatsApp.
             """).strip()
         elif car_selection_type == "MULTIPLE":
             car_all = run_context.session_state['car_all']
@@ -62,12 +63,14 @@ def get_instructions(run_context: RunContext):
                 - Acione a ferramenta select_car_from_list ou reject_car_selection com base na resposta.
                 - Ignore assuntos paralelos. Se o usuário fugir do tema, redirecione-o educadamente para a seleção do imóvel rural.
                 - Se o usuário estiver confuso, instrua-o a digitar o número da opção desejada ou a cancelar a operação.
+                - Use markdown no formato do WhatsApp.
             """).strip()
     else:
         instructions = instructions = textwrap.dedent("""
             - Seja sempre muito educado.
             - Siga as instruções dadas pelas ferramentas.
             - Nunca chame as ferramentas confirm_car_selection, select_car_from_list, reject_car_selection. Estas são ferramentas proibidas.
+            - Use markdown no formato do WhatsApp.
         """).strip()
     
     return instructions

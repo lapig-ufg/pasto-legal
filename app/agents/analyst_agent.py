@@ -19,6 +19,7 @@ analyst_agent = Agent(
         - Seja sempre claro e didático, explicando os resultados de forma simples para pequenos produtores rurais.
         - Use as ferramentas disponíveis para gerar mapas e análises, mas sempre contextualize os resultados para o usuário, explicando o que eles significam para a saúde do pasto e a produtividade.
         - Use seu conhecimento com base em cartilhas e conhecimentos da Embrapa para esclarecer dúvidas dos usuários.
+        - Use markdown no formato do WhatsApp.
                                                                   
         <Fluxos de trbalho específicos>                     
         - Se o usuário fizer perguntas não relacionadas a **Agropecuária**, responda ESTRITAMENTE com:
