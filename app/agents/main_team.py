@@ -3,6 +3,8 @@ import textwrap
 
 from agno.run import RunContext
 from agno.team.team import Team
+from agno.memory import MemoryManager
+from agno.session import SessionSummaryManager
 from agno.models.google import Gemini
 
 from app.agents import analyst_agent, sicar_agent
@@ -84,19 +86,37 @@ def get_instructions(run_context: RunContext) -> str:
 
     return instructions
 
+memory_manager = MemoryManager(
+    model=Gemini(id="gemini-3-flash-preview", temperature=0),
+    memory_capture_instructions=textwrap.dedent("""\
+            Memories should capture personal information about the user that is relevant to the current conversation, such as:
+            - Personal facts: name, age, occupation, interests, and preferences
+            - Opinions and preferences: what the user likes, dislikes, enjoys, or finds frustrating
+            - Significant life events or experiences shared by the user
+            - Important context about the user's current situation, challenges, or goals
+            - Any other details that offer meaningful insight into the user's personality, perspective, or needs
+        """).strip(),
+    additional_instructions="""Don't store any memories about coordinates, SICAR code or Google Map's URLs.""",
+    db=db,
+)
+
+summary_manager = SessionSummaryManager(
+    model=Gemini(id="gemini-3-flash-preview", temperature=0),
+)
 
 pasto_legal_team = Team(
     db=db,
     name="Equipe PastoLegal",
     model=Gemini(id="gemini-3-flash-preview", temperature=0),
     respond_directly=True,
-    enable_agentic_memory=True,
     enable_user_memories=True,
+    memory_manager=memory_manager,
+    update_memory_on_run=True,
     determine_input_for_members=False,
     add_history_to_context=True,
     num_history_runs=3,
     add_team_history_to_members=True,
-    num_team_history_runs=3,
+    num_team_history_runs=1,
     members=[
         analyst_agent,
         sicar_agent
