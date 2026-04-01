@@ -8,8 +8,6 @@ from agno.media import Image
 from app.hooks.tool_hooks import validate_car_hook
 from app.utils.scripts.gee_scripts import retrieve_feature_images, retrieve_feature_biomass_image, ee_query_pasture
 
-from app.utils.dummy_logger import error
-
 
 # TODO: Escrever ferramenta para visualização da área de pastagem do usuário.
 @tool(tool_hooks=[validate_car_hook])

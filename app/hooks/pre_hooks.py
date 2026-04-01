@@ -10,8 +10,6 @@ from agno.team import Team
 from agno.agent import Agent
 from agno.models.google import Gemini
 
-from app.utils.dummy_logger import error
-
 
 if not (APP_ENV := os.environ.get('APP_ENV')):
     raise ValueError("APP_ENV environment variables must be set.")

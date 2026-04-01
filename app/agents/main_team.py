@@ -3,16 +3,17 @@ import textwrap
 
 from agno.run import RunContext
 from agno.team.team import Team
-from agno.memory import MemoryManager
-from agno.session import SessionSummaryManager
+
 from agno.models.google import Gemini
 
 from app.agents import analyst_agent, sicar_agent
+from app.managers.memory_manager import memory_manager
 from app.database.agno_db import db
 from app.tools.tts_tools import audioTTS
 from app.tools.feedback_tools import record_frustration_feedback, record_analisys_feedback
 from app.tools.version_tools import consult_update_notes
 from app.hooks.pre_hooks import validate_phone_authorization
+from app.hooks.post_hooks import summarize_hook
 from app.guardrails.pii_detection_guardrail import pii_detection_guardrail
 
 
@@ -58,13 +59,12 @@ def get_instructions(run_context: RunContext) -> str:
             - Seja sempre muito educado, feliz e demonstre entusiasmo em ajudar o produtor.
             - Você coordena outros agentes, mas isso deve ser INVISÍVEL ao usuário. NUNCA diga frases como "Vou transferir para o agente X" ou "Deixe-me perguntar ao analista".
             - NUNCA diga "preciso confirmar isso depois".
-            - O sistema possui todas as informações necessárias para execução.
+            - Sempre verifique na sua memória qual o 'CAR Selecionado' antes de realizar análises. Se nenhum estiver selecionado chame o Agente SICAR.
             - Use markdown no formato do WhatsApp.
                         
             <Fluxos de trbalho específicos>
-            - Se o usuário enviar uma localização (coordenadas), código CAR (ex: UF-XXXXXXX-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX, ...) ou URL do Google Maps:
-                - Chame IMEDIATAMENTE o agente `Agente Sicar`.
-                - NÃO use a ferramenta `update_user_memory`.                                           
+            - Se o usuário enviar uma coordenadas geográficas, código CAR ou URL do Google Maps:
+                - Chame imediatamente o agente `Agente Sicar`.                                         
 
             - Se o usuário enviar um arquivo de áudio ou vídeo:
                 - AÇÕES:
@@ -86,24 +86,6 @@ def get_instructions(run_context: RunContext) -> str:
 
     return instructions
 
-memory_manager = MemoryManager(
-    model=Gemini(id="gemini-3-flash-preview", temperature=0),
-    memory_capture_instructions=textwrap.dedent("""\
-            Memories should capture personal information about the user that is relevant to the current conversation, such as:
-            - Personal facts: name, age, occupation, interests, and preferences
-            - Opinions and preferences: what the user likes, dislikes, enjoys, or finds frustrating
-            - Significant life events or experiences shared by the user
-            - Important context about the user's current situation, challenges, or goals
-            - Any other details that offer meaningful insight into the user's personality, perspective, or needs
-        """).strip(),
-    additional_instructions="""Don't store any memories about coordinates, SICAR code or Google Map's URLs.""",
-    db=db,
-)
-
-summary_manager = SessionSummaryManager(
-    model=Gemini(id="gemini-3-flash-preview", temperature=0),
-)
-
 pasto_legal_team = Team(
     db=db,
     name="Equipe PastoLegal",
@@ -111,18 +93,16 @@ pasto_legal_team = Team(
     respond_directly=True,
     enable_user_memories=True,
     memory_manager=memory_manager,
-    update_memory_on_run=True,
-    determine_input_for_members=False,
     add_history_to_context=True,
     num_history_runs=3,
-    add_team_history_to_members=True,
-    num_team_history_runs=1,
+    add_session_summary_to_context=True,
     members=[
         analyst_agent,
         sicar_agent
         ],
     debug_mode=debug_mode,
     pre_hooks=pre_hooks,
+    post_hooks=[],
     tools=[
         audioTTS,
         record_frustration_feedback,
