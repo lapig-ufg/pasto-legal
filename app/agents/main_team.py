@@ -13,7 +13,7 @@ from app.tools.tts_tools import audioTTS
 from app.tools.feedback_tools import record_frustration_feedback, record_analisys_feedback
 from app.tools.version_tools import consult_update_notes
 from app.hooks.pre_hooks import validate_phone_authorization
-from app.hooks.post_hooks import summarize_hook
+
 from app.guardrails.pii_detection_guardrail import pii_detection_guardrail
 
 
@@ -93,14 +93,14 @@ pasto_legal_team = Team(
     respond_directly=True,
     enable_user_memories=True,
     memory_manager=memory_manager,
-    add_history_to_context=True,
-    num_history_runs=3,
+    #add_history_to_context=True,
+    #num_history_runs=3,
     add_session_summary_to_context=True,
     members=[
         analyst_agent,
         sicar_agent
         ],
-    debug_mode=debug_mode,
+    debug_mode=True,
     pre_hooks=pre_hooks,
     post_hooks=[],
     tools=[

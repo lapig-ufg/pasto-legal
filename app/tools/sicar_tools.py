@@ -17,36 +17,6 @@ from app.utils.scripts.sicar_scripts import (
     )
 from app.utils.scripts.image_scripts import get_mosaic
 from app.utils.scripts.gee_scripts import retrieve_feature_images
-from app.managers.memory_manager import memory_manager
-
-
-def _update_selected_car_memory(car: str, user_id: str):
-    memory_id = "user_selected_car"
-    memory_str = f"O imóvel rural selecionado para análise, consultas e operações neste momento é o CAR: {car}."
-
-    user_memory = memory_manager.get_user_memory(memory_id=memory_id, user_id=user_id)
-
-    if not user_memory:
-        user_memory = UserMemory(memory=memory_str, memory_id=memory_id, topics=["Contexto Ativo", "CAR Selecionado", "Imóvel em Foco", "Sessão Atual"])
-        memory_manager.add_user_memory(memory=user_memory, user_id=user_id)
-        print("SALVOU: $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$", flush=True)
-    else:
-        user_memory.memory = memory_str
-        memory_manager.replace_user_memory(memory_id=memory_id, memory=user_memory, user_id=user_id)
-
-
-def _add_car_memory(cars: str, user_id: str):
-    memory_id = "user_list_car"
-    memory_str = f"O usuário possui as seguintes propriedades rurais cadastradas: [{cars}]"
-
-    memory = memory_manager.get_user_memory(memory_id=memory_id, user_id=user_id)
-
-    if not memory:
-        memory = UserMemory(memory=memory_str, memory_id=memory_id, topics=["Lista de Propriedades", "CARs Disponíveis", "Escopo de Acesso", "Cadastro Rural"])
-        memory_manager.add_user_memory(memory=memory, user_id=user_id)
-    else:
-        memory.memory = memory_str
-        memory_manager.replace_user_memory(memory_id=memory_id, memory=memory, user_id=user_id)
 
 
 @tool
@@ -321,8 +291,6 @@ def select_car_from_list(selection: int, run_context: RunContext):
         run_context.session_state['is_selecting_car'] = False
         run_context.session_state['car_selection_type'] = None
 
-        _update_selected_car_memory(selected_feature['code'], RunContext.user_id)
-
         return ToolResult(content=(
                 "Informe ao usuário que a propriedade foi selecionada corretamente. ✅\n"
                 "Pergunte ao usuário como ele deseja prosseguir. Algumas opções são:\n"
@@ -351,8 +319,6 @@ def confirm_car_selection(run_context: RunContext):
     run_context.session_state['car_candidate'] = None
     run_context.session_state['is_selecting_car'] = False
     run_context.session_state['car_selection_type'] = None
-
-    _update_selected_car_memory(candidate['code'], RunContext.user_id)
 
     return ToolResult(content=(
             f"Informe ao usuário que a propriedade de CAR {candidate['code']} foi selecionada corretamente. ✅\n\n"
