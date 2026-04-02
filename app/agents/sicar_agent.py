@@ -1,5 +1,7 @@
 import textwrap
 
+from typing import List
+
 from agno.run import RunContext
 from agno.agent import Agent
 from agno.models.google import Gemini
@@ -13,22 +15,22 @@ from app.tools.sicar_tools import (
     reject_car_selection
     )
 
+from app.utils.interfaces.rural_property_interface import RuralProperty
+
 
 def get_instructions(run_context: RunContext):
     session_state = run_context.session_state or {}
 
-    is_selecting_car = session_state.get("is_selecting_car", False)
+    candidate_properties: List[RuralProperty] = session_state.get("candidate_properties", None)
 
-    if is_selecting_car:
-        car_selection_type = session_state.get("car_selection_type")
+    if candidate_properties is not None and candidate_properties:
+        n_candidates = len(candidate_properties)
 
-        if car_selection_type == "SINGLE":
-            candidate = run_context.session_state['car_candidate']
-
+        if n_candidates == 1:
             candidate_text = (
-                f"  > *CAR* {candidate["code"]}\n"
-                f"*Tamanho da área*: {round(candidate["area_info"]["total_area"])} ha\n"
-                f"*Município*: {candidate["area_info"]["municipality"]}"
+                f" > Identificador CAR: {candidate_properties[0].identifier}, "
+                f"Tamanho da área: {round(candidate_properties[0].area_info.total_area)} ha, "
+                f"Município: {candidate_properties[0].area_info.municipality}."
             )
 
             instructions = textwrap.dedent(f"""
@@ -42,15 +44,13 @@ def get_instructions(run_context: RunContext):
                 - Se o usuário estiver confuso, instrua-o a confirmar ou rejeitar CAR ou a cancelar a operação.
                 - Use markdown no formato do WhatsApp.
             """).strip()
-        elif car_selection_type == "MULTIPLE":
-            car_all = run_context.session_state['car_all']
-
+        else:
             options_text = []
-            for i, prop in enumerate(car_all):
+            for i, prop in enumerate(candidate_properties):
                 options_text.append(
-                    f"> Opção {i + 1}: CAR {prop['code']}, "
-                    f"Tamanho da área {round(prop['area_info']['total_area'])} ha, "
-                    f"município de {prop['area_info']['municipality']}."
+                    f"> Opção {i + 1} - Identificador CAR: {prop.identifier}, "
+                    f"Tamanho da área: {round(prop.area_info.total_area)} ha, "
+                    f"Município: {prop.area_info.municipality}."
                 )
             result_text = "\n\n".join(options_text)
 

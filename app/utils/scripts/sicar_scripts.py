@@ -84,7 +84,7 @@ def _map_row_to_property_record(row: dict) -> RuralProperty:
     )
 
 
-def fetch_property_by_car_remote(car: str) -> RuralProperty | None:
+def fetch_property_by_car_remote(car: str) -> List[RuralProperty] | None:
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Referer': 'https://consultapublica.car.gov.br/publico/imoveis/index'
@@ -107,7 +107,7 @@ def fetch_property_by_car_remote(car: str) -> RuralProperty | None:
             if not features:
                 return None
 
-            return _map_feature_to_property_record(features[0])
+            return [_map_feature_to_property_record(feature) for feature in features]
 
     except requests.exceptions.HTTPError as e:
         raise RuntimeError(f"O servidor do CAR retornou um erro HTTP. Detalhes: {str(e)}")
@@ -119,7 +119,7 @@ def fetch_property_by_car_remote(car: str) -> RuralProperty | None:
         raise RuntimeError(f"Erro inesperado ao buscar a propriedade remotamente: {str(e)}")
 
 
-def fetch_property_by_car_locally(car: str) -> RuralProperty | None:
+def fetch_property_by_car_locally(car: str) -> List[RuralProperty] | None:
     """
     Busca as informações de um imóvel rural utilizando o código único do CAR.
 
@@ -150,7 +150,7 @@ def fetch_property_by_car_locally(car: str) -> RuralProperty | None:
             return None
         
         records_dicts = df.to_dict('records')
-        result = _map_row_to_property_record(records_dicts[0])
+        result = [_map_row_to_property_record(row) for row in records_dicts]
         
     except Exception:
         result = None

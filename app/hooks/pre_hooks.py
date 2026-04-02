@@ -6,9 +6,10 @@ from pydantic import BaseModel, Field
 
 from agno.run import RunContext
 from agno.run.agent import RunInput
-from agno.team import Team
 from agno.agent import Agent
 from agno.models.google import Gemini
+
+from app.utils.interfaces.rural_property_interface import RuralProperty
 
 
 if not (APP_ENV := os.environ.get('APP_ENV')):
@@ -127,3 +128,27 @@ def validate_car_selection(run_context: RunContext, function_call: Callable, arg
         1. Informe que o sistema não sabe qual é a propriedade.
         2. Solicite que o usuário envie a **localização** por meio do pino de localização do WhatsApp para que o sistema identifique o CAR automaticamente.
     """).strip()
+
+def load_session_state_hook(run_context: RunContext):
+    session_state = run_context.session_state or {}
+
+    if session_state is not None:
+        return
+    
+    if "selected_property" in session_state:
+        selected_property = session_state.get("selected_property", None)
+        if selected_property is not None:
+            validated_property = RuralProperty.model_validate(selected_property)
+            session_state["selected_property"] = validated_property
+
+    if "all_properties" in session_state:
+        all_properties = session_state.get("all_properties", None)
+        if all_properties is not None and isinstance(all_properties, list):
+            validated_properties = [RuralProperty.model_validate(p) for p in all_properties]
+            session_state["all_properties"] = validated_properties
+
+    if "candidate_properties" in session_state:
+        candidate_properties = session_state.get("candidate_properties", None)
+        if candidate_properties is not None and isinstance(candidate_properties, list):
+            validated_candidates = [RuralProperty.model_validate(p) for p in candidate_properties]
+            session_state["candidate_properties"] = validated_candidates

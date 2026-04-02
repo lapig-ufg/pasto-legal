@@ -12,7 +12,9 @@ from app.database.agno_db import db
 from app.tools.tts_tools import audioTTS
 from app.tools.feedback_tools import record_frustration_feedback, record_analisys_feedback
 from app.tools.version_tools import consult_update_notes
-from app.hooks.pre_hooks import validate_phone_authorization
+
+from app.hooks.post_hooks import dump_session_state_hook
+from app.hooks.pre_hooks import validate_phone_authorization, load_session_state_hook
 
 from app.guardrails.pii_detection_guardrail import pii_detection_guardrail
 
@@ -20,7 +22,7 @@ from app.guardrails.pii_detection_guardrail import pii_detection_guardrail
 if not (APP_ENV := os.environ.get('APP_ENV')):
     raise ValueError("APP_ENV environment variables must be set.")
 
-pre_hooks = []
+pre_hooks = [load_session_state_hook]
 
 if APP_ENV == "production":
     debug_mode = False
@@ -51,7 +53,16 @@ def get_instructions(run_context: RunContext) -> str:
             - Não use a ferramenta `update_user_memory`.
         """).strip()
     else:
-        selected_property = session_state.get("car_selected", None)
+        selected_property = session_state.get("selected_property", None)
+        text_selected_property = (
+            f"  > Nome do imóvel: {selected_property.name}, "
+            f"Identificador CAR: {selected_property.identifier}."
+            ) if selected_property else "Nenhuma propriedade selecionada."
+        
+        all_properties = session_state.get("all_properties", None)
+        text_all_properties = "\n".join([(
+            f"  > Nome do imóvel: {p.name}, Identificador CAR: {p.identifier}."
+        ) for p in all_properties]) if all_properties else "Nenhuma propriedade registrada no sistema."
 
         instructions = textwrap.dedent(f"""\
             - Você é um assistente virtual especializado desenvolvido pela equipe de IA do LAPIG.
@@ -85,8 +96,10 @@ def get_instructions(run_context: RunContext) -> str:
             <mandatory-workflow>
                                        
             <system-data>
-            - Propriedade selecionada para análises: {selected_property}
-            - Propriedades do usuário registradas no sistema: {selected_property}
+            - Propriedade rural selecionada:
+            {text_selected_property}
+            - Propriedades do usuário registradas no sistema:
+            {text_all_properties}
             <system-data>              
         """).strip()
     print(instructions, flush=True)
@@ -109,7 +122,7 @@ pasto_legal_team = Team(
         ],
     debug_mode=True,
     pre_hooks=pre_hooks,
-    post_hooks=[],
+    post_hooks=[dump_session_state_hook],
     tools=[
         audioTTS,
         record_frustration_feedback,
