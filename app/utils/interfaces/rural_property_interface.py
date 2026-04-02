@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
@@ -44,15 +44,19 @@ class SicarInfo(BaseModel):
     )
 
 
-class PropertyRecord(BaseModel):
+class RuralProperty(BaseModel):
     """
     Modelo Pydantic para representar os dados consolidados do Imóvel Rural.
     """
-    code: str = Field(
+    name: Optional[str] = Field(
+        default=None,
+        description="Nome escolhido para identificar a propriedade rural."
+    )
+    identifier: str = Field(
         ..., 
         pattern=r"^[A-Z]{2}-\d{7}-[A-Z0-9]{32}$",
         description="Código único do Cadastro Ambiental Rural (CAR).",
-        examples=["GO-5211800-987B29E7E47A4454BAEF582557AB89F3"]
+        examples=["GO-1111111-1111AAAA2222BBBB3333CCCC4444DDDD"]
     )
     area_info: AreaInfo = Field(
         ..., 

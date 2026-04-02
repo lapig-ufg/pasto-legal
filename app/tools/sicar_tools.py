@@ -43,14 +43,11 @@ def query_feature_by_coordinate(latitude: float, longitude: float, run_context: 
             "Peça desculpas ao usuário e informe que nenhuma propriedade foi encontrada nesta coordenada.\n"
             "Peça que tente novamente e verificar se as coordenadas estão corretas."
         )
-    
-    n_properties = len(properties)
-    run_context.session_state['is_selecting_car'] = True
 
     coords = [prop['area_info']['coordinates'][0] for prop in properties]
     imgs = retrieve_feature_images(coords)
     
-    if n_properties == 1:
+    if len(properties) == 1:
         prop = properties[0]
 
         run_context.session_state['car_candidate'] = prop
@@ -76,7 +73,7 @@ def query_feature_by_coordinate(latitude: float, longitude: float, run_context: 
             images=[Image(content=buffer.getvalue())]
             )
     
-    elif n_properties > 1:
+    else:
         run_context.session_state['car_all'] = properties
         run_context.session_state['car_selection_type'] = "MULTIPLE"
 
@@ -276,20 +273,21 @@ def select_car_from_list(selection: int, run_context: RunContext):
         selection (int): O número da opção escolhida pelo usuário (ex: 1, 2, 3...).
     """
     try:
-        car_all = run_context.session_state.get('car_all', [])
+        candidate_properties = run_context.session_state.get('candidate_properties', None)
         
-        if not car_all:
+        if not candidate_properties:
             return ToolResult(content="Nenhuma busca foi realizada ainda. Informe uma localização primeiro.")
 
-        if selection < 1 or selection > len(car_all):
-            return ToolResult(content=f"Seleção inválida. Escolha um número válido entre 1 e {len(car_all)}.")
+        if selection < 1 or selection > len(candidate_properties):
+            return ToolResult(content=f"Seleção inválida. Escolha um número válido entre 1 e {len(candidate_properties)}.")
+        
+        selected_property = candidate_properties[selection - 1]
 
-        selected_feature = car_all[selection - 1]
+        run_context.session_state['selected_property'] = selected_property
+        run_context.session_state['candidate_properties'] = None
 
-        run_context.session_state['car_selected'] = selected_feature
-        run_context.session_state['car_all'] = []
-        run_context.session_state['is_selecting_car'] = False
-        run_context.session_state['car_selection_type'] = None
+        all_properties = run_context.session_state.get('all_properties', [])
+        run_context.session_state['all_properties'] = all_properties + selected_property                                 
 
         return ToolResult(content=(
                 "Informe ao usuário que a propriedade foi selecionada corretamente. ✅\n"
@@ -310,18 +308,21 @@ def confirm_car_selection(run_context: RunContext):
     
     Use esta ferramenta quando a ferramenta 'query_car' encontrar apenas 1 imóvel e o usuário confirmar que está correto (ex: dizendo "Sim", "É essa mesmo").
     """
-    candidate = run_context.session_state.get('car_candidate')
+    candidate_properties = run_context.session_state.get('candidate_properties', None)
     
-    if not candidate:
+    if not candidate_properties:
         return ToolResult(content="Não há propriedade pendente de confirmação. Realize uma busca primeiro.")
+    
+    selected_property = candidate_properties[0]
 
-    run_context.session_state['car_selected'] = candidate
-    run_context.session_state['car_candidate'] = None
-    run_context.session_state['is_selecting_car'] = False
-    run_context.session_state['car_selection_type'] = None
+    run_context.session_state['selected_property'] = selected_property
+    run_context.session_state['candidate_properties'] = None
+
+    all_properties = run_context.session_state.get('all_properties', [])
+    run_context.session_state['all_properties'] = all_properties + selected_property 
 
     return ToolResult(content=(
-            f"Informe ao usuário que a propriedade de CAR {candidate['code']} foi selecionada corretamente. ✅\n\n"
+            f"Informe ao usuário que a propriedade de CAR {candidate_properties['identifier']} foi selecionada corretamente. ✅\n\n"
             "Pergunte ao usuário como ele deseja prosseguir. Algumas opções são:\n"
             "- 🌱 *Análise de pastagem*\n"
             "- 🗺️ *Uso e cobertura da terra*\n"

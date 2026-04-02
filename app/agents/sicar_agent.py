@@ -48,11 +48,11 @@ def get_instructions(run_context: RunContext):
             options_text = []
             for i, prop in enumerate(car_all):
                 options_text.append(
-                    f"  > Opção {i + 1}: CAR {prop['code']}, "
+                    f"> Opção {i + 1}: CAR {prop['code']}, "
                     f"Tamanho da área {round(prop['area_info']['total_area'])} ha, "
                     f"município de {prop['area_info']['municipality']}."
                 )
-            result_text = "\n".join(options_text)
+            result_text = "\n\n".join(options_text)
 
             instructions = textwrap.dedent(f"""
                 - Foi pedido ao usuário para escolher entre as seguintes propriedades:
@@ -77,9 +77,19 @@ def get_instructions(run_context: RunContext):
 
 
 sicar_agent = Agent(
-    name="Agente SICAR",
-    role="Responsável por lidar com coordenadas geográficas, códigos SICAR e URLs do Google Maps",
-    description="Agente responsável por localizar, validar e confirmar propriedades rurais via código CAR ou coordenadas geográficas.",
+    name="Gestor de Propriedades Rurais",
+    role=(
+        "Resposável por administrar o inventário de propriedades do usuário no sistema, sendo o responsável por:\n"
+        "   - Localizar e cadastrar novas propriedades rurais.\n"
+        "   - Editar e atualizar os dados das propriedades selecionadas.\n"
+        "   - Excluir registros de propriedades quando solicitado.\n"
+    ),
+    description=(
+        "Agente resposável por administrar o inventário de propriedades do usuário no sistema, sendo o responsável por:\n"
+        "   - Localizar e cadastrar novas propriedades rurais.\n"
+        "   - Editar e atualizar os dados das propriedades selecionadas.\n"
+        "   - Excluir registros de propriedades quando solicitado.\n"
+    ),
     tools=[
         query_feature_by_url,
         query_feature_by_car,
@@ -88,6 +98,7 @@ sicar_agent = Agent(
         select_car_from_list,
         reject_car_selection
         ],
+    markdown=True,
     instructions=get_instructions,
     model=Gemini(id="gemini-3-flash-preview", temperature=0)
 )

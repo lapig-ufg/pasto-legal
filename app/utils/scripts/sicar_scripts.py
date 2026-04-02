@@ -6,7 +6,7 @@ import requests
 from pathlib import Path
 from typing import List
 
-from app.utils.interfaces.sicar_data_interfaces import PropertyRecord, AreaInfo, SicarInfo
+from app.utils.interfaces.rural_property_interface import RuralProperty, AreaInfo, SicarInfo
 
 # =====================================================================
 # Configuração do Banco de Dados (Engine DuckDB)
@@ -18,9 +18,9 @@ conn.execute("PRAGMA memory_limit='1GB'")
 conn.execute("PRAGMA threads=1")
 
 
-def _map_feature_to_property_record(feature: json) -> PropertyRecord:
+def _map_feature_to_property_record(feature: json) -> RuralProperty:
     """
-    Mapeia uma feature GeoJSON para a estrutura aninhada PropertyRecord.
+    Mapeia uma feature GeoJSON para a estrutura aninhada RuralProperty.
     
     Recebe um dicionário aninhado (JSON) representando uma entidade geográfica 
     (geralmente oriunda de uma API) e extrai suas propriedades e coordenadas 
@@ -31,12 +31,12 @@ def _map_feature_to_property_record(feature: json) -> PropertyRecord:
                         incluindo as chaves 'properties' e 'geometry'.
 
     Returns:
-        PropertyRecord: Entidade tipada contendo os dados do imóvel divididos 
+        RuralProperty: Entidade tipada contendo os dados do imóvel divididos 
                         entre AreaProperties e SICARProperties.
     """
     properties = feature.get('properties', {})
 
-    return PropertyRecord(
+    return RuralProperty(
         code=properties.get('codigo', ''),
         area_info=AreaInfo(
             total_area=properties.get('area', 0.0),
@@ -52,9 +52,9 @@ def _map_feature_to_property_record(feature: json) -> PropertyRecord:
     )
 
 
-def _map_row_to_property_record(row: dict) -> PropertyRecord:
+def _map_row_to_property_record(row: dict) -> RuralProperty:
     """
-    Mapeia uma linha do banco de dados para a estrutura aninhada PropertyRecord.
+    Mapeia uma linha do banco de dados para a estrutura aninhada RuralProperty.
     
     Recebe um dicionário achatado representando a linha retornada pelo DuckDB e 
     converte a geometria extraída em uma lista de coordenadas padrão GeoJSON.
@@ -63,12 +63,12 @@ def _map_row_to_property_record(row: dict) -> PropertyRecord:
         row (dict): Dicionário contendo os dados do imóvel, incluindo a chave 'geometry'.
 
     Returns:
-        PropertyRecord: Entidade tipada contendo os dados do imóvel divididos 
+        RuralProperty: Entidade tipada contendo os dados do imóvel divididos 
                         entre AreaProperties e SICARProperties.
     """
     geom_geojson = json.loads(row['geometry'])
 
-    return PropertyRecord(
+    return RuralProperty(
         code=row.get('cod_imovel', ''),
         area_info=AreaInfo(
             total_area=row.get('num_area', 0.0),
@@ -84,7 +84,7 @@ def _map_row_to_property_record(row: dict) -> PropertyRecord:
     )
 
 
-def fetch_property_by_car_remote(car: str) -> dict[str, any]:
+def fetch_property_by_car_remote(car: str) -> RuralProperty | None:
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Referer': 'https://consultapublica.car.gov.br/publico/imoveis/index'
@@ -107,7 +107,7 @@ def fetch_property_by_car_remote(car: str) -> dict[str, any]:
             if not features:
                 return None
 
-            return _map_feature_to_property_record(features[0]).model_dump(mode='json')
+            return _map_feature_to_property_record(features[0])
 
     except requests.exceptions.HTTPError as e:
         raise RuntimeError(f"O servidor do CAR retornou um erro HTTP. Detalhes: {str(e)}")
@@ -119,7 +119,7 @@ def fetch_property_by_car_remote(car: str) -> dict[str, any]:
         raise RuntimeError(f"Erro inesperado ao buscar a propriedade remotamente: {str(e)}")
 
 
-def fetch_property_by_car_locally(car: str) -> dict[str, any]:
+def fetch_property_by_car_locally(car: str) -> RuralProperty | None:
     """
     Busca as informações de um imóvel rural utilizando o código único do CAR.
 
@@ -129,7 +129,7 @@ def fetch_property_by_car_locally(car: str) -> dict[str, any]:
         car (str): O código string de registro do imóvel no CAR.
 
     Returns:
-        list[PropertyRecord]: Lista contendo o registro do imóvel encontrado, ou lista vazia se não encontrar ou ocorrer erro.
+        list[RuralProperty]: Lista contendo o registro do imóvel encontrado, ou lista vazia se não encontrar ou ocorrer erro.
     """
     cursor = conn.cursor()
     
@@ -150,7 +150,7 @@ def fetch_property_by_car_locally(car: str) -> dict[str, any]:
             return None
         
         records_dicts = df.to_dict('records')
-        result = _map_row_to_property_record(records_dicts[0]).model_dump(mode='json')
+        result = _map_row_to_property_record(records_dicts[0])
         
     except Exception:
         result = None
@@ -159,7 +159,7 @@ def fetch_property_by_car_locally(car: str) -> dict[str, any]:
         return result
 
 
-def fetch_property_by_coordinates_remote(latitude: float, longitude: float) -> List[dict[str, any]]:
+def fetch_property_by_coordinates_remote(latitude: float, longitude: float) -> List[RuralProperty]:
     """
     Busca os dados de uma propriedade rural na base pública remota do CAR usando coordenadas.
     
@@ -168,7 +168,7 @@ def fetch_property_by_coordinates_remote(latitude: float, longitude: float) -> L
         longitude (float): Longitude do ponto de busca (ex: -49.43353).
 
     Returns:
-        List[PropertyRecord]: Lista de propriedades mapeadas para a entidade PropertyRecord. Retorna uma lista vazia caso não exista imóvel na coordenada.
+        List[RuralProperty]: Lista de propriedades mapeadas para a entidade RuralProperty. Retorna uma lista vazia caso não exista imóvel na coordenada.
     """
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -190,9 +190,9 @@ def fetch_property_by_coordinates_remote(latitude: float, longitude: float) -> L
             features = geo_json.get('features', [])
 
             if not features:
-                return []
+                return None
             
-            return [_map_feature_to_property_record(feature).model_dump(mode='json') for feature in features]
+            return [_map_feature_to_property_record(feature) for feature in features]
     except requests.exceptions.HTTPError as e:
         raise RuntimeError(f"O servidor do CAR retornou um erro HTTP. Detalhes: {str(e)}")
     except requests.exceptions.RequestException as e:
@@ -203,7 +203,7 @@ def fetch_property_by_coordinates_remote(latitude: float, longitude: float) -> L
         raise RuntimeError(f"Erro inesperado ao buscar a propriedade remotamente: {str(e)}")
 
 
-def fetch_property_by_coordinates_locally(latitude: float, longitude: float) -> list[PropertyRecord]:
+def fetch_property_by_coordinates_locally(latitude: float, longitude: float) -> List[RuralProperty] | None:
     """
     Realiza busca geoespacial de imóveis rurais a partir de um ponto (Lat/Lon).
 
@@ -215,7 +215,7 @@ def fetch_property_by_coordinates_locally(latitude: float, longitude: float) -> 
         longitude (float): Longitude do ponto de busca (Eixo X).
 
     Returns:
-        list[PropertyRecord]: Lista de imóveis que interceptam a coordenada fornecida.
+        list[RuralProperty]: Lista de imóveis que interceptam a coordenada fornecida.
     """
     cursor = conn.cursor()
     
@@ -240,13 +240,13 @@ def fetch_property_by_coordinates_locally(latitude: float, longitude: float) -> 
         ]).fetchdf()
         
         if df.empty:
-            return []
+            return None
             
         records_dicts = df.to_dict('records')
-        result = [_map_row_to_property_record(row).model_dump(mode='json') for row in records_dicts] 
+        result = [_map_row_to_property_record(row) for row in records_dicts] 
             
     except Exception:
-        result = []
+        result = None
     finally:
         cursor.close()
         return result
