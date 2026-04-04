@@ -4,7 +4,7 @@ import duckdb
 import requests
 
 from pathlib import Path
-from typing import List
+from typing import List, Dict
 
 from app.utils.interfaces.rural_property_interface import RuralProperty, AreaInfo, SicarInfo
 
@@ -18,7 +18,7 @@ conn.execute("PRAGMA memory_limit='1GB'")
 conn.execute("PRAGMA threads=1")
 
 
-def _map_feature_to_property_record(feature: json) -> RuralProperty:
+def _map_feature_to_property_record(feature: json) -> Dict:
     """
     Mapeia uma feature GeoJSON para a estrutura aninhada RuralProperty.
     
@@ -27,17 +27,15 @@ def _map_feature_to_property_record(feature: json) -> RuralProperty:
     para compor a entidade padronizada.
 
     Args:
-        feature (dict): Dicionário contendo os dados do imóvel no formato GeoJSON, 
-                        incluindo as chaves 'properties' e 'geometry'.
+        feature (dict): Dicionário contendo os dados do imóvel no formato GeoJSON, incluindo as chaves 'properties' e 'geometry'.
 
     Returns:
-        RuralProperty: Entidade tipada contendo os dados do imóvel divididos 
-                        entre AreaProperties e SICARProperties.
+        RuralProperty: Entidade tipada contendo os dados do imóvel divididos entre AreaProperties e SICARProperties.
     """
     properties = feature.get('properties', {})
 
     return RuralProperty(
-        code=properties.get('codigo', ''),
+        identifier=properties.get('codigo', ''),
         area_info=AreaInfo(
             total_area=properties.get('area', 0.0),
             municipality=properties.get('municipio', ''),
@@ -49,10 +47,10 @@ def _map_feature_to_property_record(feature: json) -> RuralProperty:
             availability_date=properties.get('dataDisponibilizacao', ''),
             creation_date=properties.get('dataCriacao', '')
         )
-    )
+    ).model_dump()
 
 
-def _map_row_to_property_record(row: dict) -> RuralProperty:
+def _map_row_to_property_record(row: dict) -> Dict:
     """
     Mapeia uma linha do banco de dados para a estrutura aninhada RuralProperty.
     
@@ -63,13 +61,12 @@ def _map_row_to_property_record(row: dict) -> RuralProperty:
         row (dict): Dicionário contendo os dados do imóvel, incluindo a chave 'geometry'.
 
     Returns:
-        RuralProperty: Entidade tipada contendo os dados do imóvel divididos 
-                        entre AreaProperties e SICARProperties.
+        Dict: Entidade tipada contendo os dados do imóvel divididos entre AreaProperties e SICARProperties.
     """
     geom_geojson = json.loads(row['geometry'])
 
     return RuralProperty(
-        code=row.get('cod_imovel', ''),
+        identifier=row.get('cod_imovel', ''),
         area_info=AreaInfo(
             total_area=row.get('num_area', 0.0),
             municipality=row.get('municipio', ''),
@@ -81,10 +78,10 @@ def _map_row_to_property_record(row: dict) -> RuralProperty:
             availability_date=row.get('dat_atuali', ''),
             creation_date=row.get('dat_criaca', '')
         )
-    )
+    ).model_dump()
 
 
-def fetch_property_by_car_remote(car: str) -> List[RuralProperty] | None:
+def fetch_property_by_car_remote(car: str) -> List[Dict] | None:
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Referer': 'https://consultapublica.car.gov.br/publico/imoveis/index'
@@ -119,7 +116,7 @@ def fetch_property_by_car_remote(car: str) -> List[RuralProperty] | None:
         raise RuntimeError(f"Erro inesperado ao buscar a propriedade remotamente: {str(e)}")
 
 
-def fetch_property_by_car_locally(car: str) -> List[RuralProperty] | None:
+def fetch_property_by_car_locally(car: str) -> List[Dict] | None:
     """
     Busca as informações de um imóvel rural utilizando o código único do CAR.
 
@@ -129,7 +126,7 @@ def fetch_property_by_car_locally(car: str) -> List[RuralProperty] | None:
         car (str): O código string de registro do imóvel no CAR.
 
     Returns:
-        list[RuralProperty]: Lista contendo o registro do imóvel encontrado, ou lista vazia se não encontrar ou ocorrer erro.
+        list[Dict]: Lista contendo o registro do imóvel encontrado, ou lista vazia se não encontrar ou ocorrer erro.
     """
     cursor = conn.cursor()
     
@@ -159,7 +156,7 @@ def fetch_property_by_car_locally(car: str) -> List[RuralProperty] | None:
         return result
 
 
-def fetch_property_by_coordinates_remote(latitude: float, longitude: float) -> List[RuralProperty]:
+def fetch_property_by_coordinates_remote(latitude: float, longitude: float) -> List[Dict]:
     """
     Busca os dados de uma propriedade rural na base pública remota do CAR usando coordenadas.
     
@@ -168,7 +165,7 @@ def fetch_property_by_coordinates_remote(latitude: float, longitude: float) -> L
         longitude (float): Longitude do ponto de busca (ex: -49.43353).
 
     Returns:
-        List[RuralProperty]: Lista de propriedades mapeadas para a entidade RuralProperty. Retorna uma lista vazia caso não exista imóvel na coordenada.
+        List[Dict]: Lista de propriedades mapeadas para a entidade RuralProperty. Retorna uma lista vazia caso não exista imóvel na coordenada.
     """
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -203,7 +200,7 @@ def fetch_property_by_coordinates_remote(latitude: float, longitude: float) -> L
         raise RuntimeError(f"Erro inesperado ao buscar a propriedade remotamente: {str(e)}")
 
 
-def fetch_property_by_coordinates_locally(latitude: float, longitude: float) -> List[RuralProperty] | None:
+def fetch_property_by_coordinates_locally(latitude: float, longitude: float) -> List[Dict] | None:
     """
     Realiza busca geoespacial de imóveis rurais a partir de um ponto (Lat/Lon).
 
@@ -215,7 +212,7 @@ def fetch_property_by_coordinates_locally(latitude: float, longitude: float) -> 
         longitude (float): Longitude do ponto de busca (Eixo X).
 
     Returns:
-        list[RuralProperty]: Lista de imóveis que interceptam a coordenada fornecida.
+        list[Dict]: Lista de imóveis que interceptam a coordenada fornecida.
     """
     cursor = conn.cursor()
     

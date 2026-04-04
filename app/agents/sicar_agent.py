@@ -15,22 +15,20 @@ from app.tools.sicar_tools import (
     reject_car_selection
     )
 
-from app.utils.interfaces.rural_property_interface import RuralProperty
-
 
 def get_instructions(run_context: RunContext):
     session_state = run_context.session_state or {}
 
-    candidate_properties: List[RuralProperty] = session_state.get("candidate_properties", None)
+    candidate_properties = session_state.get("candidate_properties", None)
 
-    if candidate_properties is not None and candidate_properties:
+    if candidate_properties:
         n_candidates = len(candidate_properties)
 
         if n_candidates == 1:
             candidate_text = (
-                f" > Identificador CAR: {candidate_properties[0].identifier}, "
-                f"Tamanho da área: {round(candidate_properties[0].area_info.total_area)} ha, "
-                f"Município: {candidate_properties[0].area_info.municipality}."
+                f" > Identificador CAR: {candidate_properties[0]["identifier"]}, "
+                f"Tamanho da área: {round(candidate_properties[0]["area_info"]["total_area"])} ha, "
+                f"Município: {candidate_properties[0]["area_info"]["municipality"]}."
             )
 
             instructions = textwrap.dedent(f"""
@@ -46,13 +44,13 @@ def get_instructions(run_context: RunContext):
             """).strip()
         else:
             options_text = []
-            for i, prop in enumerate(candidate_properties):
+            for i, p in enumerate(candidate_properties):
                 options_text.append(
-                    f"> Opção {i + 1} - Identificador CAR: {prop.identifier}, "
-                    f"Tamanho da área: {round(prop.area_info.total_area)} ha, "
-                    f"Município: {prop.area_info.municipality}."
+                    f"> Opção {i + 1} - Identificador CAR: {p["identifier"]}, "
+                    f"Tamanho da área: {round(p["area_info"]["total_area"])} ha, "
+                    f"Município: {p["area_info"]["municipality"]}."
                 )
-            result_text = "\n\n".join(options_text)
+            result_text = "\n".join(options_text)
 
             instructions = textwrap.dedent(f"""
                 - Foi pedido ao usuário para escolher entre as seguintes propriedades:
@@ -79,16 +77,20 @@ def get_instructions(run_context: RunContext):
 sicar_agent = Agent(
     name="Gestor de Propriedades Rurais",
     role=(
-        "Resposável por administrar o inventário de propriedades do usuário no sistema, sendo o responsável por:\n"
+        "Resposável por administrar os registros de propriedades do usuário no sistema, sendo o responsável por:\n"
         "   - Localizar e cadastrar novas propriedades rurais.\n"
         "   - Editar e atualizar os dados das propriedades selecionadas.\n"
-        "   - Excluir registros de propriedades quando solicitado.\n"
+        "   - Excluir registros de propriedades quando solicitado."
     ),
-    description=(
-        "Agente resposável por administrar o inventário de propriedades do usuário no sistema, sendo o responsável por:\n"
-        "   - Localizar e cadastrar novas propriedades rurais.\n"
-        "   - Editar e atualizar os dados das propriedades selecionadas.\n"
-        "   - Excluir registros de propriedades quando solicitado.\n"
+description=(
+        "Você é um agente especialista em gerenciar os registros de Propriedades Rurais no sistema PastoLegal.\n"
+        "Sua função é atuar como um módulo técnico integrado a um time, executando comandos "
+        "diretos do orquestrador para processar o pedido final do usuário.\n"
+        "Suas responsabilidades exclusivas são:\n"
+        "   - Localizar e cadastrar novas propriedades rurais no sistema.\n"
+        "   - Editar e atualizar dados de propriedades já existentes.\n"
+        "   - Excluir registros de propriedades de forma definitiva quando solicitado.\n"
+        "Colabore com o orquestrador para que ele possa finalizar o atendimento com sucesso."
     ),
     tools=[
         query_feature_by_url,

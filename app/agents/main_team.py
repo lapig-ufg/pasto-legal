@@ -13,8 +13,7 @@ from app.tools.tts_tools import audioTTS
 from app.tools.feedback_tools import record_frustration_feedback, record_analisys_feedback
 from app.tools.version_tools import consult_update_notes
 
-from app.hooks.post_hooks import dump_session_state_hook
-from app.hooks.pre_hooks import validate_phone_authorization, load_session_state_hook
+from app.hooks.pre_hooks import validate_phone_authorization
 
 from app.guardrails.pii_detection_guardrail import pii_detection_guardrail
 
@@ -22,7 +21,7 @@ from app.guardrails.pii_detection_guardrail import pii_detection_guardrail
 if not (APP_ENV := os.environ.get('APP_ENV')):
     raise ValueError("APP_ENV environment variables must be set.")
 
-pre_hooks = [load_session_state_hook]
+pre_hooks = []
 
 if APP_ENV == "production":
     debug_mode = False
@@ -34,17 +33,14 @@ elif APP_ENV == "stagging":
     pre_hooks.append(pii_detection_guardrail)
 elif APP_ENV == "development":
     debug_mode = True
-    pre_hooks = []
 
 
 def get_instructions(run_context: RunContext) -> str:
     session_state = run_context.session_state or {}
 
-    is_selecting_car = session_state.get("is_selecting_car", False)
-
     # TODO: Implementar uma linha de instruções para usuários novos aceitarem os termos e condições.
 
-    if is_selecting_car:
+    if session_state.get("candidate_properties", None):
         instructions = textwrap.dedent("""\
             - O usuário está em um fluxo de atendimento focado na seleção de propriedade rural (CAR).
             - Você deve usar a ferramenta `delegate_task_to_member` para repassar o controle da conversa ao `Gestor de Propriedades Rurais`.
@@ -55,14 +51,14 @@ def get_instructions(run_context: RunContext) -> str:
     else:
         selected_property = session_state.get("selected_property", None)
         text_selected_property = (
-            f"  > Nome do imóvel: {selected_property.name}, "
-            f"Identificador CAR: {selected_property.identifier}."
-            ) if selected_property else "Nenhuma propriedade selecionada."
+            f"  > Nome do imóvel: {selected_property["name"]}, "
+            f"Identificador CAR: {selected_property["identifier"]}."
+            ) if selected_property else "   > Nenhuma propriedade selecionada."
         
         all_properties = session_state.get("all_properties", None)
         text_all_properties = "\n".join([(
-            f"  > Nome do imóvel: {p.name}, Identificador CAR: {p.identifier}."
-        ) for p in all_properties]) if all_properties else "Nenhuma propriedade registrada no sistema."
+            f"  > Nome do imóvel: {p["name"]}, Identificador CAR: {p["identifier"]}."
+        ) for p in all_properties]) if all_properties else "    > Nenhuma propriedade registrada no sistema."
 
         instructions = textwrap.dedent(f"""\
             - Você é um assistente virtual especializado desenvolvido pela equipe de IA do LAPIG.
@@ -103,14 +99,12 @@ def get_instructions(run_context: RunContext) -> str:
             <system-data>              
         """).strip()
     print(instructions, flush=True)
-    print(session_state, flush=True)
     return instructions
 
 pasto_legal_team = Team(
     name="Equipe PastoLegal",
     model=Gemini(id="gemini-3-flash-preview", temperature=0),
     db=db,
-    respond_directly=True,
     enable_user_memories=True,
     memory_manager=memory_manager,
     add_history_to_context=True,
@@ -122,7 +116,6 @@ pasto_legal_team = Team(
         ],
     debug_mode=True,
     pre_hooks=pre_hooks,
-    post_hooks=[dump_session_state_hook],
     tools=[
         audioTTS,
         record_frustration_feedback,

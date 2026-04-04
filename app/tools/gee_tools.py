@@ -5,12 +5,12 @@ from agno.tools.function import ToolResult
 from agno.run import RunContext
 from agno.media import Image
 
-from app.hooks.tool_hooks import validate_car_hook
+from app.hooks.tool_hooks import validate_selected_property_hook
 from app.utils.scripts.gee_scripts import retrieve_feature_images, retrieve_feature_biomass_image, ee_query_pasture
 
 
 # TODO: Escrever ferramenta para visualização da área de pastagem do usuário.
-@tool(tool_hooks=[validate_car_hook])
+@tool(tool_hooks=[validate_selected_property_hook])
 def generate_property_image(run_context: RunContext) -> ToolResult:
     """
     Gera uma imagem de satélite em alta resolução (RGB) da propriedade rural, incluindo a delimitação geográfica.
@@ -39,7 +39,7 @@ def generate_property_image(run_context: RunContext) -> ToolResult:
         return ToolResult(content=f"Erro ao gerar imagem: {str(e)}")
 
 
-@tool(tool_hooks=[validate_car_hook])
+@tool(tool_hooks=[validate_selected_property_hook])
 def generate_property_biomass_image(run_context: RunContext) -> ToolResult:
     """
     Gera um mapa geoespacial temático da biomassa (vegetação) sobre os limites da propriedade rural do usuário.
@@ -68,7 +68,7 @@ def generate_property_biomass_image(run_context: RunContext) -> ToolResult:
         return ToolResult(content=str(e))
 
 
-@tool(tool_hooks=[validate_car_hook])
+@tool(tool_hooks=[validate_selected_property_hook])
 def query_pasture(run_context: RunContext) -> dict:
     """
     Realiza uma análise técnica detalhada do uso do solo, com foco em pastagem, vigor vegetativo e biomassa
