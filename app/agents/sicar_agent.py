@@ -32,6 +32,9 @@ def get_instructions(run_context: RunContext):
             )
 
             instructions = textwrap.dedent(f"""
+                - Você atua como um agente especialista subordinado dentro de um time de agentes.
+                - Sua função exclusiva é receber, interpretar e executar com precisão as tarefas delegadas a você pelo agente Orquestrador.
+                - Ao concluir sua tarefa, seja o mais claro, objetivo e estruturado possível ao reportar ao agente Orquestrador.
                 - Foi pedido ao usuário para confirmar ou rejeitar a seguinte propriedade:
                                            
                 {candidate_text}
@@ -53,6 +56,9 @@ def get_instructions(run_context: RunContext):
             result_text = "\n".join(options_text)
 
             instructions = textwrap.dedent(f"""
+                - Você atua como um agente especialista subordinado dentro de um time de agentes.
+                - Sua função exclusiva é receber, interpretar e executar com precisão as tarefas delegadas a você pelo agente Orquestrador.
+                - Ao concluir sua tarefa, seja o mais claro, objetivo e estruturado possível ao reportar ao agente Orquestrador.
                 - Foi pedido ao usuário para escolher entre as seguintes propriedades:
                                            
                 {result_text}
@@ -64,11 +70,12 @@ def get_instructions(run_context: RunContext):
                 - Use markdown no formato do WhatsApp.
             """).strip()
     else:
-        instructions = instructions = textwrap.dedent("""
-            - Seja sempre muito educado.
-            - Siga as instruções dadas pelas ferramentas.
-            - Nunca chame as ferramentas confirm_car_selection, select_car_from_list, reject_car_selection. Estas são ferramentas proibidas.
-            - Use markdown no formato do WhatsApp.
+        instructions = textwrap.dedent("""
+            - Você atua como um agente especialista subordinado dentro de um time de agentes.
+            - Sua função exclusiva é receber, interpretar e executar com precisão as tarefas delegadas a você pelo agente Orquestrador.
+            - Ao concluir sua tarefa, seja o mais claro, objetivo e estruturado possível ao reportar ao agente Orquestrador.
+            - Utilize as ferramentas disponíveis de forma estrita, respeitando rigorosamente os parâmetros e as orientações de uso de cada uma.
+            - É proibido invocar as ferramentas `confirm_car_selection`, `select_car_from_list` e `reject_car_selection`. Nunca tente usá-las sob nenhuma hipótese.
         """).strip()
     
     return instructions
@@ -79,18 +86,14 @@ sicar_agent = Agent(
     role=(
         "Resposável por administrar os registros de propriedades do usuário no sistema, sendo o responsável por:\n"
         "   - Localizar e cadastrar novas propriedades rurais.\n"
-        "   - Editar e atualizar os dados das propriedades selecionadas.\n"
+        "   - Editar e atualizar os dados e metadados das propriedades.\n"
         "   - Excluir registros de propriedades quando solicitado."
     ),
 description=(
-        "Você é um agente especialista em gerenciar os registros de Propriedades Rurais no sistema PastoLegal.\n"
-        "Sua função é atuar como um módulo técnico integrado a um time, executando comandos "
-        "diretos do orquestrador para processar o pedido final do usuário.\n"
-        "Suas responsabilidades exclusivas são:\n"
-        "   - Localizar e cadastrar novas propriedades rurais no sistema.\n"
-        "   - Editar e atualizar dados de propriedades já existentes.\n"
-        "   - Excluir registros de propriedades de forma definitiva quando solicitado.\n"
-        "Colabore com o orquestrador para que ele possa finalizar o atendimento com sucesso."
+        "Agente resposável por administrar os registros de propriedades do usuário no sistema, sendo o responsável por:\n"
+        "   - Localizar e cadastrar novas propriedades rurais.\n"
+        "   - Editar e atualizar os dados e metadados das propriedades.\n"
+        "   - Excluir registros de propriedades quando solicitado."
     ),
     tools=[
         query_feature_by_url,
