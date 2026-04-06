@@ -4,6 +4,7 @@ from agno.tools import tool
 from agno.tools.function import ToolResult
 from agno.run import RunContext
 from agno.media import Image
+from agno.utils.log import log_debug
 
 from app.hooks.tool_hooks import validate_selected_property_hook
 from app.utils.scripts.gee_scripts import retrieve_feature_images, retrieve_feature_biomass_image, ee_query_pasture
@@ -40,7 +41,7 @@ def generate_property_image(run_context: RunContext) -> ToolResult:
 
 
 @tool(tool_hooks=[validate_selected_property_hook])
-def generate_property_biomass_image(run_context: RunContext) -> ToolResult:
+def generate_property_biomass_image(run_context: RunContext, car: str = None) -> ToolResult:
     """
     Gera um mapa geoespacial temático da biomassa (vegetação) sobre os limites da propriedade rural do usuário.
     
@@ -48,11 +49,20 @@ def generate_property_biomass_image(run_context: RunContext) -> ToolResult:
     - O usuário solicitar visualização espacial, mapas ou imagens da biomassa.
     - Termos como "ver a foto da biomassa" ou "ver distribuição de biomassa" forem utilizados.
 
+    params:
+        car (str): Código de Cadastro Ambiental Rural (CAR)
+
     Return:
         ToolResult: Mapa renderizado em formato PNG.
     """
     try:
-        coords = run_context.session_state['selected_property']['area_info']['coordinates']
+        if car is None:
+            _property = run_context.session_state['selected_property']
+        else:
+            all_properties = run_context.session_state['all_properties']
+            _property = [prop for prop in all_properties if prop["identifier"] == car][0]
+            
+        coords = _property['area_info']['coordinates']
 
         img = retrieve_feature_biomass_image(coords=coords)
 
@@ -69,7 +79,7 @@ def generate_property_biomass_image(run_context: RunContext) -> ToolResult:
 
 
 @tool(tool_hooks=[validate_selected_property_hook])
-def query_pasture(run_context: RunContext) -> dict:
+def query_pasture(car: str, run_context: RunContext) -> dict:
     """
     Realiza uma análise técnica detalhada do uso do solo, com foco em pastagem, vigor vegetativo e biomassa
     para a propriedade selecionada no contexto (CAR).
@@ -80,16 +90,23 @@ def query_pasture(run_context: RunContext) -> dict:
     - Classificação de uso do solo (LULC) incluindo: Silvicultura, Cana, Soja, Arroz, Café, Citrus, etc.
     - Histórico ou idade da pastagem.
 
+    params:
+        car (str): Código de Cadastro Ambiental Rural (CAR)
+
     Return:
         Dicionário contendo a área de pastagem, vigor da pastagem, áreas de pastagem degradadas (baixo vigor), biomassa total e a idade.
     """
     try:
-        coords = run_context.session_state['selected_property']['area_info']['coordinates']
+        if car is None:
+            _property = run_context.session_state['selected_property']
+        else:
+            all_properties = run_context.session_state['all_properties']
+            _property = [prop for prop in all_properties if prop["identifier"] == car][0]
+
+        coords = _property['area_info']['coordinates']
 
         query = ee_query_pasture(coords=coords)
-
-        # TODO: Corrigir erro de tipagem.
     
-        return ToolResult(content=query)
+        return ToolResult(content=str(query))
     except Exception as e:
         return ToolResult(content=str(e))
