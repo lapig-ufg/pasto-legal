@@ -1,15 +1,18 @@
 import textwrap
 
-from typing import List
-
 from agno.run import RunContext
 from agno.agent import Agent
 from agno.models.google import Gemini
 
-from app.tools.sicar_tools import (
-    query_feature_by_url,
-    query_feature_by_car,
-    query_feature_by_coordinate,
+from app.tools.property_manager_tools import (
+    remove_property,
+    remove_all_properties,
+    set_property_name,
+    get_all_properties,
+    get_selected_property,
+    register_feature_by_url,
+    register_feature_by_car,
+    register_feature_by_coordinate,
     select_car_from_list,
     confirm_car_selection,
     reject_car_selection
@@ -56,9 +59,6 @@ def get_instructions(run_context: RunContext):
             result_text = "\n".join(options_text)
 
             instructions = textwrap.dedent(f"""
-                - Você atua como um agente especialista subordinado dentro de um time de agentes.
-                - Sua função exclusiva é receber, interpretar e executar com precisão as tarefas delegadas a você pelo agente Orquestrador.
-                - Ao concluir sua tarefa, seja o mais claro, objetivo e estruturado possível ao reportar ao agente Orquestrador.
                 - Foi pedido ao usuário para escolher entre as seguintes propriedades:
                                            
                 {result_text}
@@ -71,17 +71,19 @@ def get_instructions(run_context: RunContext):
             """).strip()
     else:
         instructions = textwrap.dedent("""
-            - Você atua como um agente especialista subordinado dentro de um time de agentes.
-            - Sua função exclusiva é receber, interpretar e executar com precisão as tarefas delegadas a você pelo agente Orquestrador.
-            - Ao concluir sua tarefa, seja o mais claro, objetivo e estruturado possível ao reportar ao agente Orquestrador.
             - Utilize as ferramentas disponíveis de forma estrita, respeitando rigorosamente os parâmetros e as orientações de uso de cada uma.
             - É proibido invocar as ferramentas `confirm_car_selection`, `select_car_from_list` e `reject_car_selection`. Nunca tente usá-las sob nenhuma hipótese.
+
+            <mandatory-workflow>
+            - Se o usuário informar o nome da propriedade:
+                - Use a ferramenta set_property_name para definir o nome da propriedade.
+            <mandatory-workflow>  
         """).strip()
     
     return instructions
 
 
-sicar_agent = Agent(
+property_manager_agent = Agent(
     name="Gestor de Propriedades Rurais",
     role=(
         "Resposável por administrar os registros de propriedades do usuário no sistema, sendo o responsável por:\n"
@@ -89,16 +91,21 @@ sicar_agent = Agent(
         "   - Editar e atualizar os dados e metadados das propriedades.\n"
         "   - Excluir registros de propriedades quando solicitado."
     ),
-description=(
+    description=(
         "Agente resposável por administrar os registros de propriedades do usuário no sistema, sendo o responsável por:\n"
         "   - Localizar e cadastrar novas propriedades rurais.\n"
         "   - Editar e atualizar os dados e metadados das propriedades.\n"
         "   - Excluir registros de propriedades quando solicitado."
     ),
     tools=[
-        query_feature_by_url,
-        query_feature_by_car,
-        query_feature_by_coordinate,
+        remove_property,
+        remove_all_properties,
+        set_property_name,
+        get_all_properties,
+        get_selected_property,
+        register_feature_by_url,
+        register_feature_by_car,
+        register_feature_by_coordinate,
         confirm_car_selection,
         select_car_from_list,
         reject_car_selection

@@ -1,6 +1,7 @@
 import re
 
 from io import BytesIO
+from typing import List, Tuple
 
 from agno.run import RunContext
 from agno.tools import tool
@@ -18,10 +19,10 @@ from app.utils.scripts.image_scripts import get_mosaic
 from app.utils.scripts.gee_scripts import retrieve_feature_images
 
 
-@tool
-def query_feature_by_coordinate(latitude: float, longitude: float, run_context: RunContext):
+@tool(stop_after_tool_call=True)
+def register_feature_by_coordinate(latitude: float, longitude: float, run_context: RunContext):
     """
-    Recupera imóveis no Cadastro Ambiental Rural (CAR) baseando-se nas coordenadas fornecidas.
+    Registra uma nova propriedade rural baseando-se nas coordenadas fornecidas.
     
     Use esta ferramenta quando o usuário fornecer coordenadas geográficas (latitude/longitude).
     
@@ -60,7 +61,7 @@ def query_feature_by_coordinate(latitude: float, longitude: float, run_context: 
         )
 
         return ToolResult(
-            content=(f"Peça que o usário confirme a seguinte propriedade:\n{result_text}"),
+            content=(f"Pergunte ao usuário se a seguinte propriedade é a correta:\n{result_text}"),
             images=[Image(content=buffer.getvalue())]
             )
     
@@ -80,15 +81,15 @@ def query_feature_by_coordinate(latitude: float, longitude: float, run_context: 
         result_text = "\n".join(options_text)
 
         return ToolResult(
-            content=(f"Peça que o usuário escolha entre as opções:\n{result_text}"),
+            content=(f"Pergunte ao usuário qual das seguinte propriedades é a correta:\n{result_text}"),
             images=[Image(content=buffer.getvalue())]
             )
 
     
-@tool
-def query_feature_by_car(car: str, run_context: RunContext):
+@tool(stop_after_tool_call=True)
+def register_feature_by_car(car: str, run_context: RunContext):
     """
-    Recupera imóveis no Cadastro Ambiental Rural (CAR) baseando-se nas coordenadas fornecidas.
+    Registra uma nova propriedade rural baseando-se nas coordenadas fornecidas.
     
     Use esta ferramenta quando o usuário fornecer um valor de CAR.
     
@@ -138,15 +139,15 @@ def query_feature_by_car(car: str, run_context: RunContext):
     )
 
     return ToolResult(
-        content=f"Peça que o usário confirme a seguinte propriedade:\n{result_text}",
+        content=f"Pergunte ao usuário se a seguinte propriedade é a correta:\n{result_text}",
         images=[Image(content=buffer.getvalue())]
         )
 
 
-@tool
-def query_feature_by_url(url: str, run_context: RunContext) -> ToolResult:
+@tool(stop_after_tool_call=True)
+def register_feature_by_url(url: str, run_context: RunContext) -> ToolResult:
     """
-    Recupera imóveis no Cadastro Ambiental Rural (CAR) baseando-se na URL de compartilhamento do Google Maps.
+    Registra uma nova propriedade rural baseando-se na URL de compartilhamento do Google Maps.
     
     Use esta ferramenta quando o usuário fornecer uma URL de compartilhamento do Google Maps.
     
@@ -197,7 +198,7 @@ def query_feature_by_url(url: str, run_context: RunContext) -> ToolResult:
         )
 
         return ToolResult(
-            content=(f"Peça que o usário confirme a seguinte propriedade:\n{result_text}"),
+            content=(f"Pergunte ao usuário se a seguinte propriedade é a correta:\n{result_text}"),
             images=[Image(content=buffer.getvalue())]
             )
     
@@ -217,12 +218,12 @@ def query_feature_by_url(url: str, run_context: RunContext) -> ToolResult:
         result_text = "\n".join(options_text)
 
         return ToolResult(
-            content=(f"Peça que o usuário escolha entre as opções:\n{result_text}"),
+            content=(f"Pergunte ao usuário qual das seguinte propriedades é a correta:\n{result_text}"),
             images=[Image(content=buffer.getvalue())]
             )
 
 
-@tool
+@tool(stop_after_tool_call=True)
 def select_car_from_list(selection: int, run_context: RunContext):
     """
     Seleciona uma propriedade específica quando a busca retorna múltiplos resultados.
@@ -249,12 +250,17 @@ def select_car_from_list(selection: int, run_context: RunContext):
         all_properties = run_context.session_state.get('all_properties', [])
         run_context.session_state['all_properties'] = all_properties + [selected_property]                                 
 
-        return ToolResult(content=(f"A propriedade de identificador CAR {selected_property["identifier"]} foi registrada com sucesso."))
+        return ToolResult(
+            content=(
+                f"A propriedade de identificador CAR {selected_property["identifier"]} foi registrada com sucesso."
+                "Seja proativo, pergunte ao usuário se ele gostaria de atribuir um nome para a propriedade.\n"
+            )
+        )
     except Exception as e:
         return ToolResult(content=f"[ERRO] Falha ao selecionar: {str(e)}")
 
 
-@tool
+@tool(stop_after_tool_call=True)
 def confirm_car_selection(run_context: RunContext):
     """
     Confirma a propriedade encontrada quando a busca retorna apenas um resultado único.
@@ -274,10 +280,15 @@ def confirm_car_selection(run_context: RunContext):
     all_properties = run_context.session_state.get('all_properties', [])
     run_context.session_state['all_properties'] = all_properties + [selected_property] 
 
-    return ToolResult(content=(f"A propriedade de identificador CAR {selected_property["identifier"]} foi registrada com sucesso."))
+    return ToolResult(
+        content=(
+            f"A propriedade de identificador CAR {selected_property["identifier"]} foi registrada com sucesso."
+            "Seja proativo, pergunte ao usuário se ele gostaria de atribuir um nome para a propriedade.\n"
+        )
+    )
 
 
-@tool
+@tool(stop_after_tool_call=True)
 def reject_car_selection(run_context: RunContext):
     """
     Cancela a seleção ou rejeita os resultados encontrados.
@@ -286,9 +297,95 @@ def reject_car_selection(run_context: RunContext):
     """
     run_context.session_state['candidate_properties'] = None
 
-    return ToolResult(
-        content=(
-            "Peça desculpas por não ter encontrado a propriedade correta.\n"
-            "Peça ao usuário que verifica se as coordenadas ou car estão corretos."
-        )
-    )
+    return ToolResult(content=("Peça desculpas por não ter encontrado a propriedade correta.\n"))
+
+
+@tool
+def get_selected_property(run_context: RunContext) -> Tuple[str, str]:
+    """
+    Retorna o nome e o identificador CAR da propriedade selecionada para análises.
+
+    return:
+        tuple: Nome e identificador CAR da propriedade selecionada.
+    """
+    selected_property = run_context.session_state.get('selected_property', None)
+
+    return (selected_property.get("name", None), selected_property["identifier"])
+
+
+@tool
+def get_all_properties(run_context: RunContext) -> List[Tuple[str, str]]:
+    """
+    Retorna a lista de propriedades registradas no sistema.
+    
+    return:
+        list: Lista de propriedades registradas no sistema.
+    """
+    all_properties = run_context.session_state.get('all_properties', [])
+
+    return [(p.get("name", None), p["identifier"]) for p in all_properties] or None
+
+
+@tool
+def set_property_name(car: str, name: str, run_context: RunContext):
+    """
+    Atualizar o nome propriedade registrada no sistema.
+
+    Args:
+        car(str): Código de Cadastro Ambiental Rural (CAR)
+        name (str): Nome da propriedade.
+    """
+    selected_property = run_context.session_state.get('selected_property', None)
+    
+    if selected_property:
+        if selected_property["identifier"] == car:
+            selected_property["name"] = name
+
+    all_properties = run_context.session_state.get('all_properties', [])
+    for prop in all_properties:
+        if prop.get("identifier") == selected_property.get("identifier"):
+            prop["name"] = name
+            return f"O nome da propriedade {selected_property.get('identifier')} foi definido como '{name}' com sucesso."
+        
+    return "Nenhuma propriedade selecionada no momento."
+
+
+def remove_property(car: str, run_context: RunContext) -> str:
+    """
+    Remove a propriedade selecionada do sistema.
+
+    Args:
+        car(str): Código de Cadastro Ambiental Rural (CAR)
+    """
+    all_properties = run_context.session_state.get('all_properties', [])
+
+    flag=False
+    new_all_properties = []
+    for prop in all_properties:
+        if prop.get("identifier") == car:
+            flag=True
+            continue
+        
+        new_all_properties.append(prop)
+
+    if not flag:
+        return "A propriedade não foi encontrada no sistema."
+
+    selected_car = run_context.session_state.get('selected_property', None)
+    if selected_car is not None:
+        if selected_car.get("identifier") == car:
+            run_context.session_state['selected_property'] = new_all_properties[-1] if new_all_properties else None
+
+    run_context.session_state['all_properties'] = new_all_properties
+
+    return "A propriedade foi removida com sucesso."
+
+
+def remove_all_properties(run_context: RunContext) -> str:
+    """
+    Remove todas as propriedades registradas no sistema.
+    """
+    run_context.session_state['all_properties'] = []
+    run_context.session_state['selected_property'] = None
+
+    return "Todas as propriedades foram removidas com sucesso."

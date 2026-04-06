@@ -23,7 +23,7 @@ def generate_property_image(run_context: RunContext) -> ToolResult:
         ToolResult: Imagem PNG da visão aérea com delimitação geográfica.
     """
     try:
-        coords = run_context.session_state['car_selected']['area_info']['coordinates']
+        coords = run_context.session_state['selected_property']['area_info']['coordinates']
 
         img = retrieve_feature_images(coords=coords)
 
@@ -52,7 +52,7 @@ def generate_property_biomass_image(run_context: RunContext) -> ToolResult:
         ToolResult: Mapa renderizado em formato PNG.
     """
     try:
-        coords = run_context.session_state['car_selected']['area_info']['coordinates']
+        coords = run_context.session_state['selected_property']['area_info']['coordinates']
 
         img = retrieve_feature_biomass_image(coords=coords)
 
@@ -84,7 +84,7 @@ def query_pasture(run_context: RunContext) -> dict:
         Dicionário contendo a área de pastagem, vigor da pastagem, áreas de pastagem degradadas (baixo vigor), biomassa total e a idade.
     """
     try:
-        coords = run_context.session_state['car_selected']['area_info']['coordinates']
+        coords = run_context.session_state['selected_property']['area_info']['coordinates']
 
         query = ee_query_pasture(coords=coords)
 

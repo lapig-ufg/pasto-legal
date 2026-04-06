@@ -6,7 +6,7 @@ from agno.team.team import Team
 
 from agno.models.google import Gemini
 
-from app.agents import analyst_agent, sicar_agent
+from app.agents import analyst_agent, property_manager_agent
 from app.managers.memory_manager import memory_manager
 from app.database.agno_db import db
 from app.tools.tts_tools import audioTTS
@@ -89,17 +89,11 @@ def get_instructions(run_context: RunContext) -> str:
                     2. Diga que deseja aprender e pergunte: "Me desculpe por não entender. Como seria a resposta ideal que você esperava?"
                     3. Após o usuário fornecer a resposta desejada, você DEVE usar a ferramenta `registrar_feedback` passando a pergunta original (que gerou o erro), o motivo da frustração e a resposta que o usuário ensinou.
                     4. Agradeça a colaboração e retorne a conversa de forma amigável.
-            <mandatory-workflow>
-                                       
-            <system-data>
-            - Propriedade rural selecionada:
-            {text_selected_property}
-            - Propriedades do usuário registradas no sistema:
-            {text_all_properties}
-            <system-data>              
+            <mandatory-workflow>            
         """).strip()
     print(instructions, flush=True)
     return instructions
+
 
 pasto_legal_team = Team(
     name="Equipe PastoLegal",
@@ -112,7 +106,7 @@ pasto_legal_team = Team(
     add_session_summary_to_context=True,
     members=[
         analyst_agent,
-        sicar_agent
+        property_manager_agent
         ],
     debug_mode=True,
     pre_hooks=pre_hooks,
