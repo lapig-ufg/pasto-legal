@@ -44,7 +44,7 @@ def register_feature_by_coordinate(latitude: float, longitude: float, run_contex
             "Peça que tente novamente e verificar se as coordenadas estão corretas."
         )
 
-    imgs = retrieve_feature_images([p["area_info"]["coordinates"][0] for p in properties])
+    imgs = retrieve_feature_images([p["spatial_features"]["coordinates"][0] for p in properties])
 
     run_context.session_state["candidate_properties"] = properties
     
@@ -55,9 +55,9 @@ def register_feature_by_coordinate(latitude: float, longitude: float, run_contex
         img.save(buffer, format="PNG")
 
         result_text = (
-            f"  > Identificador CAR: {properties[0]["identifier"]}, "
-            f"Tamanho da área: {round(properties[0]["area_info"]["total_area"])} ha, "
-            f"Município: {properties[0]["area_info"]["municipality"]}."
+            f"  > Identificador CAR: {properties[0]["car_code"]}, "
+            f"Tamanho da área: {round(properties[0]["spatial_features"]["total_area"])} ha, "
+            f"Município: {properties[0]["spatial_features"]["municipality"]}."
         )
 
         return ToolResult(
@@ -74,9 +74,9 @@ def register_feature_by_coordinate(latitude: float, longitude: float, run_contex
         options_text = []
         for i, p in enumerate(properties):
             options_text.append(
-                f"  > Opção {i + 1} - Identificador CAR {p["identifier"]}, "
-                f"Tamanho da área {round(p["area_info"]["total_area"])} ha, "
-                f"município de {p["area_info"]["municipality"]}."
+                f"  > Opção {i + 1} - Identificador CAR {p["car_code"]}, "
+                f"Tamanho da área {round(p["spatial_features"]["total_area"])} ha, "
+                f"município de {p["spatial_features"]["municipality"]}."
             )
         result_text = "\n".join(options_text)
 
@@ -125,7 +125,7 @@ def register_feature_by_car(car: str, run_context: RunContext):
             )
         )
 
-    img = retrieve_feature_images(properties[0]["area_info"]["coordinates"])[0]
+    img = retrieve_feature_images(properties[0]["spatial_features"]["coordinates"])[0]
 
     buffer = BytesIO()
     img.save(buffer, format="PNG")
@@ -133,9 +133,9 @@ def register_feature_by_car(car: str, run_context: RunContext):
     run_context.session_state['candidate_properties'] = properties
 
     result_text = (
-        f"  > Identificador CAR: {properties[0]["identifier"]}, "
-        f"Tamanho da área: {round(properties[0]["area_info"]["total_area"])} ha, "
-        f"Município: {properties[0]["area_info"]["municipality"]}.\n"
+        f"  > Identificador CAR: {properties[0]["car_code"]}, "
+        f"Tamanho da área: {round(properties[0]["spatial_features"]["total_area"])} ha, "
+        f"Município: {properties[0]["spatial_features"]["municipality"]}.\n"
     )
 
     return ToolResult(
@@ -181,7 +181,7 @@ def register_feature_by_url(url: str, run_context: RunContext) -> ToolResult:
             "Peça que tente novamente e verificar se a URL do Google Maps esta correta."
         )
     
-    imgs = retrieve_feature_images([p["area_info"].coordinates[0] for p in properties])
+    imgs = retrieve_feature_images([p["spatial_features"].coordinates[0] for p in properties])
 
     run_context.session_state["candidate_properties"] = properties
     
@@ -192,9 +192,9 @@ def register_feature_by_url(url: str, run_context: RunContext) -> ToolResult:
         img.save(buffer, format="PNG")
 
         result_text = (
-            f"  > Identificador CAR: {properties[0]["identifier"]}, "
-            f"Tamanho da área: {round(properties[0]["area_info"]["total_area"])} ha, "
-            f"Município: {properties[0]["area_info"]["municipality"]}."
+            f"  > Identificador CAR: {properties[0]["car_code"]}, "
+            f"Tamanho da área: {round(properties[0]["spatial_features"]["total_area"])} ha, "
+            f"Município: {properties[0]["spatial_features"]["municipality"]}."
         )
 
         return ToolResult(
@@ -211,9 +211,9 @@ def register_feature_by_url(url: str, run_context: RunContext) -> ToolResult:
         options_text = []
         for i, p in enumerate(properties):
             options_text.append(
-                f"  > Opção {i + 1} - Identificador CAR {p["identifier"]}, "
-                f"Tamanho da área {round(p["area_info"]["total_area"])} ha, "
-                f"município de {p["area_info"]["municipality"]}."
+                f"  > Opção {i + 1} - Identificador CAR {p["car_code"]}, "
+                f"Tamanho da área {round(p["spatial_features"]["total_area"])} ha, "
+                f"município de {p["spatial_features"]["municipality"]}."
             )
         result_text = "\n".join(options_text)
 
@@ -252,7 +252,7 @@ def select_car_from_list(selection: int, run_context: RunContext):
 
         return ToolResult(
             content=(
-                f"A propriedade de identificador CAR {selected_property["identifier"]} foi registrada com sucesso."
+                f"A propriedade de identificador CAR {selected_property["car_code"]} foi registrada com sucesso."
                 "Seja proativo, pergunte ao usuário se ele gostaria de atribuir um nome para a propriedade.\n"
             )
         )
@@ -282,7 +282,7 @@ def confirm_car_selection(run_context: RunContext):
 
     return ToolResult(
         content=(
-            f"A propriedade de identificador CAR {selected_property["identifier"]} foi registrada com sucesso."
+            f"A propriedade de identificador CAR {selected_property["car_code"]} foi registrada com sucesso."
             "Seja proativo, pergunte ao usuário se ele gostaria de atribuir um nome para a propriedade.\n"
         )
     )
@@ -310,7 +310,7 @@ def get_selected_property(run_context: RunContext) -> Tuple[str, str]:
     """
     selected_property = run_context.session_state.get('selected_property', None)
 
-    return (selected_property.get("name", None), selected_property["identifier"])
+    return (selected_property.get("nickname", None), selected_property["car_code"])
 
 
 @tool
@@ -323,7 +323,7 @@ def get_all_properties(run_context: RunContext) -> List[Tuple[str, str]]:
     """
     all_properties = run_context.session_state.get('all_properties', [])
 
-    return [(p.get("name", None), p["identifier"]) for p in all_properties] or None
+    return [(p.get("nickname", None), p["car_code"]) for p in all_properties] or None
 
 
 @tool
@@ -338,14 +338,14 @@ def set_property_name(car: str, name: str, run_context: RunContext):
     selected_property = run_context.session_state.get('selected_property', None)
     
     if selected_property:
-        if selected_property["identifier"] == car:
-            selected_property["name"] = name
+        if selected_property["car_code"] == car:
+            selected_property["nickname"] = name
 
     all_properties = run_context.session_state.get('all_properties', [])
     for prop in all_properties:
-        if prop.get("identifier") == selected_property.get("identifier"):
-            prop["name"] = name
-            return f"O nome da propriedade {selected_property.get('identifier')} foi definido como '{name}' com sucesso."
+        if prop.get("car_code") == selected_property.get("car_code"):
+            prop["nickname"] = name
+            return f"O nome da propriedade {selected_property.get('car_code')} foi definido como '{name}' com sucesso."
         
     return "Nenhuma propriedade selecionada no momento."
 
@@ -362,7 +362,7 @@ def remove_property(car: str, run_context: RunContext) -> str:
     flag=False
     new_all_properties = []
     for prop in all_properties:
-        if prop.get("identifier") == car:
+        if prop.get("car_code") == car:
             flag=True
             continue
         
@@ -373,7 +373,7 @@ def remove_property(car: str, run_context: RunContext) -> str:
 
     selected_car = run_context.session_state.get('selected_property', None)
     if selected_car is not None:
-        if selected_car.get("identifier") == car:
+        if selected_car.get("car_code") == car:
             run_context.session_state['selected_property'] = new_all_properties[-1] if new_all_properties else None
 
     run_context.session_state['all_properties'] = new_all_properties

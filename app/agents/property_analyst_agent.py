@@ -3,18 +3,36 @@ import textwrap
 from agno.agent import Agent
 from agno.models.google import Gemini
 
-from app.tools.gee_tools import query_pasture, generate_property_biomass_image
+from app.tools.property_analyst_tools import query_pasture, generate_property_biomass_image
+
+from app.tools.property_analyst_tools import query_pasture_biomass, query_pasture_vigor, query_pasture_age, query_pasture_lulc
 
 
 analyst_agent = Agent(
     name="Agente Analista",
-    role="Especialista central em Agropecuária e Geoprocessamento. Responsável por todas as demandas voltadas a propriedades rurais, desde análises espaciais e geração de dados/mapas até o esclarecimento amplo de dúvidas agronômicas.",
-    description="Especialista Técnico em Análise Espacial, Métricas de Pastagem, ferramentas de geração de mapas e análise de imagens. Responsável por executar ferramentas técnicas para gerar mapas, imagens de satélite, levantar estatísticas, análisar imagens sobre uso e cobertura da terra e esclarecer dúvidas com base na Embrapa.",
+    role=(
+        "Especialista em agropecuária e geoprocessamento. Resposável por análises de dados, "
+        "inteligência geográfica e suporte técnico de propriedades.\n"
+        "Suas responsabilidades são:\n"
+        "   - Esclarecer dúvidas técnicas e agronômicas gerais.\n"
+        "   - Executar análises técnicas com o Google Earth Engine.\n"
+        "   - Gerar análises espaciais, relatórios e mapas temáticos.\n"
+    ),
+    description=(
+        "Agente especialista em agropecuária e geoprocessamento. Resposável por análises de dados, "
+        "inteligência geográfica e suporte técnico de propriedades.\n"
+        "Suas responsabilidades são:\n"
+        "   - Esclarecer dúvidas técnicas e agronômicas gerais.\n"
+        "   - Executar análises técnicas com o Google Earth Engine.\n"
+        "   - Gerar análises espaciais, relatórios e mapas temáticos.\n"
+    ),
     debug_mode=True,
     tools=[
-        generate_property_biomass_image,
-        query_pasture,
-        ],
+        query_pasture_biomass,
+        query_pasture_vigor,
+        query_pasture_age,
+        query_pasture_lulc
+    ],
     instructions= textwrap.dedent("""
         - Seja o mais conciso possível, explicando os resultados de forma simples para o pequeno produtore rural.
         - Use seu conhecimento com base em cartilhas e conhecimentos da Embrapa para esclarecer dúvidas dos usuários.

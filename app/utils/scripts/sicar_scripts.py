@@ -6,7 +6,7 @@ import requests
 from pathlib import Path
 from typing import List, Dict
 
-from app.utils.interfaces.rural_property_interface import RuralProperty, AreaInfo, SicarInfo
+from app.utils.interfaces.rural_property_interface import RuralProperty, SpatialFeatures, SicarMetadata
 
 # =====================================================================
 # Configuração do Banco de Dados (Engine DuckDB)
@@ -35,13 +35,13 @@ def _map_feature_to_property_record(feature: json) -> Dict:
     properties = feature.get('properties', {})
 
     return RuralProperty(
-        identifier=properties.get('codigo', ''),
-        area_info=AreaInfo(
+        car_code=properties.get('codigo', ''),
+        spatial_features=SpatialFeatures(
             total_area=properties.get('area', 0.0),
             municipality=properties.get('municipio', ''),
             coordinates=feature.get('geometry', {}).get('coordinates', None)
         ),
-        sicar_info=SicarInfo(
+        sicar_metadata=SicarMetadata(
             tipo=properties.get('tipo', ''),
             status=properties.get('status', ''),
             availability_date=properties.get('dataDisponibilizacao', ''),
@@ -66,13 +66,13 @@ def _map_row_to_property_record(row: dict) -> Dict:
     geom_geojson = json.loads(row['geometry'])
 
     return RuralProperty(
-        identifier=row.get('cod_imovel', ''),
-        area_info=AreaInfo(
+        car_code=row.get('cod_imovel', ''),
+        spatial_features=SpatialFeatures(
             total_area=row.get('num_area', 0.0),
             municipality=row.get('municipio', ''),
             coordinates=[geom_geojson.get('coordinates', [])]
         ),
-        sicar_info=SicarInfo(
+        sicar_metadata=SicarMetadata(
             tipo=row.get('ind_tipo', ''),
             status=row.get('ind_status', ''),
             availability_date=row.get('dat_atuali', ''),

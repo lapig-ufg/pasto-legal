@@ -111,7 +111,7 @@ def retrieve_feature_images(coords: List[List[List[List[float]]]]) -> List[PIL.I
 
 
 # TODO: Otimizar e tornar mais legivel.
-def retrieve_feature_biomass_image(coords: List[List[List[List[float]]]]) -> PIL.Image:
+def retrieve_feature_biomass_image(coords: List[List[List[List[float]]]], year: int = None) -> PIL.Image:
     """
     Gera uma imagem de satélite com a camada de biomassa de pastagem sobreposta,
     baseada na geometria da propriedade rural fornecida.
@@ -123,11 +123,22 @@ def retrieve_feature_biomass_image(coords: List[List[List[List[float]]]]) -> PIL
         PIL.Image: Imagem final mesclada contendo satélite, biomassa, contorno e legenda.
     """
     try:
+        biomass_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_biomass_v2')
+        biomass_asset_bands = biomass_asset.bandNames().getInfo()
+
+        max_year = int(biomass_asset_bands[-1].replace("biomass_", ""))
+        min_year = int(biomass_asset_bands[0].replace("biomass_", ""))
+
+        if year < min_year or year > max_year:
+            raise ValueError(f"O ano deve estar entre {min_year} e {max_year}.")
+
         # 1. Geometria e Datas
         roi = ee.Geometry.MultiPolygon(coords)
 
-        today = datetime.date.today()
-        s_date = ee.Date.fromYMD(today.year - 1, today.month, 1)
+        if year is None:
+            year = datetime.date.today().year
+
+        s_date = ee.Date.fromYMD(year, 1, 1)
         e_date = s_date.advance(1, 'year')
 
         # 2. Imagem Base (Sentinel-2)
@@ -141,9 +152,7 @@ def retrieve_feature_biomass_image(coords: List[List[List[List[float]]]]) -> PIL
         base_collection = base_collection.visualize(**{"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}) 
 
         # 3. Camada de Biomassa (MapBiomas)
-        biomass_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_biomass_v2')
-        last_band_idx = biomass_asset.bandNames().size().subtract(1)
-        biomass = biomass_asset.select([last_band_idx]).clip(roi)
+        biomass = biomass_asset.select([year - 2000]).clip(roi)
         
         palette_biomass = ['#000033','#9400D3','#FF00FF','#00FFFF','#FFFFFF']
     

@@ -51,13 +51,13 @@ def get_instructions(run_context: RunContext) -> str:
     else:
         selected_property = session_state.get("selected_property", None)
         text_selected_property = (
-            f"  > Nome do imóvel: {selected_property["name"]}, "
-            f"Identificador CAR: {selected_property["identifier"]}."
+            f"  > Nome do imóvel: {selected_property["nickname"]}, "
+            f"Identificador CAR: {selected_property["car_code"]}."
             ) if selected_property else "   > Nenhuma propriedade selecionada."
         
         all_properties = session_state.get("all_properties", None)
         text_all_properties = "\n".join([(
-            f"  > Nome do imóvel: {p["name"]}, Identificador CAR: {p["identifier"]}."
+            f"  > Nome do imóvel: {p["nickname"]}, Identificador CAR: {p["car_code"]}."
         ) for p in all_properties]) if all_properties else "    > Nenhuma propriedade registrada no sistema."
 
         instructions = textwrap.dedent(f"""\

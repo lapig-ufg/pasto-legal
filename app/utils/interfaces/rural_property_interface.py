@@ -2,7 +2,7 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
-class AreaInfo(BaseModel):
+class SpatialFeatures(BaseModel):
     """Propriedades espaciais e territoriais do imóvel."""
     total_area: float = Field(
         ..., 
@@ -20,7 +20,7 @@ class AreaInfo(BaseModel):
     )
 
 
-class SicarInfo(BaseModel):
+class SicarMetadata(BaseModel):
     """Dados administrativos e de status do imóvel no SICAR."""
     tipo: str = Field(
         ..., 
@@ -48,21 +48,21 @@ class RuralProperty(BaseModel):
     """
     Modelo Pydantic para representar os dados consolidados do Imóvel Rural.
     """
-    name: Optional[str] = Field(
+    nickname: Optional[str] = Field(
         default=None,
         description="Nome escolhido para identificar a propriedade rural."
     )
-    identifier: str = Field(
+    car_code: str = Field(
         ..., 
         pattern=r"^[A-Z]{2}-\d{7}-[A-Z0-9]{32}$",
         description="Código único do Cadastro Ambiental Rural (CAR).",
         examples=["GO-1111111-1111AAAA2222BBBB3333CCCC4444DDDD"]
     )
-    area_info: AreaInfo = Field(
+    spatial_features: SpatialFeatures = Field(
         ..., 
         description="Objeto contendo as informações de área, município e coordenadas."
     )
-    sicar_info: SicarInfo = Field(
+    sicar_metadata: SicarMetadata = Field(
         ..., 
         description="Objeto contendo os metadados administrativos do sistema SICAR."
     )

@@ -31,7 +31,7 @@ def new_user(user_id, user_name):
     users = get_users()
 
     if not any(user['id'] == user_id for user in users):
-        users.append({"id": user_id, "name": user_name})
+        users.append({"id": user_id, "nickname": user_name})
         with open(DB_FILE, "w") as f:
             json.dump(users, f, indent=4)
 

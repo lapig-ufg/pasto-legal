@@ -29,9 +29,9 @@ def get_instructions(run_context: RunContext):
 
         if n_candidates == 1:
             candidate_text = (
-                f" > Identificador CAR: {candidate_properties[0]["identifier"]}, "
-                f"Tamanho da área: {round(candidate_properties[0]["area_info"]["total_area"])} ha, "
-                f"Município: {candidate_properties[0]["area_info"]["municipality"]}."
+                f" > Identificador CAR: {candidate_properties[0]["car_code"]}, "
+                f"Tamanho da área: {round(candidate_properties[0]["spatial_features"]["total_area"])} ha, "
+                f"Município: {candidate_properties[0]["spatial_features"]["municipality"]}."
             )
 
             instructions = textwrap.dedent(f"""
@@ -52,9 +52,9 @@ def get_instructions(run_context: RunContext):
             options_text = []
             for i, p in enumerate(candidate_properties):
                 options_text.append(
-                    f"> Opção {i + 1} - Identificador CAR: {p["identifier"]}, "
-                    f"Tamanho da área: {round(p["area_info"]["total_area"])} ha, "
-                    f"Município: {p["area_info"]["municipality"]}."
+                    f"> Opção {i + 1} - Identificador CAR: {p["car_code"]}, "
+                    f"Tamanho da área: {round(p["spatial_features"]["total_area"])} ha, "
+                    f"Município: {p["spatial_features"]["municipality"]}."
                 )
             result_text = "\n".join(options_text)
 
