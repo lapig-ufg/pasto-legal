@@ -91,10 +91,11 @@ def get_instructions(run_context: RunContext) -> str:
                     4. Agradeça a colaboração e retorne a conversa de forma amigável.
             <mandatory-workflow>            
         """).strip()
-    print(instructions, flush=True)
+
     return instructions
 
 
+# TODO: Depois de registrar. Usar todas as ferramentas para ter um resumo e propor uma continuidade.
 pasto_legal_team = Team(
     name="Equipe PastoLegal",
     model=Gemini(id="gemini-3-flash-preview", temperature=0),
