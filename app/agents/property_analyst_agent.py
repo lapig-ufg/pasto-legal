@@ -3,9 +3,14 @@ import textwrap
 from agno.agent import Agent
 from agno.models.google import Gemini
 
-from app.tools.property_analyst_tools import query_pasture, generate_property_biomass_image
-
-from app.tools.property_analyst_tools import query_pasture_biomass, query_pasture_vigor, query_pasture_age, query_pasture_lulc
+from app.tools.property_analyst_tools import (
+    generate_property_image,
+    generate_biomass_image,
+    query_pasture_biomass,
+    query_pasture_vigor,
+    query_pasture_age,
+    query_pasture_lulc
+    )
 
 
 analyst_agent = Agent(
@@ -31,7 +36,9 @@ analyst_agent = Agent(
         query_pasture_biomass,
         query_pasture_vigor,
         query_pasture_age,
-        query_pasture_lulc
+        query_pasture_lulc,
+        generate_property_image,
+        generate_biomass_image
     ],
     instructions= textwrap.dedent("""
         - Seja o mais conciso possível, explicando os resultados de forma simples para o pequeno produtore rural.

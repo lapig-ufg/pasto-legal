@@ -6,27 +6,33 @@ from agno.run import RunContext
 from agno.media import Image
 
 from app.hooks.tool_hooks import validate_selected_property_hook
-from app.utils.scripts.gee_scripts import retrieve_feature_images, retrieve_feature_biomass_image, ee_query_pasture
+from app.utils.scripts.gee_scripts import retrieve_feature_images, retrieve_feature_biomass_image, query_pasture_statistics
 from app.utils.interfaces.ee_data_interfaces import BiomassData, VigorData, AgeData, LULCClassData
 
 
-# TODO: Escrever ferramenta para visualização da área de pastagem do usuário.
 @tool(tool_hooks=[validate_selected_property_hook])
-def generate_property_image(run_context: RunContext) -> ToolResult:
+def generate_property_image(run_context: RunContext, car: str = None, year: int = None) -> ToolResult:
     """
-    Gera uma imagem de satélite em alta resolução (RGB) da propriedade rural, incluindo a delimitação geográfica.
+    Gera uma imagem de satélite em alta resolução (RGB) da propriedade rural,
+    incluindo a delimitação geográfica, com base nos últimos dois meses.
 
-    Esta ferramenta deve ser chamada quando:
-    - O usuário quiser ver uma "foto", "imagem real" ou "visão aérea" da fazenda.
-    - For solicitado o contorno da propriedade (CAR) sobreposto ao terreno natural.
+    params:
+        car (str): Código de Cadastro Ambiental Rural (CAR), `None` para a propriedade selecionada no sistema.
+        year: O ano para a consulta dos dados (2000-2024), `None` para o ano mais recente disponível (2024).
 
     Return:
         ToolResult: Imagem PNG da visão aérea com delimitação geográfica.
     """
     try:
-        coords = run_context.session_state['selected_property']['spatial_features']['coordinates']
+        if car is None:
+            _property = run_context.session_state['selected_property']
+        else:
+            all_properties = run_context.session_state['all_properties']
+            _property = [prop for prop in all_properties if prop["car_code"] == car][0]
 
-        img = retrieve_feature_images(coords=coords)
+        coords = _property['spatial_features']['coordinates']
+
+        img = retrieve_feature_images(coords=coords, year=year)
 
         buffer = BytesIO()
         img.save(buffer, format="PNG")
@@ -43,11 +49,11 @@ def generate_property_image(run_context: RunContext) -> ToolResult:
 @tool(tool_hooks=[validate_selected_property_hook])
 def generate_biomass_image(run_context: RunContext, car: str = None, year: int = None) -> ToolResult:
     """
-    Gera um mapa geoespacial temático da biomassa (matéria seca) sobre os limites da propriedade rural.
+    Gera um mapa temático da biomassa (matéria seca) sobre os limites da propriedade rural.
 
     params:
         car (str): Código de Cadastro Ambiental Rural (CAR), `None` para a propriedade selecionada no sistema.
-        year (int): Ano para a consulta dos dados, `None` para o ano atual.
+        year: O ano para a consulta dos dados (2000-2024), `None` para o ano mais recente disponível (2024).
 
     Return:
         ToolResult: Mapa renderizado em formato PNG.
@@ -61,7 +67,7 @@ def generate_biomass_image(run_context: RunContext, car: str = None, year: int =
             
         coords = _property['spatial_features']['coordinates']
 
-        img = retrieve_feature_biomass_image(coords=coords)
+        img = retrieve_feature_biomass_image(coords=coords, year=year)
 
         buffer = BytesIO()
         img.save(buffer, format="PNG")
@@ -75,14 +81,14 @@ def generate_biomass_image(run_context: RunContext, car: str = None, year: int =
         return ToolResult(content=str(e))
 
 
-@tool
+@tool(tool_hooks=[validate_selected_property_hook])
 def query_pasture_biomass(run_context: RunContext, car: str = None, year: int = None):
     """
     Busca os dados de biomassa de pastagem (matéria seca) de uma propriedade rural.
 
-    Args:
-        car: O código Cadastro Ambiental Rural (CAR) da propriedade, `None` para a propriedade selecionada no sistema.
-        year: O ano para a consulta dos dados, `None` para o ano atual. 
+    params:
+        car (str): Código de Cadastro Ambiental Rural (CAR), `None` para a propriedade selecionada no sistema.
+        year: O ano para a consulta dos dados (2000-2024), `None` para o ano mais recente disponível (2024).
     """
     try:
         if car is None:
@@ -102,7 +108,7 @@ def query_pasture_biomass(run_context: RunContext, car: str = None, year: int = 
 
             coords = _property["spatial_features"]["coordinates"]
 
-            query = ee_query_pasture(coords=coords)
+            query = query_pasture_statistics(coords=coords, year=year)
 
             _property["data"]["pasture_data"][year] = query.model_dump()
 
@@ -111,14 +117,14 @@ def query_pasture_biomass(run_context: RunContext, car: str = None, year: int = 
         return ToolResult(content=str(e))
 
 
-@tool
+@tool(tool_hooks=[validate_selected_property_hook])
 def query_pasture_vigor(run_context: RunContext, car: str = None, year: int = None):
     """
     Busca os dados de vigor vegetativo de pastagem de uma propriedade rural.
 
-    Args:
-        car: O código Cadastro Ambiental Rural (CAR) da propriedade, `None` para a propriedade selecionada no sistema.
-        year: O ano para a consulta dos dados, `None` para o ano atual. 
+    params:
+        car (str): Código de Cadastro Ambiental Rural (CAR), `None` para a propriedade selecionada no sistema.
+        year: O ano para a consulta dos dados (2000-2024), `None` para o ano mais recente disponível (2024).
     """
     try:
         if car is None:
@@ -138,7 +144,7 @@ def query_pasture_vigor(run_context: RunContext, car: str = None, year: int = No
 
             coords = _property["spatial_features"]["coordinates"]
 
-            query = ee_query_pasture(coords=coords)
+            query = query_pasture_statistics(coords=coords, year=year)
 
             _property["data"]["pasture_data"][year] = query.model_dump()
 
@@ -149,14 +155,14 @@ def query_pasture_vigor(run_context: RunContext, car: str = None, year: int = No
         return ToolResult(content=str(e))
 
 
-@tool
+@tool(tool_hooks=[validate_selected_property_hook])
 def query_pasture_age(run_context: RunContext, car: str = None, year: int = None):
     """
     Busca os dados de idade da pastagem de uma propriedade rural.
 
-    Args:
-        car: O código Cadastro Ambiental Rural (CAR) da propriedade, `None` para a propriedade selecionada no sistema.
-        year: O ano para a consulta dos dados, `None` para o ano atual. 
+    params:
+        car (str): Código de Cadastro Ambiental Rural (CAR), `None` para a propriedade selecionada no sistema.
+        year: O ano para a consulta dos dados (2000-2024), `None` para o ano mais recente disponível (2024).
     """
     try:
         if car is None:
@@ -176,7 +182,7 @@ def query_pasture_age(run_context: RunContext, car: str = None, year: int = None
 
             coords = _property["spatial_features"]["coordinates"]
 
-            query = ee_query_pasture(coords=coords)
+            query = query_pasture_statistics(coords=coords, year=year)
 
             _property["data"]["pasture_data"][year] = query.model_dump()
 
@@ -187,14 +193,14 @@ def query_pasture_age(run_context: RunContext, car: str = None, year: int = None
         return ToolResult(content=str(e))
 
 
-@tool
+@tool(tool_hooks=[validate_selected_property_hook])
 def query_pasture_lulc(run_context: RunContext, car: str = None, year: int = None):
     """
     Busca os dados de uso e cobertura da terra de uma propriedade rural.
 
-    Args:
-        car: O código Cadastro Ambiental Rural (CAR) da propriedade, `None` para a propriedade selecionada no sistema.
-        year: O ano para a consulta dos dados, `None` para o ano atual. 
+    params:
+        car (str): Código de Cadastro Ambiental Rural (CAR), `None` para a propriedade selecionada no sistema.
+        year: O ano para a consulta dos dados (2000-2024), `None` para o ano mais recente disponível (2024).
     """
     try:
         if car is None:
@@ -214,7 +220,7 @@ def query_pasture_lulc(run_context: RunContext, car: str = None, year: int = Non
 
             coords = _property["spatial_features"]["coordinates"]
 
-            query = ee_query_pasture(coords=coords)
+            query = query_pasture_statistics(coords=coords, year=year)
 
             _property["data"]["pasture_data"][year] = query.model_dump()
 

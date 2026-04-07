@@ -129,14 +129,14 @@ def retrieve_feature_biomass_image(coords: List[List[List[List[float]]]], year: 
         max_year = int(biomass_asset_bands[-1].replace("biomass_", ""))
         min_year = int(biomass_asset_bands[0].replace("biomass_", ""))
 
+        if year is None:
+            year = max_year
+
         if year < min_year or year > max_year:
             raise ValueError(f"O ano deve estar entre {min_year} e {max_year}.")
-
+        
         # 1. Geometria e Datas
         roi = ee.Geometry.MultiPolygon(coords)
-
-        if year is None:
-            year = datetime.date.today().year
 
         s_date = ee.Date.fromYMD(year, 1, 1)
         e_date = s_date.advance(1, 'year')
@@ -236,18 +236,30 @@ def retrieve_feature_biomass_image(coords: List[List[List[List[float]]]], year: 
     
 
 # TODO: Otimizar e tornar mais legivel. (Talvez criar uma função para cada operação)
-def ee_query_pasture(coords: List[List[List[List[float]]]]) -> PastureStatsResult:
+def query_pasture_statistics(coords: List[List[List[List[float]]]], year: int = None) -> PastureStatsResult:
     """
     Extração de estatísticas de pastagem (biomassa, vigor, idade e chuva).
     """
     from app.utils.interfaces.ee_data_interfaces import Value, BiomassData, AgeData, VigorData, LULCClassData
 
     try:
+        biomass_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_biomass_v2')
+        biomass_asset_bands = biomass_asset.bandNames().getInfo()
+
+        max_year = int(biomass_asset_bands[-1].replace("biomass_", ""))
+        min_year = int(biomass_asset_bands[0].replace("biomass_", ""))
+
+        if year is None:
+            year = max_year
+
+        if year < min_year or year > max_year:
+            raise ValueError(f"O ano deve estar entre {min_year} e {max_year}.")
+
         roi = ee.Geometry.MultiPolygon(coords)
 
         # ==================== Query Biomass ====================
         biomass_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_biomass_v2')
-        last_biomass = biomass_asset.select(biomass_asset.bandNames().size().subtract(1))
+        last_biomass = biomass_asset.select(year - 2000)
         
         stats = last_biomass.reduceRegion(
                     reducer=ee.Reducer.sum(),
@@ -261,7 +273,7 @@ def ee_query_pasture(coords: List[List[List[List[float]]]]) -> PastureStatsResul
         AGE_DICT = {'1':'1-10', '2':'10-20', '3':'20-30', '4':'30-40'}
 
         age_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_age_v2')
-        last_age = age_asset.select(age_asset.bandNames().size().subtract(1))
+        last_age = age_asset.select(year - 2000)
 
         last_age = last_age.subtract(200)
         last_age = last_age.where(last_age.eq(-100), 40)
@@ -298,7 +310,7 @@ def ee_query_pasture(coords: List[List[List[List[float]]]]) -> PastureStatsResul
         VIGOR_DICT = {'1':'Baixo', '2':'Médio', '3':'Alto'}
 
         vigor_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_vigor_v3')
-        last_vigor = vigor_asset.select(vigor_asset.bandNames().size().subtract(1))
+        last_vigor = vigor_asset.select(year - 2000)
 
         areaImg = ee.Image.pixelArea().divide(10000).addBands(last_vigor)
 
@@ -339,7 +351,7 @@ def ee_query_pasture(coords: List[List[List[List[float]]]]) -> PastureStatsResul
         }
 
         class_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_integration_v2')
-        last_class = class_asset.select(class_asset.bandNames().size().subtract(1))
+        last_class = class_asset.select(year - 2000)
 
         areaImg = ee.Image.pixelArea().divide(10000).addBands(last_class)
 
