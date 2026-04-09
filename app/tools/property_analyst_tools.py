@@ -11,14 +11,13 @@ from app.utils.interfaces.ee_data_interfaces import BiomassData, VigorData, AgeD
 
 
 @tool(tool_hooks=[validate_selected_property_hook])
-def generate_property_image(run_context: RunContext, car: str = None, year: int = None) -> ToolResult:
+def generate_property_image(run_context: RunContext, car: str = None) -> ToolResult:
     """
     Gera uma imagem de satélite em alta resolução (RGB) da propriedade rural,
     incluindo a delimitação geográfica, com base nos últimos dois meses.
 
     params:
         car (str): Código de Cadastro Ambiental Rural (CAR), `None` para a propriedade selecionada no sistema.
-        year: O ano para a consulta dos dados (2000-2024), `None` para o ano mais recente disponível (2024).
 
     Return:
         ToolResult: Imagem PNG da visão aérea com delimitação geográfica.
@@ -32,7 +31,7 @@ def generate_property_image(run_context: RunContext, car: str = None, year: int 
 
         coords = _property['spatial_features']['coordinates']
 
-        img = retrieve_feature_images(coords=coords, year=year)
+        img = retrieve_feature_images(coords=coords)
 
         buffer = BytesIO()
         img.save(buffer, format="PNG")
