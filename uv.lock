@@ -9,7 +9,7 @@ resolution-markers = [
 
 [[package]]
 name = "agno"
-version = "2.3.13"
+version = "2.5.14"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "docstring-parser" },
@@ -26,9 +26,9 @@ dependencies = [
     { name = "typer" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/13/9a/645b019004ef13ab6245fe7bb6b313f7689e21d695a3774abd82c4597b4a/agno-2.3.13.tar.gz", hash = "sha256:a8a5f68aee3eb9a40babbca262b9b5ab9049cb3c9ed8d297eb18185d218a87e6", size = 1283062, upload-time = "2025-12-15T11:11:33.249Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/3f/d9/26236de973e2b7f7e76897bf8c8f2b0f6a1d2f8c5fc43a1e7ae76a4a9078/agno-2.5.14.tar.gz", hash = "sha256:fd33ebf9b1683e3cd5e994a8b1e81d1d6a894f78b145099089f7180727d4a676", size = 1838839, upload-time = "2026-04-02T20:29:28.11Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fe/82/e884a5b0257385443d6ca092cb58687dc6673143d384372d1cc412e74111/agno-2.3.13-py3-none-any.whl", hash = "sha256:79844146b1dd471ea2afed6ab41f7c7e76c70dcbaab2be860722905ca40b4910", size = 1550357, upload-time = "2025-12-15T11:11:31.001Z" },
+    { url = "https://files.pythonhosted.org/packages/26/58/96dc4df9b3e6ab4b2dda22eeb9a87b8cbf0dbe9247a96b6c01c2d3243bee/agno-2.5.14-py3-none-any.whl", hash = "sha256:5fde4f7635218def4ee202ad544589c1e3670048a907df7210ecffdb8aff33cd", size = 2187863, upload-time = "2026-04-02T20:29:25.788Z" },
 ]
 
 [[package]]
@@ -1813,7 +1813,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agno", specifier = "==2.3.13" },
+    { name = "agno", specifier = "==2.5.14" },
     { name = "bs4", specifier = ">=0.0.2" },
     { name = "duckdb", specifier = "==1.3.0" },
     { name = "earthengine-api", specifier = "==1.7.4" },
