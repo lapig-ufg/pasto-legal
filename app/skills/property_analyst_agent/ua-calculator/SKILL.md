@@ -1,14 +1,18 @@
 ---
 name: ua-calculator
-description: Assistência na análise de pastagens e cálculo matemático de Unidade Animal (UA) segundo a metodologia exclusiva do Lapig.
+description: Cálculo de Unidade Animal (UA) segundo a metodologia do Lapig.
 license: Apache-2.0
 metadata:
   version: "1.0.0"
   author: lapig-team
-  tags: ["unidade animal", "metodologia"]
+  tags: ["metodologia", "unidade animal"]
 ---
 
-# When to Use
+# Cálculo de UA
+
+Use esta skill quando precisar calcular a lotação ou capacidade de suporte animal, e explicar a metodologia adotada pelo laboratório.
+
+## When to Use
 
 - O usuário solicitar o cálculo da lotação real de uma propriedade.
 - O usuário perguntar sobre a capacidade de suporte ideal de uma pastagem.

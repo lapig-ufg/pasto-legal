@@ -3,6 +3,7 @@ import textwrap
 from agno.agent import Agent
 from agno.models.google import Gemini
 from agno.skills import Skills, LocalSkills, SkillValidationError
+from agno.tools.calculator import CalculatorTools
 
 from app.tools.property_analyst_tools import (
     generate_property_image,
@@ -42,6 +43,7 @@ analyst_agent = Agent(
     ),
     debug_mode=True,
     tools=[
+        CalculatorTools(exclude_tools=["is_prime", "factorial"]),
         query_pasture_biomass,
         query_pasture_vigor,
         query_pasture_age,
