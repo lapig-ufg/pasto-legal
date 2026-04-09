@@ -326,7 +326,7 @@ def get_all_properties(run_context: RunContext) -> List[Tuple[str, str]]:
     return [(p.get("nickname", None), p["car_code"]) for p in all_properties] or None
 
 
-@tool
+@tool(stop_after_tool_call=True)
 def set_property_name(car: str, name: str, run_context: RunContext):
     """
     Atualizar o nome propriedade registrada no sistema.
@@ -345,7 +345,10 @@ def set_property_name(car: str, name: str, run_context: RunContext):
     for prop in all_properties:
         if prop.get("car_code") == selected_property.get("car_code"):
             prop["nickname"] = name
-            return f"O nome da propriedade {selected_property.get('car_code')} foi definido como '{name}' com sucesso."
+            return (
+                f"O nome da propriedade {selected_property.get('car_code')} foi definido como '{name}' com sucesso.\n"
+                "Seja proativo, use a tool `delegate_task_to_member` e peça ao agente `Agente Extensionista Agrônomo` para fazer um diagnóstico inicial."
+            )
         
     return "Nenhuma propriedade selecionada no momento."
 

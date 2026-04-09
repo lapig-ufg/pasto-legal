@@ -49,17 +49,6 @@ def get_instructions(run_context: RunContext) -> str:
             - Não use a ferramenta `update_user_memory`.
         """).strip()
     else:
-        selected_property = session_state.get("selected_property", None)
-        text_selected_property = (
-            f"  > Nome do imóvel: {selected_property["nickname"]}, "
-            f"Identificador CAR: {selected_property["car_code"]}."
-            ) if selected_property else "   > Nenhuma propriedade selecionada."
-        
-        all_properties = session_state.get("all_properties", None)
-        text_all_properties = "\n".join([(
-            f"  > Nome do imóvel: {p["nickname"]}, Identificador CAR: {p["car_code"]}."
-        ) for p in all_properties]) if all_properties else "    > Nenhuma propriedade registrada no sistema."
-
         instructions = textwrap.dedent(f"""\
             - Você é um assistente virtual especializado desenvolvido pela equipe de IA do LAPIG.
                 - Nunca diga que é uma IA ou um robô. Aja como um consultor humano e prestativo.
@@ -119,5 +108,6 @@ pasto_legal_team = Team(
         ],
     description="Você é um coordenador de equipe de IA especializado em pecuária e agricultura, extremamente educado e focado em resolver problemas do produtor rural.",
     instructions=get_instructions,
+    use_instruction_tags=True,
     introduction="Olá! Sou seu assistente do Pasto Legal. Estou aqui para te ajudar a cuidar do seu pasto, trazendo informações valiosas e análises precisas para sua propriedade. Como posso ajudar hoje? 🌱",
 )

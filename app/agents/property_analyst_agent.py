@@ -2,6 +2,7 @@ import textwrap
 
 from agno.agent import Agent
 from agno.models.google import Gemini
+from agno.skills import Skills, LocalSkills, SkillValidationError
 
 from app.tools.property_analyst_tools import (
     generate_property_image,
@@ -13,8 +14,16 @@ from app.tools.property_analyst_tools import (
     )
 
 
+try:
+    skills = Skills(loaders=[LocalSkills("app/skills/property_analyst_agent")])
+except SkillValidationError as e:
+    print(f"Skill validation failed: {e}")
+    print(f"Errors: {e.errors}")
+    skills = None
+
+
 analyst_agent = Agent(
-    name="Agente Analista",
+    name="Agente Extensionista Agrônomo",
     role=(
         "Especialista em agropecuária e geoprocessamento. Resposável por análises de dados, "
         "inteligência geográfica e suporte técnico de propriedades.\n"
@@ -40,10 +49,11 @@ analyst_agent = Agent(
         generate_property_image,
         generate_biomass_image
     ],
+    skills=skills,
     instructions= textwrap.dedent("""
         - Seja o mais conciso possível, explicando os resultados de forma simples para o pequeno produtore rural.
         - Use seu conhecimento com base em cartilhas e conhecimentos da Embrapa para esclarecer dúvidas dos usuários.
-        - Use markdown no formato do WhatsApp.
+        - Use markdown no formato do WhatsApp. Não use bullet points.
                                                                   
         <mandatory-workflow>                    
         - Se o usuário fizer perguntas não relacionadas a **Agropecuária**, responda ESTRITAMENTE com:
