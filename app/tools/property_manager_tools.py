@@ -181,7 +181,7 @@ def register_feature_by_url(url: str, run_context: RunContext) -> ToolResult:
             "Peça que tente novamente e verificar se a URL do Google Maps esta correta."
         )
     
-    imgs = retrieve_feature_images([p["spatial_features"].coordinates[0] for p in properties])
+    imgs = retrieve_feature_images([p["spatial_features"]["coordinates"][0] for p in properties])
 
     run_context.session_state["candidate_properties"] = properties
     
