@@ -110,7 +110,6 @@ def retrieve_feature_images(coords: List[List[List[List[float]]]]) -> List[PIL.I
         )
 
 
-# TODO: Otimizar e tornar mais legivel.
 def retrieve_feature_biomass_image(coords: List[List[List[List[float]]]], year: int = None) -> PIL.Image:
     """
     Gera uma imagem de satélite com a camada de biomassa de pastagem sobreposta,
@@ -235,7 +234,6 @@ def retrieve_feature_biomass_image(coords: List[List[List[List[float]]]], year: 
         )
     
 
-# TODO: Otimizar e tornar mais legivel. (Talvez criar uma função para cada operação)
 def query_pasture_statistics(coords: List[List[List[List[float]]]], year: int = None) -> PastureStatsResult:
     """
     Extração de estatísticas de pastagem (biomassa, vigor, idade e chuva).

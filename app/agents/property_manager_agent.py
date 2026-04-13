@@ -6,9 +6,9 @@ from agno.models.google import Gemini
 
 from app.tools.property_manager_tools import (
     remove_property,
-    remove_all_properties,
+    remove_registered_properties,
     set_property_name,
-    get_all_properties,
+    get_registered_properties,
     get_selected_property,
     register_feature_by_url,
     register_feature_by_car,
@@ -70,14 +70,25 @@ def get_instructions(run_context: RunContext):
                 - Use markdown no formato do WhatsApp.
             """).strip()
     else:
+        if registered_properties := session_state.get("registered_properties", None):
+            registrations_text = '\n'.join([str(prop) for prop in registered_properties])
+        else:
+            registrations_text = "Vazio"
+
         instructions = textwrap.dedent("""
+            <registrations>
+            {text_data}
+            <registrations>                    
+                    
+            <instructions>
             - Utilize as ferramentas disponíveis de forma estrita, respeitando rigorosamente os parâmetros e as orientações de uso de cada uma.
             - É proibido invocar as ferramentas `confirm_car_selection`, `select_car_from_list` e `reject_car_selection`. Nunca tente usá-las sob nenhuma hipótese.
-
-            <mandatory-workflow>
+            <instructions>
+                                       
+            <workflow>
             - Se o usuário informar o nome da propriedade:
                 - Use a ferramenta set_property_name para definir o nome da propriedade.
-            <mandatory-workflow>  
+            <workflow>  
         """).strip()
     
     return instructions
@@ -87,21 +98,21 @@ property_manager_agent = Agent(
     name="Gestor de Propriedades Rurais",
     role=(
         "Resposável por administrar os registros de propriedades do usuário no sistema, sendo o responsável por:\n"
-        "   - Localizar e cadastrar novas propriedades rurais.\n"
-        "   - Editar e atualizar os dados e metadados das propriedades.\n"
+        "   - Localizar e cadastrar propriedades rurais.\n"
+        "   - Editar e atualizar os metadados das propriedades.\n"
         "   - Excluir registros de propriedades quando solicitado."
     ),
     description=(
         "Agente resposável por administrar os registros de propriedades do usuário no sistema, sendo o responsável por:\n"
-        "   - Localizar e cadastrar novas propriedades rurais.\n"
-        "   - Editar e atualizar os dados e metadados das propriedades.\n"
+        "   - Localizar e cadastrar propriedades rurais.\n"
+        "   - Editar e atualizar os metadados das propriedades.\n"
         "   - Excluir registros de propriedades quando solicitado."
     ),
     tools=[
         remove_property,
-        remove_all_properties,
+        remove_registered_properties,
         set_property_name,
-        get_all_properties,
+        get_registered_properties,
         get_selected_property,
         register_feature_by_url,
         register_feature_by_car,
@@ -111,6 +122,7 @@ property_manager_agent = Agent(
         reject_car_selection
         ],
     markdown=True,
+    use_instruction_tags=False,
     instructions=get_instructions,
     model=Gemini(id="gemini-3-flash-preview", temperature=0)
 )

@@ -13,11 +13,15 @@ from app.utils.scripts.sicar_scripts import (
     fetch_property_by_coordinates_locally,
     fetch_property_by_car_remote,
     fetch_property_by_car_locally,
-    fetch_coordinates_by_url
+    fetch_coordinates_by_url,
+    clean_car_code
     )
 from app.utils.scripts.image_scripts import get_mosaic
 from app.utils.scripts.gee_scripts import retrieve_feature_images
 
+
+# TODO: Se o usuário informar as coordenadas de uma propriedade que já existe no sistema, validar se a propriedade existe por meio do CAR. Se existir então retornar menssagem que já existe.
+# TODO: Se o usuário informar uma URL de coordenadas de uma propriedade que já existe no sistema, validar se a propriedade existe por meio do CAR. Se existir então retornar menssagem que já existe.
 
 @tool(stop_after_tool_call=True)
 def register_feature_by_coordinate(latitude: float, longitude: float, run_context: RunContext):
@@ -86,31 +90,29 @@ def register_feature_by_coordinate(latitude: float, longitude: float, run_contex
             )
 
     
-@tool(stop_after_tool_call=True)
-def register_feature_by_car(car: str, run_context: RunContext):
+def register_feature_by_car(run_context: RunContext, car_codes: List[str], name: str = None):
     """
     Registra uma nova propriedade rural baseando-se nas coordenadas fornecidas.
     
-    Use esta ferramenta quando o usuário fornecer um valor de CAR.
+    Use esta ferramenta quando o usuário fornecer um valor de CAR ainda não registrado no sistema.
     
     Args:
-        car (str): Código de Cadastro Ambiental Rural (CAR) padrão SICAR.
+        cars (List[str]): Código de Cadastro Ambiental Rural (CAR) padrão SICAR.
+        name (str): Nome da propriedade. `None` caso não seja informado.
 
     Returns:
         ToolResult: Resultado da busca contendo imagem e instruções para o próximo passo.
     """
-    pattern = r"\b([A-Z]{2})-?(\d{7})-([A-Z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\b"
+    clean_car_codes = []
 
-    search = re.search(pattern, car, flags=re.IGNORECASE)
-    if not search:
-        return ToolResult(
-            content=(
-                "Peça desculpas e informe que o sistema aceita exclusivamente o **CAR Federal** (padrão SICAR).\n"
-                "Explique que o padrão exige: 2 letras do Estado, seguidas por 7 números, e terminando com 32 caracteres."
+    for car_code in car_codes:
+        if (new_car_code := clean_car_code(car_code)) is None:
+            return  ToolResult(
+                content=(
+                    "Peça desculpas e informe que o sistema aceita exclusivamente o **CAR Federal** (padrão SICAR).\n"
+                    "Explique que o padrão exige: 2 letras do Estado, seguidas por 7 números, e terminando com 32 caracteres."
+                )
             )
-        )
-    
-    formatted_car = re.sub(pattern, r"\1-\2-\3\4\5\6\7\8\9\10", search[0], flags=re.IGNORECASE)
         
     try:
         properties = fetch_property_by_car_remote(car=formatted_car)
@@ -247,8 +249,8 @@ def select_car_from_list(selection: int, run_context: RunContext):
         run_context.session_state['selected_property'] = selected_property
         run_context.session_state['candidate_properties'] = None
 
-        all_properties = run_context.session_state.get('all_properties', [])
-        run_context.session_state['all_properties'] = all_properties + [selected_property]                                 
+        registered_properties = run_context.session_state.get('registered_properties', [])
+        run_context.session_state['registered_properties'] = registered_properties + [selected_property]                                 
 
         return ToolResult(
             content=(
@@ -277,8 +279,8 @@ def confirm_car_selection(run_context: RunContext):
     run_context.session_state['selected_property'] = selected_property
     run_context.session_state['candidate_properties'] = None
 
-    all_properties = run_context.session_state.get('all_properties', [])
-    run_context.session_state['all_properties'] = all_properties + [selected_property] 
+    registered_properties = run_context.session_state.get('registered_properties', [])
+    run_context.session_state['registered_properties'] = registered_properties + [selected_property] 
 
     return ToolResult(
         content=(
@@ -314,16 +316,16 @@ def get_selected_property(run_context: RunContext) -> Tuple[str, str]:
 
 
 @tool
-def get_all_properties(run_context: RunContext) -> List[Tuple[str, str]]:
+def get_registered_properties(run_context: RunContext) -> List[Tuple[str, str]]:
     """
     Retorna a lista de propriedades registradas no sistema.
     
     return:
         list: Lista de propriedades registradas no sistema.
     """
-    all_properties = run_context.session_state.get('all_properties', [])
+    registered_properties = run_context.session_state.get('registered_properties', [])
 
-    return [(p.get("nickname", None), p["car_code"]) for p in all_properties] or None
+    return [(p.get("nickname", None), p["car_code"]) for p in registered_properties] or None
 
 
 @tool(stop_after_tool_call=True)
@@ -341,8 +343,8 @@ def set_property_name(car: str, name: str, run_context: RunContext):
         if selected_property["car_code"] == car:
             selected_property["nickname"] = name
 
-    all_properties = run_context.session_state.get('all_properties', [])
-    for prop in all_properties:
+    registered_properties = run_context.session_state.get('registered_properties', [])
+    for prop in registered_properties:
         if prop.get("car_code") == selected_property.get("car_code"):
             prop["nickname"] = name
             return (
@@ -360,16 +362,16 @@ def remove_property(car: str, run_context: RunContext) -> str:
     Args:
         car(str): Código de Cadastro Ambiental Rural (CAR)
     """
-    all_properties = run_context.session_state.get('all_properties', [])
+    registered_properties = run_context.session_state.get('registered_properties', [])
 
     flag=False
-    new_all_properties = []
-    for prop in all_properties:
+    new_registered_properties = []
+    for prop in registered_properties:
         if prop.get("car_code") == car:
             flag=True
             continue
         
-        new_all_properties.append(prop)
+        new_registered_properties.append(prop)
 
     if not flag:
         return "A propriedade não foi encontrada no sistema."
@@ -377,18 +379,18 @@ def remove_property(car: str, run_context: RunContext) -> str:
     selected_car = run_context.session_state.get('selected_property', None)
     if selected_car is not None:
         if selected_car.get("car_code") == car:
-            run_context.session_state['selected_property'] = new_all_properties[-1] if new_all_properties else None
+            run_context.session_state['selected_property'] = new_registered_properties[-1] if new_registered_properties else None
 
-    run_context.session_state['all_properties'] = new_all_properties
+    run_context.session_state['registered_properties'] = new_registered_properties
 
     return "A propriedade foi removida com sucesso."
 
 
-def remove_all_properties(run_context: RunContext) -> str:
+def remove_registered_properties(run_context: RunContext) -> str:
     """
     Remove todas as propriedades registradas no sistema.
     """
-    run_context.session_state['all_properties'] = []
+    run_context.session_state['registered_properties'] = []
     run_context.session_state['selected_property'] = None
 
     return "Todas as propriedades foram removidas com sucesso."

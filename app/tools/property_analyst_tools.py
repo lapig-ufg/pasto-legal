@@ -26,8 +26,8 @@ def generate_property_image(run_context: RunContext, car: str = None) -> ToolRes
         if car is None:
             _property = run_context.session_state['selected_property']
         else:
-            all_properties = run_context.session_state['all_properties']
-            _property = [prop for prop in all_properties if prop["car_code"] == car][0]
+            registered_properties = run_context.session_state['registered_properties']
+            _property = [prop for prop in registered_properties if prop["car_code"] == car][0]
 
         coords = _property['spatial_features']['coordinates']
 
@@ -61,8 +61,8 @@ def generate_biomass_image(run_context: RunContext, car: str = None, year: int =
         if car is None:
             _property = run_context.session_state['selected_property']
         else:
-            all_properties = run_context.session_state['all_properties']
-            _property = [prop for prop in all_properties if prop["car_code"] == car][0]
+            registered_properties = run_context.session_state['registered_properties']
+            _property = [prop for prop in registered_properties if prop["car_code"] == car][0]
             
         coords = _property['spatial_features']['coordinates']
 
@@ -93,8 +93,8 @@ def query_pasture_biomass(run_context: RunContext, car: str = None, year: int = 
         if car is None:
             _property = run_context.session_state['selected_property']
         else:
-            all_properties = run_context.session_state['all_properties']
-            _property = [prop for prop in all_properties if prop["car_code"] == car][0]
+            registered_properties = run_context.session_state['registered_properties']
+            _property = [prop for prop in registered_properties if prop["car_code"] == car][0]
 
         if _property.get("data", None) is None:
             _property["data"] = {}
@@ -129,8 +129,8 @@ def query_pasture_vigor(run_context: RunContext, car: str = None, year: int = No
         if car is None:
             _property = run_context.session_state['selected_property']
         else:
-            all_properties = run_context.session_state['all_properties']
-            _property = [prop for prop in all_properties if prop["car_code"] == car][0]
+            registered_properties = run_context.session_state['registered_properties']
+            _property = [prop for prop in registered_properties if prop["car_code"] == car][0]
 
         if _property.get("data", None) is None:
             _property["data"] = {}
@@ -167,8 +167,8 @@ def query_pasture_age(run_context: RunContext, car: str = None, year: int = None
         if car is None:
             _property = run_context.session_state['selected_property']
         else:
-            all_properties = run_context.session_state['all_properties']
-            _property = [prop for prop in all_properties if prop["car_code"] == car][0]
+            registered_properties = run_context.session_state['registered_properties']
+            _property = [prop for prop in registered_properties if prop["car_code"] == car][0]
 
         if _property.get("data", None) is None:
             _property["data"] = {}
@@ -205,8 +205,8 @@ def query_pasture_lulc(run_context: RunContext, car: str = None, year: int = Non
         if car is None:
             _property = run_context.session_state['selected_property']
         else:
-            all_properties = run_context.session_state['all_properties']
-            _property = [prop for prop in all_properties if prop["car_code"] == car][0]
+            registered_properties = run_context.session_state['registered_properties']
+            _property = [prop for prop in registered_properties if prop["car_code"] == car][0]
 
         if _property.get("data", None) is None:
             _property["data"] = {}
