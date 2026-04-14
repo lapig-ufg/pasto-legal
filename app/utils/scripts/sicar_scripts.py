@@ -81,7 +81,7 @@ def _map_row_to_property_record(row: dict) -> Dict:
         )
     ).model_dump()
 
-
+# SC-4205100-9CF52298DA9740D4968BF6E2BE14E740, SC-4205100-11D656C565D04D43885AF2EC82EBA308, SC-4205100-71D333DF8E6B4824B19D77781C713B8D
 #@mock_property
 #def fetch_property_by_car_remote(car: str) -> List[Dict] | None:
 #    headers = {
@@ -119,32 +119,42 @@ def _map_row_to_property_record(row: dict) -> Dict:
 
 
 @mock_property()
-def fetch_property_by_car_locally(car: str) -> List[Dict] | None:
+def fetch_property_by_car_locally(car_codes: List[str]) -> List[Dict] | None:
     """
-    Busca as informações de um imóvel rural utilizando o código único do CAR.
+    Busca as informações de imóveis rurais utilizando uma lista de códigos únicos do CAR.
 
     Lê diretamente de arquivos Parquet particionados utilizando o DuckDB.
 
     Args:
-        car (str): O código string de registro do imóvel no CAR.
+        car_codes (List[str]): Lista de códigos string de registro dos imóveis no CAR.
 
     Returns:
-        list[Dict]: Lista contendo o registro do imóvel encontrado, ou lista vazia se não encontrar ou ocorrer erro.
+        List[Dict] | None: Lista contendo os registros dos imóveis encontrados, ou None se não encontrar ou ocorrer erro.
     """
+    # Retorna precocemente se a lista estiver vazia para evitar erro de sintaxe no SQL
+    if not car_codes:
+        return None
+
     cursor = conn.cursor()
     
     try:
         dataset_path = str(Path.cwd() / 'data' / 'car-br-dataset' / '**' / '*.parquet')
 
-        query = """
+        # Cria a string de placeholders ex: "?, ?, ?" dependendo do tamanho da lista
+        placeholders = ', '.join(['?'] * len(car_codes))
+
+        query = f"""
             SELECT *
                 EXCLUDE(geometry),
                 ST_AsGeoJSON(geometry) AS geometry
             FROM read_parquet(?)
-            WHERE cod_imovel = ?
+            WHERE cod_imovel IN ({placeholders})
         """
         
-        df = cursor.execute(query, [dataset_path, car]).fetchdf()
+        # Junta o path do dataset com os códigos da lista para passar como parâmetros
+        params = [dataset_path] + car_codes
+        
+        df = cursor.execute(query, params).fetchdf()
         
         if df.empty:
             return None
@@ -152,11 +162,14 @@ def fetch_property_by_car_locally(car: str) -> List[Dict] | None:
         records_dicts = df.to_dict('records')
         result = [_map_row_to_property_record(row) for row in records_dicts]
         
-    except Exception:
+    except Exception as e:
+        # É recomendável pelo menos logar o erro caso 'result = None' oculte o problema
+        print(f"Erro ao buscar imóveis: {e}") 
         result = None
     finally:
         cursor.close()
-        return result
+        
+    return result
 
 
 #def fetch_property_by_coordinates_remote(latitude: float, longitude: float) -> List[Dict]:

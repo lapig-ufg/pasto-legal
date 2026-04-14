@@ -96,7 +96,7 @@ def register_feature_by_coordinate(run_context: RunContext, latitude: float, lon
             images=[Image(content=buffer.getvalue())]
             )
 
-
+# GO-5211800-E85CBBBF7DA34628BCA06B78357D39F6, GO-5211800-987B29E7E47A4454BAEF582557AB89F3
 @tool(stop_after_tool_call=True)
 def register_feature_by_car(run_context: RunContext, car_codes: List[str], name: str = None):
     """
@@ -111,7 +111,7 @@ def register_feature_by_car(run_context: RunContext, car_codes: List[str], name:
     Returns:
         ToolResult: Resultado da busca contendo imagem e instruções para o próximo passo.
     """
-    if len(car_codes > 5):
+    if len(car_codes) > 3:
         return ToolResult(content=("Peça desculpas e informe que não é permitido unificar mais que 3 CARs por vezes."))
 
     clean_car_codes = [clean_car_code(car_code) for car_code in car_codes]
@@ -124,7 +124,7 @@ def register_feature_by_car(run_context: RunContext, car_codes: List[str], name:
             )
         )
         
-    properties = [fetch_property_by_car_locally(car=car_code) for car_code in clean_car_codes]
+    properties = fetch_property_by_car_locally(car_codes=car_codes)
 
     if not properties:
         return ToolResult(
@@ -134,7 +134,7 @@ def register_feature_by_car(run_context: RunContext, car_codes: List[str], name:
             )
         )
     
-    new_record = PropertyRecord(nickname=name, properties=properties)
+    new_record = PropertyRecord(nickname=name, properties=[RuralProperty.model_validate(prop) for prop in properties])
     old_registered_properties = run_context.session_state.get("registered_properties", [])
     old_registered_properties.append(new_record.model_dump())
     run_context.session_state["registered_properties"] = old_registered_properties
@@ -156,7 +156,7 @@ def register_feature_by_car(run_context: RunContext, car_codes: List[str], name:
         # TODO: Melhorar prompt de resultado. Uma explicação melhor do estado do sistema.
         return ToolResult(
             content=(
-                "Informe ao usuário que a seguinte propriedade foi registrada no sistema:\n"
+                "Informe ao usuário que os seguintes CARs foram unificados e registrada em uma unica propriedade no sistema:\n"
                 f"{result_text}\n"
                 "Seja proativo, pergunte ao usuário se ele gostaria de atribuir um nome para a propriedade."),
             images=[Image(content=buffer.getvalue())]
@@ -172,7 +172,7 @@ def register_feature_by_car(run_context: RunContext, car_codes: List[str], name:
         options_text = []
         for i, p in enumerate(properties):
             options_text.append(
-                f"  > Opção {i + 1} - Identificador CAR {p["car_code"]}, "
+                f"- Identificador CAR {p["car_code"]}, "
                 f"Tamanho da área {round(p["spatial_features"]["total_area"])} ha, "
                 f"município de {p["spatial_features"]["municipality"]}."
             )
@@ -183,7 +183,7 @@ def register_feature_by_car(run_context: RunContext, car_codes: List[str], name:
             content=(
                 "Informe ao usuário que as seguintes propriedades foram unificadas e registradas no sistema:\n"
                 f"{result_text}\n"
-                "Seja proativo, pergunte ao usuário se ele gostaria de atribuir um nome para a propriedade."
+                "Seja proativo, pergunte ao usuário se ele gostaria de atribuir um nome para a união das propriedades."
                 ),
             images=[Image(content=buffer.getvalue())]
             )
