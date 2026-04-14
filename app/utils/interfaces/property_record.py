@@ -46,19 +46,18 @@ class SicarMetadata(BaseModel):
 
 
 class RuralProperty(BaseModel):
-    """
-    Modelo Pydantic para representar os dados consolidados do Imóvel Rural.
-    """
-    car_code: List[str] = Field(
+    car_code: str = Field(
         ..., 
         pattern=r"^[A-Z]{2}-\d{7}-[A-Z0-9]{32}$",
         description="Código único do Cadastro Ambiental Rural (CAR).",
         examples=["GO-1111111-1111AAAA2222BBBB3333CCCC4444DDDD"]
     )
+
     spatial_features: SpatialFeatures = Field(
         ..., 
         description="Objeto contendo as informações de área, município e coordenadas."
     )
+
     sicar_metadata: SicarMetadata = Field(
         ..., 
         description="Objeto contendo os metadados administrativos do sistema SICAR."
@@ -67,27 +66,33 @@ class RuralProperty(BaseModel):
     def __str__(self):
         return (
             f"Código CAR: {self.car_code},"
-            "Área: {self.spatial_features.total_area} ha,"
-            "Município: {self.spatial_features.municipality}"
+            f"Área: {self.spatial_features.total_area} ha,"
+            f"Município: {self.spatial_features.municipality}"
             )
     
 
 class PropertyRecord(BaseModel):
     id: Optional[str] = Field(
-        ...,
         description="Identificador único da propriedade rural.",
-        default_factory=lambda: str(uuid4())
+        default_factory=lambda: f"{str(uuid4())}"
     )
+
     nickname: Optional[str] = Field(
         default=None,
         description="Nome escolhido para identificar a propriedade rural."
     )
+
     properties: List[RuralProperty] = Field(
         ...,
         description="Lista de propriedades rurais. "
     )
 
+
+    def get_coords(self):
+        return [prop.spatial_features.coordinates[0] for prop in self.properties]
+
+
     def __str__(self):
         car_codes = ', '.join([prop.car_code for prop in self.properties])
 
-        return f"ID: {self.id}, Nome: {self.nome}, Códigos CAR: {car_codes}"
+        return f"ID: {self.id}, Nome: {self.nickname}, Códigos CAR: {car_codes}"

@@ -9,7 +9,7 @@ from agno.run.agent import RunInput
 from agno.agent import Agent
 from agno.models.google import Gemini
 
-from app.utils.interfaces.rural_property_interface import RuralProperty
+from app.utils.interfaces.property_record import RuralProperty
 
 
 if not (APP_ENV := os.environ.get('APP_ENV')):

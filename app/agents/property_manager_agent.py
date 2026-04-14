@@ -4,7 +4,7 @@ from agno.run import RunContext
 from agno.agent import Agent
 from agno.models.google import Gemini
 
-from app.tools.property_manager_tools import (
+from app.tools.property_crud_tools import (
     remove_property,
     remove_registered_properties,
     set_property_name,
@@ -17,11 +17,13 @@ from app.tools.property_manager_tools import (
     confirm_car_selection,
     reject_car_selection
     )
-from app.utils.interfaces.rural_property_interface import PropertyRecord, RuralProperty
+from app.utils.interfaces.property_record import PropertyRecord, RuralProperty
 
 
 def get_instructions(run_context: RunContext):
-    session_state = run_context.session_state or {}
+    session_state = run_context.session_state
+
+    print(session_state, flush=True)
 
     candidate_properties = [RuralProperty.model_validate(prop) for prop in session_state.get("candidate_properties", [])]
 
@@ -89,13 +91,13 @@ def get_instructions(run_context: RunContext):
 property_manager_agent = Agent(
     name="Gestor de Propriedades Rurais",
     role=(
-        "Resposável por administrar os registros de propriedades do usuário no sistema, sendo o responsável por:\n"
+        "Resposável pelo CRUD (Create, Read, Update e Delete) de propriedades do usuário no sistema:\n"
         "   - Localizar e cadastrar propriedades rurais.\n"
         "   - Editar e atualizar os metadados das propriedades.\n"
         "   - Excluir registros de propriedades quando solicitado."
     ),
     description=(
-        "Agente resposável por administrar os registros de propriedades do usuário no sistema, sendo o responsável por:\n"
+        "Agente resposável pelo CRUD (Create, Read, Update e Delete) de propriedades do usuário no sistema:\n"
         "   - Localizar e cadastrar propriedades rurais.\n"
         "   - Editar e atualizar os metadados das propriedades.\n"
         "   - Excluir registros de propriedades quando solicitado."

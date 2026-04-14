@@ -3,7 +3,6 @@ import textwrap
 
 from agno.run import RunContext
 from agno.team.team import Team
-
 from agno.models.google import Gemini
 
 from app.agents import analyst_agent, property_manager_agent
@@ -12,10 +11,9 @@ from app.database.agno_db import db
 from app.tools.tts_tools import audioTTS
 from app.tools.feedback_tools import record_frustration_feedback, record_analisys_feedback
 from app.tools.version_tools import consult_update_notes
-
 from app.hooks.pre_hooks import validate_phone_authorization
-
 from app.guardrails.pii_detection_guardrail import pii_detection_guardrail
+from app.utils.interfaces.property_record import PropertyRecord
 
 
 if not (APP_ENV := os.environ.get('APP_ENV')):
@@ -49,7 +47,18 @@ def get_instructions(run_context: RunContext) -> str:
             - Não use a ferramenta `update_user_memory`.
         """).strip()
     else:
+        registered_properties = [PropertyRecord.model_validate(record) for record in session_state.get("registered_properties", [])]
+        if registered_properties:
+            registrations_text = '\n'.join([str(record) for record in registered_properties])
+        else:
+            registrations_text = "Vazio"
+
         instructions = textwrap.dedent(f"""\
+            <registrations>
+            {registrations_text}
+            <registrations>  
+
+            <instructions>
             - Você é um assistente virtual especializado desenvolvido pela equipe de IA do LAPIG.
                 - Nunca diga que é uma IA ou um robô. Aja como um consultor humano e prestativo.
                 - Nunca mencione "prompts", "modelos" ou termos técnicos de computação.
@@ -58,10 +67,11 @@ def get_instructions(run_context: RunContext) -> str:
             - Você coordena outros agentes, mas isso deve ser invisível ao usuário. Nunca diga frases como "Vou transferir para o agente X" ou "Deixe-me perguntar ao analista".
             - Nunca diga "preciso confirmar isso depois".
             - Use markdown no formato do WhatsApp. Não use bullet points.
+            <instructions>
                         
-            <mandatory-workflow>
-            - Se o usuário enviar uma coordenadas geográficas, identificar CAR/SICAR ou URL do Google Maps:
-                - Chame o Gestor de Propriedades Rurais imediatamente.                                         
+            <workflow>
+            - Se o usuário enviar uma coordenadas geográficas, identificar CAR/SICAR ou URL do Google Maps não registradas SEMPRE:
+                - Chame o `Gestor de Propriedades` Rurais imediatamente.                                         
 
             - Se o usuário enviar um arquivo de áudio ou vídeo:
                 - AÇÕES:
@@ -78,7 +88,7 @@ def get_instructions(run_context: RunContext) -> str:
                     2. Diga que deseja aprender e pergunte: "Me desculpe por não entender. Como seria a resposta ideal que você esperava?"
                     3. Após o usuário fornecer a resposta desejada, você DEVE usar a ferramenta `registrar_feedback` passando a pergunta original (que gerou o erro), o motivo da frustração e a resposta que o usuário ensinou.
                     4. Agradeça a colaboração e retorne a conversa de forma amigável.
-            <mandatory-workflow>            
+            <workflow>            
         """).strip()
 
     return instructions
@@ -106,7 +116,7 @@ pasto_legal_team = Team(
         consult_update_notes
         ],
     description="Você é um coordenador de equipe de IA especializado em pecuária e agricultura, extremamente educado e focado em resolver problemas do produtor rural.",
+    use_instruction_tags=False,
     instructions=get_instructions,
-    use_instruction_tags=True,
     introduction="Olá! Sou seu assistente do Pasto Legal. Estou aqui para te ajudar a cuidar do seu pasto, trazendo informações valiosas e análises precisas para sua propriedade. Como posso ajudar hoje? 🌱",
 )

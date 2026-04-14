@@ -8,7 +8,7 @@ from app.utils.scripts.gee_scripts import (
     AgeData, 
     VigorData, 
     LULCClassData, 
-    PastureStatsResult
+    PropertyStats
 )
 
 def test_value_model_creation():
@@ -50,7 +50,7 @@ def test_pasture_stats_result_composition():
     ]
 
     # Instanciando o modelo consolidado
-    result = PastureStatsResult(
+    result = PropertyStats(
         biomass=biomass,
         age=age_list,
         vigor=vigor_list,

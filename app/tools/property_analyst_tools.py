@@ -7,31 +7,30 @@ from agno.media import Image
 
 from app.hooks.tool_hooks import validate_selected_property_hook
 from app.utils.scripts.gee_scripts import retrieve_feature_images, retrieve_feature_biomass_image, query_pasture_statistics
-from app.utils.interfaces.ee_data_interfaces import BiomassData, VigorData, AgeData, LULCClassData
+from app.utils.interfaces.property_stats import PastureStats, PropertyStats 
+from app.utils.interfaces.property_record import PropertyRecord
 
 
 @tool(tool_hooks=[validate_selected_property_hook])
-def generate_property_image(run_context: RunContext, car: str = None) -> ToolResult:
+def generate_property_image(run_context: RunContext, property_id: str) -> ToolResult:
     """
     Gera uma imagem de satélite em alta resolução (RGB) da propriedade rural,
     incluindo a delimitação geográfica, com base nos últimos dois meses.
 
+    Use apenas quando o usuário pedir para visualizar a propriedade.
+
     params:
-        car (str): Código de Cadastro Ambiental Rural (CAR), `None` para a propriedade selecionada no sistema.
+        property_id (str): ID da propriedade no sistema.
 
     Return:
         ToolResult: Imagem PNG da visão aérea com delimitação geográfica.
     """
     try:
-        if car is None:
-            _property = run_context.session_state['selected_property']
-        else:
-            registered_properties = run_context.session_state['registered_properties']
-            _property = [prop for prop in registered_properties if prop["car_code"] == car][0]
+        registered_properties = run_context.session_state['registered_properties']
+        selected_property = next((prop for prop in registered_properties if prop["id"] == property_id), None)
+        selected_property = PropertyRecord.model_validate(selected_property)
 
-        coords = _property['spatial_features']['coordinates']
-
-        img = retrieve_feature_images(coords=coords)
+        img = retrieve_feature_images(coords=selected_property.get_coords())[0]
 
         buffer = BytesIO()
         img.save(buffer, format="PNG")
@@ -46,27 +45,23 @@ def generate_property_image(run_context: RunContext, car: str = None) -> ToolRes
 
 
 @tool(tool_hooks=[validate_selected_property_hook])
-def generate_biomass_image(run_context: RunContext, car: str = None, year: int = None) -> ToolResult:
+def generate_biomass_image(run_context: RunContext, property_id: str, year: int = 2024) -> ToolResult:
     """
     Gera um mapa temático da biomassa (matéria seca) sobre os limites da propriedade rural.
 
     params:
-        car (str): Código de Cadastro Ambiental Rural (CAR), `None` para a propriedade selecionada no sistema.
-        year: O ano para a consulta dos dados (2000-2024), `None` para o ano mais recente disponível (2024).
+        property_id (str): ID da propriedade no sistema.
+        year: O ano para a consulta dos dados (2000-2024).
 
     Return:
         ToolResult: Mapa renderizado em formato PNG.
     """
     try:
-        if car is None:
-            _property = run_context.session_state['selected_property']
-        else:
-            registered_properties = run_context.session_state['registered_properties']
-            _property = [prop for prop in registered_properties if prop["car_code"] == car][0]
-            
-        coords = _property['spatial_features']['coordinates']
+        registered_properties = run_context.session_state['registered_properties']
+        selected_property = next((prop for prop in registered_properties if prop["id"] == property_id), None)
+        selected_property = PropertyRecord.model_validate(selected_property)
 
-        img = retrieve_feature_biomass_image(coords=coords, year=year)
+        img = retrieve_feature_biomass_image(coords=selected_property.get_coords(), year=year)
 
         buffer = BytesIO()
         img.save(buffer, format="PNG")
@@ -81,150 +76,48 @@ def generate_biomass_image(run_context: RunContext, car: str = None, year: int =
 
 
 @tool(tool_hooks=[validate_selected_property_hook])
-def query_pasture_biomass(run_context: RunContext, car: str = None, year: int = None):
+def get_pasture_stats(run_context: RunContext, property_id: str, year: int = 2024):
     """
-    Busca os dados de biomassa de pastagem (matéria seca) de uma propriedade rural.
+    Realiza uma análise técnica detalhada do uso do solo, com foco em pastagem, vigor vegetativo e biomassa
+    para a propriedade selecionada no contexto (CAR).
+    
+    Use esta ferramenta quando o usuário perguntar sobre:
+    - Saúde ou qualidade da pastagem (degradação, vigor).
+    - Quantidade de biomassa disponível.
+    - Classificação de uso do solo (LULC) incluindo: Silvicultura, Cana, Soja, Arroz, Café, Citrus, etc.
+    - Idade da pastagem.
 
     params:
-        car (str): Código de Cadastro Ambiental Rural (CAR), `None` para a propriedade selecionada no sistema.
-        year: O ano para a consulta dos dados (2000-2024), `None` para o ano mais recente disponível (2024).
+        property_id (str): ID da propriedade no sistema.
+        year: O ano para a consulta dos dados (2000-2024).
+
+    Return:
+        Dicionário contendo a área de pastagem, vigor da pastagem, áreas de pastagem degradadas (baixo vigor), biomassa total e a idade.
     """
     try:
-        if car is None:
-            _property = run_context.session_state['selected_property']
-        else:
-            registered_properties = run_context.session_state['registered_properties']
-            _property = [prop for prop in registered_properties if prop["car_code"] == car][0]
-
-        if _property.get("data", None) is None:
-            _property["data"] = {}
-
-        if _property["data"].get("pasture_data", None) is None:
-            _property["data"]["pasture_data"] = {}
-
-        if _property["data"]["pasture_data"].get(year, None) is None:
-            _property["data"]["pasture_data"][year] = {}
-
-            coords = _property["spatial_features"]["coordinates"]
-
-            query = query_pasture_statistics(coords=coords, year=year)
-
-            _property["data"]["pasture_data"][year] = query.model_dump()
-
-        return ToolResult(content=str(BiomassData.model_validate(_property["data"]["pasture_data"][year]["biomass"])))
-    except Exception as e:
-        return ToolResult(content=str(e))
-
-
-@tool(tool_hooks=[validate_selected_property_hook])
-def query_pasture_vigor(run_context: RunContext, car: str = None, year: int = None):
-    """
-    Busca os dados de vigor vegetativo de pastagem de uma propriedade rural.
-
-    params:
-        car (str): Código de Cadastro Ambiental Rural (CAR), `None` para a propriedade selecionada no sistema.
-        year: O ano para a consulta dos dados (2000-2024), `None` para o ano mais recente disponível (2024).
-    """
-    try:
-        if car is None:
-            _property = run_context.session_state['selected_property']
-        else:
-            registered_properties = run_context.session_state['registered_properties']
-            _property = [prop for prop in registered_properties if prop["car_code"] == car][0]
-
-        if _property.get("data", None) is None:
-            _property["data"] = {}
-
-        if _property["data"].get("pasture_data", None) is None:
-            _property["data"]["pasture_data"] = {}
-
-        if _property["data"]["pasture_data"].get(year, None) is None:
-            _property["data"]["pasture_data"][year] = {}
-
-            coords = _property["spatial_features"]["coordinates"]
-
-            query = query_pasture_statistics(coords=coords, year=year)
-
-            _property["data"]["pasture_data"][year] = query.model_dump()
-
-        vigor_list = _property["data"]["pasture_data"][year]["vigor"]
-
-        return ToolResult(content=str([VigorData.model_validate(vigor) for vigor in vigor_list]))
-    except Exception as e:
-        return ToolResult(content=str(e))
-
-
-@tool(tool_hooks=[validate_selected_property_hook])
-def query_pasture_age(run_context: RunContext, car: str = None, year: int = None):
-    """
-    Busca os dados de idade da pastagem de uma propriedade rural.
-
-    params:
-        car (str): Código de Cadastro Ambiental Rural (CAR), `None` para a propriedade selecionada no sistema.
-        year: O ano para a consulta dos dados (2000-2024), `None` para o ano mais recente disponível (2024).
-    """
-    try:
-        if car is None:
-            _property = run_context.session_state['selected_property']
-        else:
-            registered_properties = run_context.session_state['registered_properties']
-            _property = [prop for prop in registered_properties if prop["car_code"] == car][0]
-
-        if _property.get("data", None) is None:
-            _property["data"] = {}
-
-        if _property["data"].get("pasture_data", None) is None:
-            _property["data"]["pasture_data"] = {}
-
-        if _property["data"]["pasture_data"].get(year, None) is None:
-            _property["data"]["pasture_data"][year] = {}
-
-            coords = _property["spatial_features"]["coordinates"]
-
-            query = query_pasture_statistics(coords=coords, year=year)
-
-            _property["data"]["pasture_data"][year] = query.model_dump()
-
-        age_list = _property["data"]["pasture_data"][year]["age"]
-
-        return ToolResult(content=str([AgeData.model_validate(age) for age in age_list]))
-    except Exception as e:
-        return ToolResult(content=str(e))
-
-
-@tool(tool_hooks=[validate_selected_property_hook])
-def query_pasture_lulc(run_context: RunContext, car: str = None, year: int = None):
-    """
-    Busca os dados de uso e cobertura da terra de uma propriedade rural.
-
-    params:
-        car (str): Código de Cadastro Ambiental Rural (CAR), `None` para a propriedade selecionada no sistema.
-        year: O ano para a consulta dos dados (2000-2024), `None` para o ano mais recente disponível (2024).
-    """
-    try:
-        if car is None:
-            _property = run_context.session_state['selected_property']
-        else:
-            registered_properties = run_context.session_state['registered_properties']
-            _property = [prop for prop in registered_properties if prop["car_code"] == car][0]
-
-        if _property.get("data", None) is None:
-            _property["data"] = {}
-
-        if _property["data"].get("pasture_data", None) is None:
-            _property["data"]["pasture_data"] = {}
-
-        if _property["data"]["pasture_data"].get(year, None) is None:
-            _property["data"]["pasture_data"][year] = {}
-
-            coords = _property["spatial_features"]["coordinates"]
-
-            query = query_pasture_statistics(coords=coords, year=year)
-
-            _property["data"]["pasture_data"][year] = query.model_dump()
-
-        lulc_class_list = _property["data"]["pasture_data"][year]["lulc_class"]
+        print(run_context.session_state, flush=True)
+        properties_stats: list = run_context.session_state.get("properties_stats", [])
+        property_stats = next((prop for prop in properties_stats if prop["id"] == property_id), None)
+        new_property_stats = PropertyStats.model_validate(properties_stats) if property_stats else PropertyStats(id=property_id)
         
-        return ToolResult(content=str([LULCClassData.model_validate(lulc_class) for lulc_class in lulc_class_list]))
+        for pasture_stats in new_property_stats.list_pasture_stats:
+            if pasture_stats.year == year:
+                return ToolResult(content=str(pasture_stats))
+            
+        registered_properties = run_context.session_state["registered_properties"]
+        selected_property = next((prop for prop in registered_properties if prop["id"] == property_id))
+        selected_property = PropertyRecord.model_validate(selected_property)
+
+        new_pasture_stats: PastureStats = query_pasture_statistics(coords=selected_property.get_coords(), year=year)
+
+        new_property_stats.list_pasture_stats.append(new_pasture_stats)
+
+        if property_stats is not None:
+            properties_stats.remove(property_stats)
+        properties_stats.append(new_property_stats.model_dump())
+        run_context.session_state["properties_stats"] = properties_stats
+
+        return ToolResult(content=str(new_pasture_stats))
     except Exception as e:
+        print(f"ERROR: {e}", flush=True)
         return ToolResult(content=str(e))

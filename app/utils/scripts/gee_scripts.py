@@ -3,13 +3,15 @@ import ee
 import PIL
 import datetime
 import requests
-import geemap as gee
+import traceback
 
 from io import BytesIO
 from typing import List
 
+from agno.utils.log import log_error
+
 from app.utils.scripts.image_scripts import add_legend
-from app.utils.interfaces.ee_data_interfaces import PastureStatsResult
+from app.utils.interfaces.property_stats import PropertyStats, PastureStats
 
 
 if not (GEE_SERVICE_ACCOUNT := os.environ.get('GEE_SERVICE_ACCOUNT')):
@@ -234,11 +236,11 @@ def retrieve_feature_biomass_image(coords: List[List[List[List[float]]]], year: 
         )
     
 
-def query_pasture_statistics(coords: List[List[List[List[float]]]], year: int = None) -> PastureStatsResult:
+def query_pasture_statistics(coords: List[List[List[List[float]]]], year: int) -> PropertyStats:
     """
     Extração de estatísticas de pastagem (biomassa, vigor, idade e chuva).
     """
-    from app.utils.interfaces.ee_data_interfaces import Value, BiomassData, AgeData, VigorData, LULCClassData
+    from app.utils.interfaces.property_stats import Value, BiomassData, AgeData, VigorData, LULCClassData
 
     try:
         biomass_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_biomass_v2')
@@ -246,9 +248,6 @@ def query_pasture_statistics(coords: List[List[List[List[float]]]], year: int = 
 
         max_year = int(biomass_asset_bands[-1].replace("biomass_", ""))
         min_year = int(biomass_asset_bands[0].replace("biomass_", ""))
-
-        if year is None:
-            year = max_year
 
         if year < min_year or year > max_year:
             raise ValueError(f"O ano deve estar entre {min_year} e {max_year}.")
@@ -265,7 +264,7 @@ def query_pasture_statistics(coords: List[List[List[List[float]]]], year: int = 
                     scale=30,
                     maxPixels=1e13)
 
-        biomass_data = BiomassData(amount=Value(value=stats.getInfo()['biomass_2024'] * 0.09, unity="tonelada(s) de matéria seca anual"))
+        biomass_data = BiomassData(amount=Value(value=stats.getInfo()[f'biomass_{year}'] * 0.09, unity="tonelada(s) de matéria seca anual"))
 
         # ==================== Query Age ====================
         AGE_DICT = {'1':'1-10', '2':'10-20', '3':'20-30', '4':'30-40'}
@@ -376,36 +375,44 @@ def query_pasture_statistics(coords: List[List[List[List[float]]]], year: int = 
 
         # ==================== Final Result ====================
 
-        result = PastureStatsResult(
+        result = PastureStats(
             biomass=biomass_data,
             age=age_data_list,
             vigor=vigor_data_list,
-            lulc_class=lulc_class_data_list
+            lulc_class=lulc_class_data_list,
+            year=year
             )
 
         return result
     
-    except ValueError:
+    except ValueError as e:
+        error = traceback.format_exc()
+        log_error(error)
         raise RuntimeError(
             f"Peça desculpas e informe que houve um erro.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
-    except ee.EEException:
+    except ee.EEException as e:
+        log_error(str(e))
         raise RuntimeError(
             f"Peça desculpas e informe que houve uma falha de processamento.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
-    except requests.exceptions.HTTPError:
+    except requests.exceptions.HTTPError as e:
+        log_error(str(e))
         raise RuntimeError(
             f"Peça desculpas e informe que o servidor de imagens do satélite falhou.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
-    except requests.exceptions.RequestException:
+    except requests.exceptions.RequestException as e:
+        log_error(str(e))
         raise RuntimeError(
             f"Peça desculpas e informe que houve um problema de conexão ao baixar o mapa de biomassa.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
     except Exception:
+        error = traceback.format_exc()
+        log_error(error)
         raise RuntimeError(
             f"Peça desculpas e informe que houve um erro inesperado.\n"
             "Peça ao usuário que tente novamente mais tarde."

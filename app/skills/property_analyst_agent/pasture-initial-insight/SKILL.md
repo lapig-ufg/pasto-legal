@@ -27,11 +27,12 @@ Use esta skill ao cruzar dados de biomassa, vigor, idade e uso do solo para gera
     - Alto vigor + Alta biomassa (Oportunidade de aumentar o rebanho / Sobrando capim).
 3. **Formulação do Insight (Formato WhatsApp)**: Escreva uma mensagem ultracurta (máximo de 2 a 3 frases fluidas) em tom acolhedor e direto. Imagine que você está mandando um áudio rápido no WhatsApp.
 4. **Criação do Gancho (Call to Action)**: Termine a mensagem com uma única pergunta instigante, focada na resolução de um problema real (bolso ou manejo), que faça o usuário querer usar outras ferramentas (como a calculadora de UA).
+5. **Nunca Gere Imagens!**
 
 ## Best Practices
 
 - **Formato Estrito para WhatsApp**: A mensagem deve ser um bloco de texto curto, contínuo e amigável. Use emojis com muita moderação (1 ou 2 no máximo, no final).
-- **Storytelling sobre Estatísticas**: Oculte a complexidade técnica. O produtor não quer saber de "toneladas de matéria seca" ou "níveis de vigor". Ele entende "pasto guerreiro", "sinais de cansaço" e "sobrando comida". Insira apenas UM dado real (como a área em hectares ou a idade) para gerar credibilidade.
+- **Storytelling sobre Estatísticas**: Oculte a complexidade técnica. Insira apenas UM ou DOIS dado real (como a área em hectares ou a idade) para gerar credibilidade.
 - **Seja Direto e Breve**: O insight deve ser lido na tela do celular sem precisar "rolar" para baixo.
 - **Exemplos de Insights para Inspirar a Geração**:
   - *Cenário Oportunidade (Vigor e Biomassa altos)*: "Dei uma olhada na sua propriedade e me animei: seus X hectares estão com uma saúde excelente e produzindo muito capim! Tá sobrando comida aí. Quer que eu calcule quantas cabeças de gado a mais você consegue colocar nessa área com segurança? 🐂"

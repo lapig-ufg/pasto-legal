@@ -9,16 +9,14 @@ from agno.tools.function import ToolResult
 from agno.media import Image
 
 from app.utils.scripts.sicar_scripts import (
-    fetch_property_by_coordinates_remote, 
     fetch_property_by_coordinates_locally,
-    fetch_property_by_car_remote,
     fetch_property_by_car_locally,
     fetch_coordinates_by_url,
     clean_car_code
     )
 from app.utils.scripts.image_scripts import get_mosaic
 from app.utils.scripts.gee_scripts import retrieve_feature_images
-from app.utils.interfaces.rural_property_interface import PropertyRecord
+from app.utils.interfaces.property_record import PropertyRecord, RuralProperty
 
 
 # TODO: Se o usuário informar uma URL de coordenadas de uma propriedade que já existe no sistema, validar se a propriedade existe por meio do CAR. Se existir então retornar menssagem que já existe.
@@ -37,11 +35,7 @@ def register_feature_by_coordinate(run_context: RunContext, latitude: float, lon
     Returns:
         ToolResult: Resultado da busca contendo imagem e instruções para o próximo passo.
     """
-    try:
-        # TODO: Remover. Manter apenas busca local.
-        properties = fetch_property_by_coordinates_remote(latitude=latitude, longitude=longitude)
-    except Exception:
-        properties = fetch_property_by_coordinates_locally(latitude=latitude, longitude=longitude)
+    properties = fetch_property_by_coordinates_locally(latitude=latitude, longitude=longitude)
 
     if not properties:
         return (
@@ -130,10 +124,7 @@ def register_feature_by_car(run_context: RunContext, car_codes: List[str], name:
             )
         )
         
-    try:
-        properties = [fetch_property_by_car_remote(car=car_code) for car_code in clean_car_codes]
-    except Exception:
-        properties = [fetch_property_by_car_locally(car=car_code) for car_code in clean_car_codes]
+    properties = [fetch_property_by_car_locally(car=car_code) for car_code in clean_car_codes]
 
     if not properties:
         return ToolResult(
@@ -145,7 +136,8 @@ def register_feature_by_car(run_context: RunContext, car_codes: List[str], name:
     
     new_record = PropertyRecord(nickname=name, properties=properties)
     old_registered_properties = run_context.session_state.get("registered_properties", [])
-    run_context.session_state["registered_properties"] = old_registered_properties.append(new_record.model_dump())
+    old_registered_properties.append(new_record.model_dump())
+    run_context.session_state["registered_properties"] = old_registered_properties
 
     imgs = retrieve_feature_images([prop["spatial_features"]["coordinates"][0] for prop in properties])
     
@@ -198,7 +190,7 @@ def register_feature_by_car(run_context: RunContext, car_codes: List[str], name:
 
 
 @tool(stop_after_tool_call=True,)
-def register_feature_by_url(url: str, run_context: RunContext) -> ToolResult:
+def register_feature_by_url(run_context: RunContext, url: str) -> ToolResult:
     """
     Registra uma nova propriedade rural baseando-se na URL de compartilhamento do Google Maps.
 
@@ -223,10 +215,7 @@ def register_feature_by_url(url: str, run_context: RunContext) -> ToolResult:
     except Exception as error:
         return ToolResult(content=str(error))
     
-    try:
-        properties = fetch_property_by_coordinates_remote(latitude=latitude, longitude=longitude)
-    except Exception:
-        properties = fetch_property_by_coordinates_locally(latitude=latitude, longitude=longitude)
+    properties = fetch_property_by_coordinates_locally(latitude=latitude, longitude=longitude)
 
     if not properties:
         return (
@@ -309,11 +298,12 @@ def select_car_from_list(run_context: RunContext, selection: int):
     selected_property = candidate_properties[selection - 1]
 
     run_context.session_state['selected_property'] = selected_property
-    run_context.session_state['candidate_properties'] = None
+    run_context.session_state['candidate_properties'] = []
 
-    new_record = PropertyRecord(properties=selected_property)
+    new_record = PropertyRecord(properties=[RuralProperty.model_validate(selected_property)])
     old_registered_properties = run_context.session_state.get("registered_properties", [])
-    run_context.session_state["registered_properties"] = old_registered_properties.append(new_record.model_dump())                                 
+    old_registered_properties.append(new_record.model_dump())  
+    run_context.session_state["registered_properties"] = old_registered_properties                             
 
     return ToolResult(
         content=(
@@ -338,11 +328,12 @@ def confirm_car_selection(run_context: RunContext):
     selected_property = candidate_properties[0]
 
     run_context.session_state['selected_property'] = selected_property
-    run_context.session_state['candidate_properties'] = None
+    run_context.session_state['candidate_properties'] = []
 
-    new_record = PropertyRecord(properties=selected_property)
+    new_record = PropertyRecord(properties=[RuralProperty.model_validate(selected_property)])
     old_registered_properties = run_context.session_state.get("registered_properties", [])
-    run_context.session_state["registered_properties"] = old_registered_properties.append(new_record.model_dump())  
+    old_registered_properties.append(new_record.model_dump())  
+    run_context.session_state["registered_properties"] = old_registered_properties    
 
     return ToolResult(
         content=(
@@ -391,7 +382,7 @@ def get_registered_properties(run_context: RunContext) -> List[Tuple[str, str]]:
 
 
 @tool(stop_after_tool_call=True)
-def set_property_name(car: str, name: str, run_context: RunContext):
+def set_property_name(run_context: RunContext, property_id: str, name: str):
     """
     Atualizar o nome propriedade registrada no sistema.
 
@@ -399,22 +390,25 @@ def set_property_name(car: str, name: str, run_context: RunContext):
         car(str): Código de Cadastro Ambiental Rural (CAR)
         name (str): Nome da propriedade.
     """
-    selected_property = run_context.session_state.get('selected_property', None)
-    
-    if selected_property:
-        if selected_property["car_code"] == car:
-            selected_property["nickname"] = name
-
     registered_properties = run_context.session_state.get('registered_properties', [])
-    for prop in registered_properties:
-        if prop.get("car_code") == selected_property.get("car_code"):
-            prop["nickname"] = name
-            return (
-                f"O nome da propriedade {selected_property.get('car_code')} foi definido como '{name}' com sucesso.\n"
-                "Seja proativo, use a tool `delegate_task_to_member` e peça ao agente `Agente Extensionista Agrônomo` para fazer um diagnóstico inicial."
-            )
-        
-    return "Nenhuma propriedade selecionada no momento."
+    selected_property = next((prop for prop in registered_properties if prop["id"] == property_id), None)
+    
+    if selected_property is None:
+        return ToolResult(content="Não foi possível registrar o nome da propriedade.")
+    
+    new_selected_property = PropertyRecord.model_validate(selected_property)
+    new_selected_property.nickname = name
+
+    registered_properties.remove(selected_property)
+    registered_properties.append(new_selected_property.model_dump())
+    run_context.session_state["registered_properties"] = registered_properties
+
+    return ToolResult(
+        content=(
+            f"O nome da propriedade foi alterado com sucesso.\n"
+            "Seja proativo, use a tool `delegate_task_to_member` e peça ao agente `Agente Extensionista Agrônomo` para fazer um diagnóstico inicial."
+        )
+    )
 
 
 @tool(stop_after_tool_call=True)
