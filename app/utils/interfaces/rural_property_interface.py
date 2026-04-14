@@ -63,7 +63,15 @@ class RuralProperty(BaseModel):
         ..., 
         description="Objeto contendo os metadados administrativos do sistema SICAR."
     )
+
+    def __str__(self):
+        return (
+            f"Código CAR: {self.car_code},"
+            "Área: {self.spatial_features.total_area} ha,"
+            "Município: {self.spatial_features.municipality}"
+            )
     
+
 class PropertyRecord(BaseModel):
     id: Optional[str] = Field(
         ...,
@@ -81,4 +89,5 @@ class PropertyRecord(BaseModel):
 
     def __str__(self):
         car_codes = ', '.join([prop.car_code for prop in self.properties])
+
         return f"ID: {self.id}, Nome: {self.nome}, Códigos CAR: {car_codes}"

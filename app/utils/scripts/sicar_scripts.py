@@ -81,7 +81,7 @@ def _map_row_to_property_record(row: dict) -> Dict:
     ).model_dump()
 
 
-@mock_dev_only()
+# TODO: Pesquisar por múltiplos CARs em apenas uma query.
 def fetch_property_by_car_remote(car: str) -> List[Dict] | None:
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -286,14 +286,18 @@ def fetch_coordinates_by_url(url: str) -> tuple[float | None, float | None]:
             "Peça desculpa e peça que o usuário tente novamente mais tarde."
         ))
     
-def clean_car_code(car_code: str):
+
+def clean_car_code(car_code: str) -> str | None:
     """
-    
+    Valida e normaliza o formato de um código CAR (Cadastro Ambiental Rural).
+
+    Extrai o código via Regex, removendo pontos separadores e padronizando 
+    os hifens obrigatórios entre a UF, o número sequencial e o identificador.
     """
     pattern = r"\b([A-Z]{2})-?(\d{7})-([A-Z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\b"
 
     search = re.search(pattern, car_code, flags=re.IGNORECASE)
     if not search:
-        return False
+        return None
     
     return re.sub(pattern, r"\1-\2-\3\4\5\6\7\8\9\10", search[0], flags=re.IGNORECASE)

@@ -17,22 +17,17 @@ from app.tools.property_manager_tools import (
     confirm_car_selection,
     reject_car_selection
     )
+from app.utils.interfaces.rural_property_interface import PropertyRecord, RuralProperty
 
 
 def get_instructions(run_context: RunContext):
     session_state = run_context.session_state or {}
 
-    candidate_properties = session_state.get("candidate_properties", None)
+    candidate_properties = [RuralProperty.model_validate(prop) for prop in session_state.get("candidate_properties", [])]
 
     if candidate_properties:
-        n_candidates = len(candidate_properties)
-
-        if n_candidates == 1:
-            candidate_text = (
-                f" > Identificador CAR: {candidate_properties[0]["car_code"]}, "
-                f"Tamanho da área: {round(candidate_properties[0]["spatial_features"]["total_area"])} ha, "
-                f"Município: {candidate_properties[0]["spatial_features"]["municipality"]}."
-            )
+        if len(candidate_properties) == 1:
+            candidate_text = str(candidate_properties[0])
 
             instructions = textwrap.dedent(f"""
                 - Você atua como um agente especialista subordinado dentro de um time de agentes.
@@ -40,7 +35,7 @@ def get_instructions(run_context: RunContext):
                 - Ao concluir sua tarefa, seja o mais claro, objetivo e estruturado possível ao reportar ao agente Orquestrador.
                 - Foi pedido ao usuário para confirmar ou rejeitar a seguinte propriedade:
                                            
-                {candidate_text}
+                > {candidate_text}
 
                 - Atue exclusivamente na etapa de confirmação desta propriedade.
                 - Acione a ferramenta confirm_car_selection ou reject_car_selection com base na resposta.
@@ -50,12 +45,8 @@ def get_instructions(run_context: RunContext):
             """).strip()
         else:
             options_text = []
-            for i, p in enumerate(candidate_properties):
-                options_text.append(
-                    f"> Opção {i + 1} - Identificador CAR: {p["car_code"]}, "
-                    f"Tamanho da área: {round(p["spatial_features"]["total_area"])} ha, "
-                    f"Município: {p["spatial_features"]["municipality"]}."
-                )
+            for i, prop in enumerate(candidate_properties):
+                options_text.append(f"> Opção {i + 1} - {str(prop)}")
             result_text = "\n".join(options_text)
 
             instructions = textwrap.dedent(f"""
@@ -70,14 +61,15 @@ def get_instructions(run_context: RunContext):
                 - Use markdown no formato do WhatsApp.
             """).strip()
     else:
-        if registered_properties := session_state.get("registered_properties", None):
-            registrations_text = '\n'.join([str(prop) for prop in registered_properties])
+        registered_properties = [PropertyRecord.model_validate(record) for record in session_state.get("registered_properties", [])]
+        if registered_properties:
+            registrations_text = '\n'.join([str(record) for record in registered_properties])
         else:
             registrations_text = "Vazio"
 
-        instructions = textwrap.dedent("""
+        instructions = textwrap.dedent(f"""
             <registrations>
-            {text_data}
+            {registrations_text}
             <registrations>                    
                     
             <instructions>
