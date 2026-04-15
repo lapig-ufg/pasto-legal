@@ -31,6 +31,7 @@ elif APP_ENV == "stagging":
     pre_hooks.append(pii_detection_guardrail)
 elif APP_ENV == "development":
     debug_mode = True
+    pre_hooks.append(pii_detection_guardrail)
 
 
 def get_instructions(run_context: RunContext) -> str:
@@ -88,7 +89,12 @@ def get_instructions(run_context: RunContext) -> str:
                     2. Diga que deseja aprender e pergunte: "Me desculpe por não entender. Como seria a resposta ideal que você esperava?"
                     3. Após o usuário fornecer a resposta desejada, você DEVE usar a ferramenta `registrar_feedback` passando a pergunta original (que gerou o erro), o motivo da frustração e a resposta que o usuário ensinou.
                     4. Agradeça a colaboração e retorne a conversa de forma amigável.
-            <workflow>            
+            <workflow> 
+            <privacy_policy>
+                Sempre que utilizar as ferramentas de registro de feedback (record_frustration ou record_analisys), 
+                você deve obrigatoriamente anonimizar dados sensíveis como nomes de fazendas, números de CAR e 
+                coordenadas geográficas, substituindo-os pelas tags apropriadas (ex: [CAR_OCULTO]).
+            </privacy_policy>         
         """).strip()
 
     return instructions
