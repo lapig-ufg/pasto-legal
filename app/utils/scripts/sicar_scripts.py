@@ -48,7 +48,7 @@ def _map_feature_to_property_record(feature: json) -> Dict:
             availability_date=properties.get('dataDisponibilizacao', ''),
             creation_date=properties.get('dataCriacao', '')
         )
-    ).model_dump()
+    )
 
 
 def _map_row_to_property_record(row: dict) -> Dict:
@@ -79,7 +79,7 @@ def _map_row_to_property_record(row: dict) -> Dict:
             availability_date=row.get('dat_atuali', ''),
             creation_date=row.get('dat_criaca', '')
         )
-    ).model_dump()
+    )
 
 # SC-4205100-9CF52298DA9740D4968BF6E2BE14E740, SC-4205100-11D656C565D04D43885AF2EC82EBA308, SC-4205100-71D333DF8E6B4824B19D77781C713B8D
 #@mock_property
@@ -119,7 +119,7 @@ def _map_row_to_property_record(row: dict) -> Dict:
 
 
 @mock_property()
-def fetch_property_by_car_locally(car_codes: List[str]) -> List[Dict] | None:
+def fetch_property_by_car_locally(car_codes: List[str]) -> List[RuralProperty]:
     """
     Busca as informações de imóveis rurais utilizando uma lista de códigos únicos do CAR.
 
@@ -157,7 +157,7 @@ def fetch_property_by_car_locally(car_codes: List[str]) -> List[Dict] | None:
         df = cursor.execute(query, params).fetchdf()
         
         if df.empty:
-            return None
+            return []
         
         records_dicts = df.to_dict('records')
         result = [_map_row_to_property_record(row) for row in records_dicts]
@@ -165,7 +165,7 @@ def fetch_property_by_car_locally(car_codes: List[str]) -> List[Dict] | None:
     except Exception as e:
         # É recomendável pelo menos logar o erro caso 'result = None' oculte o problema
         print(f"Erro ao buscar imóveis: {e}") 
-        result = None
+        result = []
     finally:
         cursor.close()
         
@@ -217,7 +217,7 @@ def fetch_property_by_car_locally(car_codes: List[str]) -> List[Dict] | None:
 
 
 @mock_property()
-def fetch_property_by_coordinates_locally(latitude: float, longitude: float) -> List[Dict] | None:
+def fetch_property_by_coordinates_locally(latitude: float, longitude: float) -> List[RuralProperty]:
     """
     Realiza busca geoespacial de imóveis rurais a partir de um ponto (Lat/Lon).
 
@@ -254,13 +254,13 @@ def fetch_property_by_coordinates_locally(latitude: float, longitude: float) -> 
         ]).fetchdf()
         
         if df.empty:
-            return None
+            return []
             
         records_dicts = df.to_dict('records')
         result = [_map_row_to_property_record(row) for row in records_dicts] 
             
     except Exception:
-        result = None
+        result = []
     finally:
         cursor.close()
         return result

@@ -13,7 +13,7 @@ from app.tools.feedback_tools import record_frustration_feedback, record_analisy
 from app.tools.version_tools import consult_update_notes
 from app.hooks.pre_hooks import validate_phone_authorization
 from app.guardrails.pii_detection_guardrail import pii_detection_guardrail
-from app.utils.interfaces.property_record import PropertyRecord
+from app.utils.interfaces.property_record import RuralProperty
 
 
 if not (APP_ENV := os.environ.get('APP_ENV')):
@@ -47,9 +47,9 @@ def get_instructions(run_context: RunContext) -> str:
             - Não use a ferramenta `update_user_memory`.
         """).strip()
     else:
-        registered_properties = [PropertyRecord.model_validate(record) for record in session_state.get("registered_properties", [])]
+        registered_properties = [RuralProperty.model_validate(prop) for prop in session_state.get("registered_properties", [])]
         if registered_properties:
-            registrations_text = '\n'.join([str(record) for record in registered_properties])
+            registrations_text = '\n'.join([str(prop) for prop in registered_properties])
         else:
             registrations_text = "Vazio"
 
