@@ -5,13 +5,13 @@ from agno.tools.function import ToolResult
 from agno.run import RunContext
 from agno.media import Image
 
-from app.hooks.tool_hooks import validate_selected_property_hook
+from app.hooks.tool_hooks import validate_selected_property_hook, validate_rate_limit_hook
 from app.utils.scripts.gee_scripts import retrieve_feature_images, retrieve_feature_biomass_image, query_pasture_statistics
 from app.utils.interfaces.property_stats import PastureStats, PropertyStats 
 from app.utils.interfaces.property_record import PropertyRecord
 
 
-@tool(tool_hooks=[validate_selected_property_hook])
+@tool(tool_hooks=[validate_selected_property_hook, validate_rate_limit_hook])
 def generate_property_image(run_context: RunContext, property_id: str) -> ToolResult:
     """
     Gera uma imagem de satélite em alta resolução (RGB) da propriedade rural,
@@ -44,7 +44,7 @@ def generate_property_image(run_context: RunContext, property_id: str) -> ToolRe
         return ToolResult(content=f"Erro ao gerar imagem: {str(e)}")
 
 
-@tool(tool_hooks=[validate_selected_property_hook])
+@tool(tool_hooks=[validate_selected_property_hook, validate_rate_limit_hook])
 def generate_biomass_image(run_context: RunContext, property_id: str, year: int = 2024) -> ToolResult:
     """
     Gera um mapa temático da biomassa (matéria seca) sobre os limites da propriedade rural.
