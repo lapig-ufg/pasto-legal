@@ -58,7 +58,6 @@ class RuralProperty(BaseModel):
         
     car_code: str = Field(
         ..., 
-        pattern=r"^[A-Z]{2}-\d{7}-[A-Z0-9]{32}$",
         description="Código único do Cadastro Ambiental Rural (CAR).",
         examples=["GO-1111111-1111AAAA2222BBBB3333CCCC4444DDDD"]
     )
@@ -84,7 +83,7 @@ class RuralProperty(BaseModel):
             car_code=', '.join([prop.car_code for prop in rural_properties]),
             spatial_features=SpatialFeatures(
                 total_area=sum([prop.spatial_features.total_area for prop in rural_properties]),
-                coordinates=[coords[0] for prop in rural_properties for coords in prop.spatial_features.coordinates]
+                coordinates=[prop.get_coords()[0] for prop in rural_properties]
                 )
             )
 
