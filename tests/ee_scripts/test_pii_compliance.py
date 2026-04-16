@@ -1,6 +1,21 @@
+import os
+os.environ["POSTGRES_HOST"] = "mock_host"
+os.environ["POSTGRES_PORT"] = "5432"
+os.environ["POSTGRES_USER"] = "mock_user"
+os.environ["POSTGRES_PASSWORD"] = "mock_pass"
+os.environ["POSTGRES_DBNAME"] = "mock_db"
+
 import pytest
 import re
+
 from app.guardrails.pii_detection_guardrail import custom_patterns
+from app.tools.feedback_tools import _mask_pii
+
+
+
+def test_car_masking():
+    texto = "Meu CAR é MT-1234567-ABC"
+    assert "[CAR_OCULTO]" in _mask_pii(texto)
 
 def mask_text(text: str) -> str:
     """Simula o comportamento do guardrail usando seus padrões de Regex."""

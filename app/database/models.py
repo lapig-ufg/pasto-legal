@@ -11,6 +11,7 @@ class FrustrationFeedback(Base):
     original_question = Column(Text)
     reason_frustration = Column(Text)
     desired_answer = Column(Text)
+    context = Column(Text)
 
 class AnalysisFeedback(Base):
     __tablename__ = 'analysis_feedbacks'
@@ -19,3 +20,4 @@ class AnalysisFeedback(Base):
     timestamp = Column(Text)
     original_question = Column(Text)
     desired_analysis = Column(Text)
+    context = Column(Text)

@@ -1,13 +1,38 @@
+import re
 from datetime import datetime
 
 from agno.tools import tool
+from agno.run import RunContext
 
 from app.database.session import SessionLocal, engine
 from app.database.models import FrustrationFeedback, AnalysisFeedback
 
 
+def _mask_pii(text: str) -> str:
+    if not text:
+        return ""
+        
+    patterns = {
+        'CPF': re.compile(r"\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b"),
+        'CNPJ': re.compile(r"\b\d{2}\.?\d{3}\.?\d{3}/\d{4}-?\d{2}\b"),
+        'CAR': re.compile(r"\b[A-Z]{2}-\d{7}-[A-F0-9.]+\b", re.IGNORECASE),
+        'COORDINATES': re.compile(r"(-?\d{1,3}\.\d{4,}\s*,\s*-?\d{1,3}\.\d{4,})")
+    }
+
+    masked_text = str(text)
+    for label, pattern in patterns.items():
+        masked_text = pattern.sub(f"[{label}_OCULTO]", masked_text)
+        
+    return masked_text
+
+
 @tool
-def record_frustration_feedback(original_question: str, reason_frustration: str, desired_answer: str) -> str:
+def record_frustration_feedback(
+    original_question: str, 
+    reason_frustration: str, 
+    desired_answer: str,
+    run_context: RunContext = None
+) -> str:
     """
     Registra uma correção do usuário quando o assistente fornece uma resposta incorreta.
 
@@ -32,15 +57,21 @@ def record_frustration_feedback(original_question: str, reason_frustration: str,
         desired_answer (str): A resposta esperada com dados sensíveis mascarados.
     """
     FrustrationFeedback.metadata.create_all(bind=engine)
-
     db = SessionLocal()
     
     try:
+        
+        historico_str = ""
+        if run_context and run_context.messages:
+            ultimas_mensagens = run_context.messages[-3:]
+            historico_str = "\n".join([f"{m.role}: {m.content}" for m in ultimas_mensagens])
+
         novo_feedback = FrustrationFeedback(
             timestamp=datetime.now().isoformat(),
-            original_question=original_question,
-            reason_frustration=reason_frustration,
-            desired_answer=desired_answer
+            original_question=_mask_pii(original_question),
+            reason_frustration=_mask_pii(reason_frustration),
+            desired_answer=_mask_pii(desired_answer),
+            context=_mask_pii(historico_str)
         )
         
         db.add(novo_feedback)
@@ -56,7 +87,11 @@ def record_frustration_feedback(original_question: str, reason_frustration: str,
         db.close()
 
 @tool
-def record_analisys_feedback(original_question: str, desired_analysis: str) -> str:
+def record_analisys_feedback(
+    original_question: str, 
+    desired_analysis: str,
+    run_context: RunContext = None
+) -> str:
     """
     Registra uma sugestão de nova funcionalidade ou análise de dados.
     
@@ -74,14 +109,19 @@ def record_analisys_feedback(original_question: str, desired_analysis: str) -> s
         desired_analysis (str): A descrição da análise com dados sensíveis mascarados.
     """
     AnalysisFeedback.metadata.create_all(bind=engine)
-
     db = SessionLocal()
     
     try:
+        historico_str = ""
+        if run_context and run_context.messages:
+            ultimas_mensagens = run_context.messages[-3:]
+            historico_str = "\n".join([f"{m.role}: {m.content}" for m in ultimas_mensagens])
+
         novo_feedback = AnalysisFeedback(
             timestamp=datetime.now().isoformat(),
-            original_question=original_question,
-            desired_analysis=desired_analysis
+            original_question=_mask_pii(original_question),
+            desired_analysis=_mask_pii(desired_analysis),
+            context=_mask_pii(historico_str)
         )
         
         db.add(novo_feedback)

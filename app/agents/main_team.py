@@ -12,7 +12,6 @@ from app.tools.tts_tools import audioTTS
 from app.tools.feedback_tools import record_frustration_feedback, record_analisys_feedback
 from app.tools.version_tools import consult_update_notes
 from app.hooks.pre_hooks import validate_phone_authorization
-from app.guardrails.pii_detection_guardrail import pii_detection_guardrail
 from app.utils.interfaces.property_record import PropertyRecord
 
 
@@ -24,14 +23,14 @@ pre_hooks = []
 if APP_ENV == "production":
     debug_mode = False
     pre_hooks.append(validate_phone_authorization)
-    pre_hooks.append(pii_detection_guardrail)
+    
 elif APP_ENV == "stagging":
     debug_mode = True
     pre_hooks.append(validate_phone_authorization)
-    pre_hooks.append(pii_detection_guardrail)
+    
 elif APP_ENV == "development":
     debug_mode = True
-    pre_hooks.append(pii_detection_guardrail)
+    
 
 
 def get_instructions(run_context: RunContext) -> str:
