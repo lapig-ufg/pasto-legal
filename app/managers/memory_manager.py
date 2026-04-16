@@ -11,6 +11,7 @@ memory_manager: MemoryManager = MemoryManager(
     memory_capture_instructions=textwrap.dedent("""\
             Memories should capture personal information about the user that is relevant to the current conversation, such as:
             - Personal facts: name, age, occupation, interests, and preferences
+            - PERSONA CLASSIFICATION (CRITICAL): Actively identify and record the user's profile. STRICTLY categorize them as either "Persona: Produtor" (farm owner, focused on daily practical management) or "Persona: Técnico" (agronomist, consultant, focused on data and methodologies).
             - Opinions and preferences: what the user likes, dislikes, enjoys, or finds frustrating
             - Significant life events or experiences shared by the user
             - Important context about the user's current situation, challenges, or goals
