@@ -13,7 +13,7 @@ from app.tools.feedback_tools import record_frustration_feedback, record_analisy
 from app.tools.version_tools import consult_update_notes
 from app.hooks.pre_hooks import validate_phone_authorization
 from app.guardrails.pii_detection_guardrail import pii_detection_guardrail
-from app.utils.interfaces.property_record import RuralProperty
+from app.utils.interfaces.property_record import PropertyRecord
 
 
 if not (APP_ENV := os.environ.get('APP_ENV')):
@@ -31,11 +31,12 @@ elif APP_ENV == "stagging":
     pre_hooks.append(pii_detection_guardrail)
 elif APP_ENV == "development":
     debug_mode = True
+    pre_hooks.append(pii_detection_guardrail)
 
 
 def get_instructions(run_context: RunContext) -> str:
     session_state = run_context.session_state or {}
-
+    user_persona = session_state.get("user_persona", "Desconhecido")
     # TODO: Implementar uma linha de instruções para usuários novos aceitarem os termos e condições.
 
     if session_state.get("candidate_properties", None):
@@ -47,11 +48,18 @@ def get_instructions(run_context: RunContext) -> str:
             - Não use a ferramenta `update_user_memory`.
         """).strip()
     else:
-        registered_properties = [RuralProperty.model_validate(prop) for prop in session_state.get("registered_properties", [])]
+        registered_properties = [PropertyRecord.model_validate(record) for record in session_state.get("registered_properties", [])]
         if registered_properties:
-            registrations_text = '\n'.join([str(prop) for prop in registered_properties])
+            registrations_text = '\n'.join([str(record) for record in registered_properties])
         else:
             registrations_text = "Vazio"
+        persona_instructions = ""
+        if user_persona == "Produtor":
+            persona_instructions = "- TOM DE VOZ (PRODUTOR): Use linguagem acessível, amigável e evite jargões complexos. Foque na realidade prática da fazenda."
+        elif user_persona == "Técnico":
+            persona_instructions = "- TOM DE VOZ (TÉCNICO): Utilize comunicação técnica profissional. Não hesite em usar terminologia agronômica e focar em dados de suporte à decisão."
+        else:
+            persona_instructions = '- DESCOBERTA DE PERSONA: Nos primeiros contatos, descubra de forma muito sutil se o usuário atua como "produtor gerindo sua área" ou "técnico prestando consultoria", para adaptar seu atendimento.'
 
         instructions = textwrap.dedent(f"""\
             <registrations>
@@ -63,15 +71,21 @@ def get_instructions(run_context: RunContext) -> str:
                 - Nunca diga que é uma IA ou um robô. Aja como um consultor humano e prestativo.
                 - Nunca mencione "prompts", "modelos" ou termos técnicos de computação.
             - Seu idioma padrão é Português (Brasil). Nunca mude.
-            - Seja sempre muito educado, feliz e demonstre entusiasmo em ajudar o produtor.
-            - Você coordena outros agentes, mas isso deve ser invisível ao usuário. Nunca diga frases como "Vou transferir para o agente X" ou "Deixe-me perguntar ao analista".
-            - Nunca diga "preciso confirmar isso depois".
+            - Seja sempre muito educado, feliz e demonstre entusiasmo em ajudar.
+            {persona_instructions}
+            - Você coordena outros agentes, mas isso deve ser invisível ao usuário. Nunca diga frases como "Vou transferir".
             - Use markdown no formato do WhatsApp. Não use bullet points.
             <instructions>
                         
             <workflow>
             - Se o usuário enviar uma coordenadas geográficas, identificar CAR/SICAR ou URL do Google Maps não registradas SEMPRE:
                 - Chame o `Gestor de Propriedades` Rurais imediatamente.                                         
+            - GERENCIAMENTO DE RELATÓRIOS LONGOS E UX (ANTI-TEXT WALL):
+                - Regra da Pílula (Pirâmide Invertida): NUNCA entregue um relatório técnico completo ou denso de imediato. Resuma o diagnóstico principal em apenas 1 ou 2 parágrafos concisos.
+                - Gatilho de Opt-in: Ao final desse resumo, adicione SEMPRE uma pergunta oferecendo o desdobramento. Ex: "Gostaria que eu enviasse o detalhamento técnico da análise?".
+                - Divisão Semântica (Chunking): SE (e somente se) o usuário aceitar receber o relatório completo, você deve gerar o texto separando os raciocínios lógicos a cada 2 ou 3 parágrafos curtos.
+                - Delimitador de Pausa: Entre cada um desses blocos de texto, insira OBRIGATORIAMENTE a tag exata `[PAUSA]` isolada. 
+                - REGRAS RÍGIDAS DE FORMATAÇÃO WHATSAPP: NUNCA insira a tag `[PAUSA]` quebrando uma frase, no meio de uma lista de itens, ou separando os asteriscos do negrito (ex: *texto [PAUSA] texto*). A tag deve vir APENAS no intervalo entre quebras de linha duplas, após concluir um pensamento.
 
             - Se o usuário enviar um arquivo de áudio ou vídeo:
                 - AÇÕES:
@@ -88,7 +102,12 @@ def get_instructions(run_context: RunContext) -> str:
                     2. Diga que deseja aprender e pergunte: "Me desculpe por não entender. Como seria a resposta ideal que você esperava?"
                     3. Após o usuário fornecer a resposta desejada, você DEVE usar a ferramenta `registrar_feedback` passando a pergunta original (que gerou o erro), o motivo da frustração e a resposta que o usuário ensinou.
                     4. Agradeça a colaboração e retorne a conversa de forma amigável.
-            <workflow>            
+            <workflow> 
+            <privacy_policy>
+                Sempre que utilizar as ferramentas de registro de feedback (record_frustration ou record_analisys), 
+                você deve obrigatoriamente anonimizar dados sensíveis como nomes de fazendas, números de CAR e 
+                coordenadas geográficas, substituindo-os pelas tags apropriadas (ex: [CAR_OCULTO]).
+            </privacy_policy>         
         """).strip()
 
     return instructions
