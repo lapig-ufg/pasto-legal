@@ -53,7 +53,7 @@ def get_instructions(run_context: RunContext):
     return instructions
 
 
-analyst_agent = Agent(
+property_analyst_agent = Agent(
     name="Agente Extensionista Agrônomo",
     role=(
         "Especialista em agropecuária e geoprocessamento. Resposável por análises de dados, "

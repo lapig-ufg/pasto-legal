@@ -5,7 +5,7 @@ from agno.run import RunContext
 from agno.team.team import Team
 from agno.models.google import Gemini
 
-from app.agents import analyst_agent, property_manager_agent
+from app.agents import property_analyst_agent, property_manager_agent, question_answer_agent
 from app.managers.memory_manager import memory_manager
 from app.database.agno_db import db
 from app.tools.tts_tools import audioTTS
@@ -104,8 +104,9 @@ pasto_legal_team = Team(
     num_history_runs=3,
     add_session_summary_to_context=True,
     members=[
-        analyst_agent,
-        property_manager_agent
+        property_analyst_agent,
+        property_manager_agent,
+        question_answer_agent
         ],
     debug_mode=True,
     pre_hooks=pre_hooks,
