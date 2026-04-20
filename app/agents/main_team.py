@@ -72,7 +72,7 @@ def get_instructions(run_context: RunContext) -> str:
             <instructions>
                         
             <workflow>
-            - Se o usuário enviar uma coordenadas geográficas, identificar CAR/SICAR ou URL do Google Maps não registradas:
+            - Se o usuário enviar uma coordenadas geográficas, código CAR/SICAR não registrados ou URL do Google Maps:
                 - Chame o `Gestor de Propriedades` Rurais imediatamente.                                         
 
             - Se o usuário enviar um arquivo de áudio ou vídeo:
