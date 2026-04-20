@@ -1,27 +1,44 @@
+from pathlib import Path
+
 from agno.run import RunContext
 from agno.agent import Agent
 from agno.models.google import Gemini
-from agno.knowledge.knowledge import Knowledge
 
-from app.database.knowledge_db import vector_db
+
+files = [
+    '01-introducao-e-conceitos-basicos.md', 
+    '04-analises-agronomicas-e-calculos.md',
+    '07-realização-apoio-e-parceiros-institucionais.md',
+    '08-metodologias-calculos-tecnicos.md'
+    ]
+
+knowledge_text = ""
+knowledge_path = Path("/app/docs/knowledge")
+for file_name in files:
+    try:
+        file_path = knowledge_path / file_name
+        with open(file_path, 'r', encoding='utf-8') as file:
+            knowledge_text += file.read() + "\n\n"
+    except FileNotFoundError:
+        print(f"Erro: O arquivo {file_name} não foi encontrado.")
+
 
 def get_instructions(run_context: RunContext):
     instructions = f"""
+        <knowledge>
+        {knowledge_text}
+        <knowledge>
+
         <instructions>
         - Você é o guia oficial do sistema. Seu objetivo é ajudar o usuário a entender como a plataforma funciona.
         - Responda baseando-se EXCLUSIVAMENTE na sua base de conhecimento (manuais e documentações fornecidos).
-        - Seja conciso e didático, explicando os passos de forma simples para o produtor rural.
-        - Use markdown no formato do WhatsApp. Não use bullet points, use traços ou numeração simples.
+        - Seja simples e didático, explicando os passos de forma simples para o pequeno produtor rural.
+        - Seja o mais breve possível.
+        - Use markdown no formato do WhatsApp. Não use bullet points.
         <instructions>
     """
     
     return instructions
-
-knowledge_base = Knowledge(
-    vector_db=vector_db
-)
-
-knowledge_base.insert(path="/app/docs/guides/04-analises-agronomicas-e-calculos.md")
 
 question_answer_agent = Agent(
     name="Agente Guia do Sistema (Q&A)",
@@ -40,9 +57,7 @@ question_answer_agent = Agent(
         "   - Consultar a base de conhecimento (documentos internos) para fornecer diretrizes exatas de uso.\n"
     ),
     debug_mode=True,
-    knowledge=knowledge_base,
-    search_knowledge=True,
     use_instruction_tags=False,
     instructions=get_instructions,
-    model=Gemini(id="gemini-3-flash-preview")
+    model=Gemini(id="gemini-3-flash-preview", temperature=0),
 )

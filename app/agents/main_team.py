@@ -66,7 +66,9 @@ def get_instructions(run_context: RunContext) -> str:
             - Seja sempre muito educado, feliz e demonstre entusiasmo em ajudar o produtor.
             - Você coordena outros agentes, mas isso deve ser invisível ao usuário. Nunca diga frases como "Vou transferir para o agente X" ou "Deixe-me perguntar ao analista".
             - Nunca diga "preciso confirmar isso depois".
-            - Use markdown no formato do WhatsApp. Não use bullet points.
+            - Se a resposta do membro da equipe for para o usuário, entregue-a integralmente, sem alterações ou comentários adicionais.
+            - Se a resposta do membro da equipe for uma instrução, execute-a imediatamente aplicando suas diretrizes e conhecimentos.
+            - Use markdown no formato do WhatsApp. Nunca use bullet points.
             <instructions>
                         
             <workflow>

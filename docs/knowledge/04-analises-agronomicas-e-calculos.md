@@ -30,7 +30,7 @@ Para que o assistente virtual compreenda e execute a geração do mapa sem falha
 
 Esta seção cataloga todas as bases de dados espaciais integradas ao sistema, detalhando suas origens, resoluções temporais e limitações científicas. 
 
-> **Aviso sobre o Gap Temporal:** Como utilizamos dados validados cientificamente, é comum haver uma defasagem (gap) de cerca de dois anos entre o ano corrente e a última coleção disponível. Por exemplo, em 2026, os dados mais recentes, consolidados e auditados disponíveis referem-se ao ano de 2024.
+> **Aviso sobre o Gap Temporal:** Como utilizamos dados validados cientificamente, é comum haver uma defasagem (gap) de cerca de dois anos entre o ano corrente e a última coleção disponível. Os dados mais recentes, consolidados e auditados disponíveis referem-se ao ano de 2024.
 
 ### 2.1. Mapa de Biomassa Vegetal
 
