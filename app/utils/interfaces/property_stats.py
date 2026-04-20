@@ -56,6 +56,10 @@ class LULCClassData(BaseModel):
 
 
 class PastureStats(BaseModel):
+    year: int = Field(
+        description="Ano da estatística."
+    )
+        
     biomass: Optional[BiomassData] = Field(
         description="Dados de produtividade primária (biomassa), essenciais para cálculo de estoque de carbono e suporte de carga animal."
     )
@@ -75,18 +79,42 @@ class PastureStats(BaseModel):
         default_factory=list
     )
 
+
+class SoilTextureData(BaseModel):
+    texture: str = Field(
+        ...,
+        description="Classe de textura de solo predominante."
+    )
+
+    depth: str = Field(
+        ...,
+        description="Profundida da textura de solo."
+    )
+
+
+class SoilTextureStats(BaseModel):
     year: int = Field(
         description="Ano da estatística."
     )
 
+    textures: List[SoilTextureData] = Field(
+        ...,
+        description="Mapeamento de textura de solo."
+    )
+
 
 class PropertyStats(BaseModel):
-    id: str = Field(
+    car_code: str = Field(
         ...,
         description="Identificador único da propriedade rural.",
     )
 
-    list_pasture_stats: List[PastureStats] = Field(
+    list_pasture_stats: Optional[List[PastureStats]] = Field(
         description="Indicadores biofísicos e geográficos da área de pastagem.",
+        default_factory=list
+    )
+
+    list_soil_texture_stats: Optional[List[SoilTextureStats]] = Field(
+        description="Mapeamento de textura de solo.",
         default_factory=list
     )

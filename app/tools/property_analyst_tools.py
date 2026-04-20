@@ -6,8 +6,13 @@ from agno.run import RunContext
 from agno.media import Image
 
 from app.hooks.tool_hooks import validate_selected_property_hook, validate_rate_limit_hook
-from app.utils.scripts.gee_scripts import retrieve_feature_images, retrieve_feature_biomass_image, query_pasture_statistics
-from app.utils.interfaces.property_stats import PastureStats, PropertyStats 
+from app.utils.scripts.gee_scripts import (
+    retrieve_feature_images,
+    retrieve_feature_biomass_image,
+    query_pasture_statistics,
+    query_soil_texture_stats
+    )
+from app.utils.interfaces.property_stats import PastureStats, PropertyStats, SoilTextureStats 
 from app.utils.interfaces.property_record import RuralProperty
 
 
@@ -51,7 +56,7 @@ def generate_biomass_image(run_context: RunContext, car_codes: list[str], year: 
 
     params:
         car_codes (list[str]): Lista de códigos CAR da propriedade.
-        year (int): O ano para a consulta dos dados (2000-2024).
+        year (int): O ano para a consulta dos dados (2000-2024). O ano mais recente é 2024.
 
     Return:
         ToolResult: Mapa renderizado em formato PNG.
@@ -78,9 +83,8 @@ def generate_biomass_image(run_context: RunContext, car_codes: list[str], year: 
 @tool(tool_hooks=[validate_selected_property_hook])
 def get_pasture_stats(run_context: RunContext, car_codes: list[str], year: int = 2024):
     """
-    Realiza uma análise técnica detalhada do uso do solo, com foco em pastagem, vigor vegetativo e biomassa
-    para a propriedade selecionada no contexto (CAR).
-    
+    Recupera estatísticas de bimoassa, vigor vegetativo, idade da pastagem e classificação de uso do solo.
+   
     Use esta ferramenta quando o usuário perguntar sobre:
     - Saúde ou qualidade da pastagem (degradação, vigor).
     - Quantidade de biomassa disponível.
@@ -89,10 +93,10 @@ def get_pasture_stats(run_context: RunContext, car_codes: list[str], year: int =
 
     params:
         car_codes (list[str]): Lista de códigos CAR da propriedade.
-        year (str): O ano para a consulta dos dados (2000-2024).
+        year (str): O ano para a consulta dos dados (2000-2024). O ano mais recente é 2024.
 
     Return:
-        Dicionário contendo a área de pastagem, vigor da pastagem, áreas de pastagem degradadas (baixo vigor), biomassa total e a idade.
+        Dicionário contendo a área de biomassa, vigor da pastagem, idade e uso e cobertura do solo.
     """
     try:
         #properties_stats = run_context.session_state.get("properties_stats", [])
@@ -117,6 +121,46 @@ def get_pasture_stats(run_context: RunContext, car_codes: list[str], year: int =
         #run_context.session_state["properties_stats"] = properties_stats
 
         return ToolResult(content=str(new_pasture_stats))
+    except Exception as e:
+        print(f"ERROR: {e}", flush=True)
+        return ToolResult(content=str(e))
+    
+
+@tool(tool_hooks=[validate_selected_property_hook])
+def get_soil_texture_stats(run_context: RunContext, car_codes: list[str], year: int = 2024):
+    """
+    Recupera estatísticas de textura de solo.
+
+    params:
+        car_codes (list[str]): Lista de códigos CAR da propriedade.
+        year (str): O ano para a consulta dos dados (2000-2024). O ano mais recente é 2024.
+
+    Return:
+        Dicionário contendo as texturas de solo predominantes por profundidade.
+    """
+    try:
+        #properties_stats = run_context.session_state.get("properties_stats", [])
+        #property_stats = next((prop for prop in properties_stats if prop["id"] == property_id), None)
+        #new_property_stats = PropertyStats.model_validate(properties_stats) if property_stats else PropertyStats(id=property_id)
+        #
+        #for pasture_stats in new_property_stats.list_pasture_stats:
+        #    if pasture_stats.year == year:
+        #        return ToolResult(content=str(pasture_stats))
+            
+        registered_properties = run_context.session_state["registered_properties"]
+        selected_property = next((prop for prop in registered_properties if prop["car_code"] == ', '.join(car_codes)))
+        selected_property = RuralProperty.model_validate(selected_property)
+
+        new_soil_texture_stats: SoilTextureStats = query_soil_texture_stats(coords=selected_property.get_coords(), year=year)
+
+        #new_property_stats.list_pasture_stats.append(new_pasture_stats)
+
+        #if property_stats is not None:
+        #    properties_stats.remove(property_stats)
+        #properties_stats.append(new_property_stats.model_dump())
+        #run_context.session_state["properties_stats"] = properties_stats
+
+        return ToolResult(content=str(new_soil_texture_stats))
     except Exception as e:
         print(f"ERROR: {e}", flush=True)
         return ToolResult(content=str(e))

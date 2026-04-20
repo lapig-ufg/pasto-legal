@@ -11,7 +11,7 @@ from typing import List
 from agno.utils.log import log_error
 
 from app.utils.scripts.image_scripts import add_legend
-from app.utils.interfaces.property_stats import PropertyStats, PastureStats
+from app.utils.interfaces.property_stats import PropertyStats, PastureStats, SoilTextureStats, SoilTextureData
 
 
 if not (GEE_SERVICE_ACCOUNT := os.environ.get('GEE_SERVICE_ACCOUNT')):
@@ -26,8 +26,9 @@ try:
     ee.Initialize(credentials, project=GEE_PROJECT)
     GEE_CONNECTED_FLAG = True
 except Exception as e:
-    print(f"Authentication failed: {e}")
-
+    log_error(f"Authentication failed: {e}")
+    raise ValueError("GEE_PROJECT environment variables must be set.")
+    
 
 def retrieve_feature_images(coords: List[List[List[List[float]]]]) -> List[PIL.Image]:
     """
@@ -87,26 +88,31 @@ def retrieve_feature_images(coords: List[List[List[List[float]]]]) -> List[PIL.I
 
         return result_imgs
     
-    except ee.EEException as e:
+    except ee.EEException:
+        log_error(traceback.format_exc())
         raise RuntimeError(
             f"Falha ao processar as coordenadas no satélite. "
             f"Verifique se as coordenadas da área estão corretas. Detalhes: {str(e)}"
         )
-    except requests.exceptions.HTTPError as e:
+    except requests.exceptions.HTTPError:
+        log_error(traceback.format_exc())
         raise RuntimeError(
             f"O servidor de imagens do satélite retornou um erro. "
             f"Tente solicitar a imagem novamente em alguns instantes. Detalhes: {str(e)}"
         )
-    except requests.exceptions.RequestException as e:
+    except requests.exceptions.RequestException:
+        log_error(traceback.format_exc())
         raise RuntimeError(
             f"Não foi possível baixar a imagem por falha de conexão. "
             f"Pode haver instabilidade na rede. Detalhes: {str(e)}"
         )
-    except PIL.UnidentifiedImageError as e:
+    except PIL.UnidentifiedImageError:
+        log_error(traceback.format_exc())
         raise RuntimeError(
             f"O arquivo recebido do satélite está corrompido ou num formato inesperado. Detalhes: {str(e)}"
         )
-    except Exception as e:
+    except Exception:
+        log_error(traceback.format_exc())
         raise RuntimeError(
             f"Ocorreu um erro inesperado ao gerar a imagem da fazenda. Detalhes: {str(e)}"
         )
@@ -210,26 +216,31 @@ def retrieve_feature_biomass_image(coords: List[List[List[List[float]]]], year: 
         return img
 
     except ValueError:
+        log_error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve um erro.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
     except ee.EEException:
+        log_error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve uma falha de processamento.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
     except requests.exceptions.HTTPError:
+        log_error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que o servidor de imagens do satélite falhou.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
     except requests.exceptions.RequestException:
+        log_error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve um problema de conexão ao baixar o mapa de biomassa.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
     except Exception:
+        log_error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve um erro inesperado.\n"
             "Peça ao usuário que tente novamente mais tarde."
@@ -385,34 +396,108 @@ def query_pasture_statistics(coords: List[List[List[List[float]]]], year: int) -
 
         return result
     
-    except ValueError as e:
-        error = traceback.format_exc()
-        log_error(error)
+    except ValueError:
+        log_error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve um erro.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
-    except ee.EEException as e:
-        log_error(str(e))
+    except ee.EEException:
+        log_error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve uma falha de processamento.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
-    except requests.exceptions.HTTPError as e:
-        log_error(str(e))
+    except requests.exceptions.HTTPError:
+        log_error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que o servidor de imagens do satélite falhou.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
-    except requests.exceptions.RequestException as e:
-        log_error(str(e))
+    except requests.exceptions.RequestException:
+        log_error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve um problema de conexão ao baixar o mapa de biomassa.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
     except Exception:
-        error = traceback.format_exc()
-        log_error(error)
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Peça desculpas e informe que houve um erro inesperado.\n"
+            "Peça ao usuário que tente novamente mais tarde."
+        )
+    
+def query_soil_texture_stats(coords: List[List[List[List[float]]]], year: int):
+    """
+    Extração de estatísticas de textura de solo.
+    """
+    from app.utils.interfaces.property_stats import SoilTextureStats, SoilTextureData
+
+    try:
+        roi = ee.Geometry.MultiPolygon(coords)
+
+        CLASSES = {
+            1: 'Muito Argiloso',
+            2: 'Argila',
+            3: 'Siltoso',
+            4: 'Arenoso',
+            5: 'Médio',
+            6: 'Afloramento'
+        }
+        
+        soil_asset = ee.ImageCollection('projects/mapbiomas-public/assets/brazil/soil/collection3/mapbiomas_brazil_collection3_soil_textural_subgroup_v1')
+        texture = soil_asset.toBands().select([
+                    'textural_subgroup_000_030_v1_textural_subgroup',
+                    'textural_subgroup_030_060_v1_textural_subgroup',
+                    'textural_subgroup_060_100_v1_textural_subgroup'
+                ])
+            
+        texture = texture.rename(['0-30cm','30-60cm', '60-100cm'])
+
+        stats = texture.reduceRegion(
+            reducer=ee.Reducer.mode(),
+            geometry=roi,
+            scale=30,
+            maxPixels=1e13
+        ).getInfo()
+
+        soil_texture_data_list: List[SoilTextureData] = []
+        for key in stats.keys():
+            soil_texture_data_list.append(
+                SoilTextureData(
+                    texture=CLASSES[int(stats[key])],
+                    depth=key
+                )
+            )
+
+        return SoilTextureStats(year=year, textures=soil_texture_data_list)
+    
+    except ValueError:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Peça desculpas e informe que houve um erro.\n"
+            "Peça ao usuário que tente novamente mais tarde."
+        )
+    except ee.EEException:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Peça desculpas e informe que houve uma falha de processamento.\n"
+            "Peça ao usuário que tente novamente mais tarde."
+        )
+    except requests.exceptions.HTTPError:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Peça desculpas e informe que o servidor de imagens do satélite falhou.\n"
+            "Peça ao usuário que tente novamente mais tarde."
+        )
+    except requests.exceptions.RequestException:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Peça desculpas e informe que houve um problema de conexão ao baixar o mapa de biomassa.\n"
+            "Peça ao usuário que tente novamente mais tarde."
+        )
+    except Exception:
+        log_error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve um erro inesperado.\n"
             "Peça ao usuário que tente novamente mais tarde."
