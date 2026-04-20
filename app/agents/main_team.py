@@ -40,10 +40,10 @@ def get_instructions(run_context: RunContext) -> str:
 
     if session_state.get("candidate_properties", None):
         instructions = textwrap.dedent("""\
-            - O usuário está em um fluxo de atendimento focado na seleção de propriedade rural (CAR).
-            - Você deve usar a ferramenta `delegate_task_to_member` para repassar o controle da conversa ao `Gestor de Propriedades Rurais`.
+            - O usuário está em um fluxo de atendimento focado na confirmação/seleção de propriedade rural (CAR).
+            - O usuário deve completar o fluxo de seleção de propriedade rural antes de proceguir com as análise.
+            - Você deve usar a ferramenta `delegate_task_to_member` para repassar o controle da conversa ao `Gestor de Propriedades Rurais` para finalizar o cadastro da propriedade.
             - Não responda diretamente ao usuário com mensagens de texto.
-            - Não chame o agente 'Agente Analista'.
             - Não use a ferramenta `update_user_memory`.
         """).strip()
     else:
@@ -72,7 +72,7 @@ def get_instructions(run_context: RunContext) -> str:
             <instructions>
                         
             <workflow>
-            - Se o usuário enviar uma coordenadas geográficas, identificar CAR/SICAR ou URL do Google Maps não registradas SEMPRE:
+            - Se o usuário enviar uma coordenadas geográficas, identificar CAR/SICAR ou URL do Google Maps não registradas:
                 - Chame o `Gestor de Propriedades` Rurais imediatamente.                                         
 
             - Se o usuário enviar um arquivo de áudio ou vídeo:
