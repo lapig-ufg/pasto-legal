@@ -1,4 +1,6 @@
 import asyncio
+import tempfile
+import os
 import hashlib
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from time import time
@@ -30,6 +32,9 @@ from app.interfaces.whatsapp.helpers import (
     typing_indicator_async,
     upload_and_send_media_async,
 )
+
+_MESSAGE_BUFFER = {}
+_USER_TASKS = {}
 
 _ERROR_MESSAGE = "Sorry, there was an error processing your message. Please try again later."
 _SESSION_RESET_MESSAGE = "New conversation started!"
@@ -186,10 +191,6 @@ def attach_routes(
         name="whatsapp_webhook",
         description="Process incoming WhatsApp messages",
         response_model=WhatsAppWebhookResponse,
-        responses={
-            200: {"description": "Event processed successfully"},
-            403: {"description": "Invalid webhook signature"},
-        },
     )
     async def webhook(request: Request, background_tasks: BackgroundTasks):
         payload = await request.body()
@@ -202,164 +203,337 @@ def attach_routes(
         body = await request.json()
 
         if body.get("object") != "whatsapp_business_account":
-            log_warning(f"Received non-WhatsApp webhook object: {body.get('object')}")
             return WhatsAppWebhookResponse(status="ignored")
 
-        # ACK immediately, process in background. Meta retries if no 200 within ~20s
         for entry in body.get("entry", []):
             for change in entry.get("changes", []):
                 for message in change.get("value", {}).get("messages", []):
-                    background_tasks.add_task(process_message, message)
+                    phone_number = message.get("from")
+                    if not phone_number:
+                        continue
+                    
+                    user_id = _encrypt_phone(phone_number, encryption_key) if enable_encryption and encryption_key else phone_number
+
+                    
+                    if user_id not in _MESSAGE_BUFFER:
+                        _MESSAGE_BUFFER[user_id] = []
+                    _MESSAGE_BUFFER[user_id].append(message)
+
+                    
+                    if user_id not in _USER_TASKS:
+                        _USER_TASKS[user_id] = True
+                        background_tasks.add_task(process_user_buffer_async, user_id, phone_number, message.get("id"))
 
         return WhatsAppWebhookResponse(status="processing")
 
-    async def process_message(message: dict):
-        # Extract early so error handler can notify the user
-        phone_number = message.get("from")
-        if not phone_number:
-            log_warning("Message missing 'from' field, skipping")
+    async def process_user_buffer_async(user_id: str, phone_number: str, initial_message_id: str):
+        from agno.media import Image, Video, Audio, File
+
+        
+        has_media = any(
+            msg.get("type") in ["image", "video", "audio", "document"]
+            for msg in _MESSAGE_BUFFER.get(user_id, [])
+        )
+        sleep_time = 12 if has_media else 6
+
+        
+        await typing_indicator_async(initial_message_id, config) #
+
+        
+        await asyncio.sleep(sleep_time)
+
+        
+        messages = _MESSAGE_BUFFER.pop(user_id, [])
+        _USER_TASKS.pop(user_id, None)
+
+        if not messages:
             return
-        # Splits identity: user_id (possibly encrypted) for DB storage, phone_number (raw) for API sends
-        user_id = _encrypt_phone(phone_number, encryption_key) if enable_encryption and encryption_key else phone_number
+
+        
+        combined_text = []
+        temp_files_to_delete = []
+        
+        run_kwargs = {
+            "user_id": user_id,
+            "session_id": f"wa:{entity_id}:{user_id}", 
+            "images": [],
+            "videos": [],
+            "audio": [],
+            "files": []
+        }
+
+        
+        if session_config.has_db:
+            try:
+                session_filter = dict(
+                    session_type=session_config.session_type,
+                    user_id=user_id,
+                    component_id=entity_id,
+                    limit=1,
+                    sort_by="updated_at",
+                    sort_order="desc",
+                )
+                if session_config.is_async_db:
+                    sessions = await session_config.db.get_sessions(**session_filter)
+                else:
+                    sessions = session_config.db.get_sessions(**session_filter)
+                if sessions:
+                    run_kwargs["session_id"] = sessions[0].session_id
+            except Exception as e:
+                log_warning(f"Session lookup failed: {e}")
+
+        
+        for message in messages:
+            parsed = extract_message_content(message) #
+            if not parsed:
+                continue
+
+            if parsed.text:
+                combined_text.append(parsed.text.strip())
+
+            
+            media_kwargs, skipped_media = await download_event_media_async(parsed, config) #
+
+            
+            for media_key, obj_class in zip(
+                ["images", "videos", "audio", "files"], 
+                [Image, Video, Audio, File]
+            ):
+                for item in media_kwargs.get(media_key, []):
+                    if hasattr(item, "content") and item.content:
+                        
+                        fd, temp_path = tempfile.mkstemp(suffix=".tmp")
+                        with os.fdopen(fd, 'wb') as f:
+                            f.write(item.content)
+                        
+                        temp_files_to_delete.append(temp_path)
+                        run_kwargs[media_key].append(obj_class(filepath=temp_path))
+
+        final_prompt = " ".join(combined_text)
+        
+        if final_prompt.strip().lower() == "/new":
+            if not session_config.has_db:
+                await send_whatsapp_message_async(
+                    phone_number, "Session reset requires storage to be configured.", config
+                )
+                return
+            try:
+                from uuid import uuid4
+                from time import time
+                new_session_id = f"wa:{entity_id}:{user_id}:{uuid4().hex[:8]}"
+                now = int(time())
+                new_session = session_config.session_class(
+                    session_id=new_session_id,
+                    user_id=user_id,
+                    created_at=now,
+                    updated_at=now,
+                    **{session_config.id_field: entity_id},
+                )
+                if session_config.is_async_db:
+                    await session_config.db.upsert_session(new_session)
+                else:
+                    session_config.db.upsert_session(new_session)
+                await send_whatsapp_message_async(phone_number, _SESSION_RESET_MESSAGE, config)
+            except Exception as e:
+                log_warning(f"Failed to persist /new session: {e}")
+                await send_whatsapp_message_async(phone_number, _ERROR_MESSAGE, config)
+            return
+        
+        if not final_prompt and not any([run_kwargs["images"], run_kwargs["videos"], run_kwargs["audio"], run_kwargs["files"]]):
+            return 
+
         try:
-            message_id = message.get("id")
-            await typing_indicator_async(message_id, config)
-
-            parsed = extract_message_content(message)
-            if parsed is None:
-                msg_type = message.get("type", "unknown")
-                # "unsupported" is WhatsApp's label for stickers and other rich types
-                label = "this message type" if msg_type == "unsupported" else msg_type.title()
-                await send_whatsapp_message_async(phone_number, f"Sorry, {label} is not supported yet.", config)
-                return
-
-            # /new starts a fresh session — old session data is preserved
-            if parsed.text.strip().lower() == "/new":
-                if not session_config.has_db:
-                    await send_whatsapp_message_async(
-                        phone_number, "Session reset requires storage to be configured.", config
-                    )
-                    return
-                try:
-                    new_session_id = f"wa:{entity_id}:{user_id}:{uuid4().hex[:8]}"
-                    now = int(time())
-                    new_session = session_config.session_class(
-                        session_id=new_session_id,
-                        user_id=user_id,
-                        created_at=now,
-                        updated_at=now,
-                        **{session_config.id_field: entity_id},
-                    )
-                    if session_config.is_async_db:
-                        await session_config.db.upsert_session(new_session)
-                    else:
-                        session_config.db.upsert_session(new_session)
-                    await send_whatsapp_message_async(phone_number, _SESSION_RESET_MESSAGE, config)
-                except Exception as e:
-                    log_warning(f"Failed to persist /new session: {e}")
-                    await send_whatsapp_message_async(phone_number, _ERROR_MESSAGE, config)
-                return
-
-            log_info(f"Processing message from {user_id[:12]}: {parsed.text}")
-
-            # Resolve session: check DB for latest, fall back to deterministic ID
-            default_session_id = f"wa:{entity_id}:{user_id}"
-            session_id = default_session_id
-            if session_config.has_db:
-                try:
-                    # Find the most recent session for this user + entity
-                    session_filter = dict(
-                        session_type=session_config.session_type,
-                        user_id=user_id,
-                        component_id=entity_id,
-                        limit=1,
-                        sort_by="updated_at",
-                        sort_order="desc",
-                    )
-                    if session_config.is_async_db:
-                        sessions = await session_config.db.get_sessions(**session_filter)
-                    else:
-                        sessions = session_config.db.get_sessions(**session_filter)
-                    if sessions:
-                        session_id = sessions[0].session_id
-                except Exception as e:
-                    log_warning(f"Session lookup failed, using default: {e}")
-
-            # Download media from Meta servers and wrap as Agno media objects
-            media_kwargs, skipped_media = await download_event_media_async(parsed, config)
-            run_kwargs: dict = {
-                "user_id": user_id,
-                "session_id": session_id,
-                **media_kwargs,
-            }
-
-            # Prepend skip notice so the agent (and user) knows media was dropped
-            if skipped_media:
-                notice = "[Some media could not be downloaded: " + "; ".join(skipped_media) + "]\n\n"
-                parsed.text = notice + parsed.text
-
-            if send_user_number_to_context:
-                run_kwargs["dependencies"] = {
-                    "User's WhatsApp number": phone_number,
-                    "Incoming WhatsApp message ID": message_id,
-                }
-                run_kwargs["add_dependencies_to_context"] = True
-
-            # Refresh typing indicator every 20s while the agent runs
-            # WhatsApp auto-dismisses the indicator after ~25s
+            
             async def _keep_typing():
                 try:
                     while True:
                         await asyncio.sleep(20)
-                        await typing_indicator_async(message_id, config)
+                        await typing_indicator_async(initial_message_id, config) #
                 except asyncio.CancelledError:
                     pass
 
             typing_task = asyncio.create_task(_keep_typing())
+
+            
             try:
-                response = await entity.arun(parsed.text, **run_kwargs)  # type: ignore[union-attr]
+                response = await entity.arun(final_prompt, **run_kwargs)
             finally:
                 typing_task.cancel()
 
+            
             if response.status == "ERROR":
-                await send_whatsapp_message_async(phone_number, _ERROR_MESSAGE, config)
+                await send_whatsapp_message_async(phone_number, _ERROR_MESSAGE, config) #
                 log_error(response.content)
                 return
 
-            if show_reasoning and hasattr(response, "reasoning_content") and response.reasoning_content:
-                reasoning = _format_reasoning(response.reasoning_content)
-                if reasoning:
-                    await send_whatsapp_message_async(phone_number, reasoning, config, italics=True)
+            if response.content:
+                await send_whatsapp_message_async(phone_number, response.content, config) #
 
-            for attr, media_type in (
-                ("images", "image"),
-                ("videos", "video"),
-                ("files", "document"),
-                ("audio", "audio"),
-            ):
+            
+            for attr, media_type in (("images", "image"), ("videos", "video"), ("files", "document"), ("audio", "audio")):
                 items = getattr(response, attr, None)
                 if items:
-                    await upload_and_send_media_async(items, media_type, phone_number, config)
-            if response.response_audio:
-                await upload_and_send_media_async(
-                    [response.response_audio], "audio", phone_number, config, send_text_fallback=False
-                )
-
-            response_tools = getattr(response, "tools", None)
-            # Only suppress text if a WA tool ran AND didn't error
-            tools_sent_message = response_tools and any(
-                t.tool_name in _WA_TOOL_NAMES and not t.tool_call_error for t in response_tools
-            )
-            # Send text if no tool already messaged the user
-            if not tools_sent_message and response.content:
-                await send_whatsapp_message_async(phone_number, response.content, config)
+                    await upload_and_send_media_async(items, media_type, phone_number, config) #
 
         except Exception as e:
-            log_error(f"Error processing message: {e}")
-            try:
-                await send_whatsapp_message_async(phone_number, _ERROR_MESSAGE, config)
-            except Exception as send_error:
-                log_error(f"Error sending error message: {send_error}")
+            log_error(f"Error processing debounced messages: {e}")
+            await send_whatsapp_message_async(phone_number, _ERROR_MESSAGE, config) #
+        
+        finally:
+            
+            for path in temp_files_to_delete:
+                try:
+                    if os.path.exists(path):
+                        os.remove(path)
+                except Exception as cleanup_error:
+                    log_warning(f"Failed to delete temp file {path}: {cleanup_error}")
+    # async def process_message(message: dict):
+    #     # Extract early so error handler can notify the user
+    #     phone_number = message.get("from")
+    #     if not phone_number:
+    #         log_warning("Message missing 'from' field, skipping")
+    #         return
+    #     # Splits identity: user_id (possibly encrypted) for DB storage, phone_number (raw) for API sends
+    #     user_id = _encrypt_phone(phone_number, encryption_key) if enable_encryption and encryption_key else phone_number
+    #     try:
+    #         message_id = message.get("id")
+    #         await typing_indicator_async(message_id, config)
+
+    #         parsed = extract_message_content(message)
+    #         if parsed is None:
+    #             msg_type = message.get("type", "unknown")
+    #             # "unsupported" is WhatsApp's label for stickers and other rich types
+    #             label = "this message type" if msg_type == "unsupported" else msg_type.title()
+    #             await send_whatsapp_message_async(phone_number, f"Sorry, {label} is not supported yet.", config)
+    #             return
+
+    #         # /new starts a fresh session — old session data is preserved
+    #         if parsed.text.strip().lower() == "/new":
+    #             if not session_config.has_db:
+    #                 await send_whatsapp_message_async(
+    #                     phone_number, "Session reset requires storage to be configured.", config
+    #                 )
+    #                 return
+    #             try:
+    #                 new_session_id = f"wa:{entity_id}:{user_id}:{uuid4().hex[:8]}"
+    #                 now = int(time())
+    #                 new_session = session_config.session_class(
+    #                     session_id=new_session_id,
+    #                     user_id=user_id,
+    #                     created_at=now,
+    #                     updated_at=now,
+    #                     **{session_config.id_field: entity_id},
+    #                 )
+    #                 if session_config.is_async_db:
+    #                     await session_config.db.upsert_session(new_session)
+    #                 else:
+    #                     session_config.db.upsert_session(new_session)
+    #                 await send_whatsapp_message_async(phone_number, _SESSION_RESET_MESSAGE, config)
+    #             except Exception as e:
+    #                 log_warning(f"Failed to persist /new session: {e}")
+    #                 await send_whatsapp_message_async(phone_number, _ERROR_MESSAGE, config)
+    #             return
+
+    #         log_info(f"Processing message from {user_id[:12]}: {parsed.text}")
+
+    #         # Resolve session: check DB for latest, fall back to deterministic ID
+    #         default_session_id = f"wa:{entity_id}:{user_id}"
+    #         session_id = default_session_id
+    #         if session_config.has_db:
+    #             try:
+    #                 # Find the most recent session for this user + entity
+    #                 session_filter = dict(
+    #                     session_type=session_config.session_type,
+    #                     user_id=user_id,
+    #                     component_id=entity_id,
+    #                     limit=1,
+    #                     sort_by="updated_at",
+    #                     sort_order="desc",
+    #                 )
+    #                 if session_config.is_async_db:
+    #                     sessions = await session_config.db.get_sessions(**session_filter)
+    #                 else:
+    #                     sessions = session_config.db.get_sessions(**session_filter)
+    #                 if sessions:
+    #                     session_id = sessions[0].session_id
+    #             except Exception as e:
+    #                 log_warning(f"Session lookup failed, using default: {e}")
+
+    #         # Download media from Meta servers and wrap as Agno media objects
+    #         media_kwargs, skipped_media = await download_event_media_async(parsed, config)
+    #         run_kwargs: dict = {
+    #             "user_id": user_id,
+    #             "session_id": session_id,
+    #             **media_kwargs,
+    #         }
+
+    #         # Prepend skip notice so the agent (and user) knows media was dropped
+    #         if skipped_media:
+    #             notice = "[Some media could not be downloaded: " + "; ".join(skipped_media) + "]\n\n"
+    #             parsed.text = notice + parsed.text
+
+    #         if send_user_number_to_context:
+    #             run_kwargs["dependencies"] = {
+    #                 "User's WhatsApp number": phone_number,
+    #                 "Incoming WhatsApp message ID": message_id,
+    #             }
+    #             run_kwargs["add_dependencies_to_context"] = True
+
+    #         # Refresh typing indicator every 20s while the agent runs
+    #         # WhatsApp auto-dismisses the indicator after ~25s
+    #         async def _keep_typing():
+    #             try:
+    #                 while True:
+    #                     await asyncio.sleep(20)
+    #                     await typing_indicator_async(message_id, config)
+    #             except asyncio.CancelledError:
+    #                 pass
+
+    #         typing_task = asyncio.create_task(_keep_typing())
+    #         try:
+    #             response = await entity.arun(parsed.text, **run_kwargs)  # type: ignore[union-attr]
+    #         finally:
+    #             typing_task.cancel()
+
+    #         if response.status == "ERROR":
+    #             await send_whatsapp_message_async(phone_number, _ERROR_MESSAGE, config)
+    #             log_error(response.content)
+    #             return
+
+    #         if show_reasoning and hasattr(response, "reasoning_content") and response.reasoning_content:
+    #             reasoning = _format_reasoning(response.reasoning_content)
+    #             if reasoning:
+    #                 await send_whatsapp_message_async(phone_number, reasoning, config, italics=True)
+
+    #         for attr, media_type in (
+    #             ("images", "image"),
+    #             ("videos", "video"),
+    #             ("files", "document"),
+    #             ("audio", "audio"),
+    #         ):
+    #             items = getattr(response, attr, None)
+    #             if items:
+    #                 await upload_and_send_media_async(items, media_type, phone_number, config)
+    #         if response.response_audio:
+    #             await upload_and_send_media_async(
+    #                 [response.response_audio], "audio", phone_number, config, send_text_fallback=False
+    #             )
+
+    #         response_tools = getattr(response, "tools", None)
+    #         # Only suppress text if a WA tool ran AND didn't error
+    #         tools_sent_message = response_tools and any(
+    #             t.tool_name in _WA_TOOL_NAMES and not t.tool_call_error for t in response_tools
+    #         )
+    #         # Send text if no tool already messaged the user
+    #         if not tools_sent_message and response.content:
+    #             await send_whatsapp_message_async(phone_number, response.content, config)
+
+    #     except Exception as e:
+    #         log_error(f"Error processing message: {e}")
+    #         try:
+    #             await send_whatsapp_message_async(phone_number, _ERROR_MESSAGE, config)
+    #         except Exception as send_error:
+    #             log_error(f"Error sending error message: {send_error}")
 
     return router
 
