@@ -1,6 +1,5 @@
 from agno.run import RunContext
 from agno.agent import Agent
-from agno.models.google import Gemini
 from agno.skills import Skills, LocalSkills, SkillValidationError
 from agno.tools.calculator import CalculatorTools
 
@@ -11,6 +10,7 @@ from app.tools.property_analyst_tools import (
     get_soil_texture_stats
     )
 from app.utils.interfaces.property_record import RuralProperty
+from app.configs.models import model
 
 
 try:
@@ -84,5 +84,5 @@ property_analyst_agent = Agent(
     skills=skills,
     use_instruction_tags=False,
     instructions=get_instructions,
-    model=Gemini(id="gemini-3-flash-preview")
+    model=model
 )

@@ -14,6 +14,7 @@ from app.tools.version_tools import consult_update_notes
 from app.hooks.pre_hooks import validate_phone_authorization
 from app.guardrails.pii_detection_guardrail import pii_detection_guardrail
 from app.utils.interfaces.property_record import RuralProperty
+from app.configs.models import model
 
 
 if not (APP_ENV := os.environ.get('APP_ENV')):
@@ -42,9 +43,10 @@ def get_instructions(run_context: RunContext) -> str:
         instructions = textwrap.dedent("""\
             - O usuário está em um fluxo de atendimento focado na confirmação/seleção de propriedade rural (CAR).
             - O usuário deve completar o fluxo de seleção de propriedade rural antes de proceguir com as análise.
-            - Você deve usar a ferramenta `delegate_task_to_member` para repassar o controle da conversa ao `Gestor de Propriedades Rurais` para finalizar o cadastro da propriedade.
+            - Você deve usar a ferramenta `delegate_task_to_member` para repassar o controle da conversa ao `gestor-de-propriedades-rurais` para finalizar o cadastro da propriedade.
             - Não responda diretamente ao usuário com mensagens de texto.
             - Não use a ferramenta `update_user_memory`.
+            - Chame o agente `gestor-de-propriedades-rurais`.
         """).strip()
     else:
         registered_properties = [RuralProperty.model_validate(prop) for prop in session_state.get("registered_properties", [])]
@@ -72,8 +74,10 @@ def get_instructions(run_context: RunContext) -> str:
             <instructions>
                         
             <workflow>
-            - Se o usuário enviar uma coordenadas geográficas, código CAR/SICAR não registrados ou URL do Google Maps:
-                - Chame o `Gestor de Propriedades` Rurais imediatamente.                                         
+            - Sempre que o usuário enviar uma coordenadas geográficas, URL do Google Maps ou código CAR/SICAR ainda não registrado no sistema:
+                - AÇÕES:
+                    1. Chame o `gestor-de-propriedades-rurais` Rurais imediatamente, mesmo que a operação tenha falhado anteriormente.
+                    2. Oriente o usuário de acordo com as instruções retornadas pelo agente.                                         
 
             - Se o usuário enviar um arquivo de áudio ou vídeo:
                 - AÇÕES:
@@ -98,7 +102,7 @@ def get_instructions(run_context: RunContext) -> str:
 
 pasto_legal_team = Team(
     name="Equipe PastoLegal",
-    model=Gemini(id="gemini-3-flash-preview", temperature=0),
+    model=model,
     db=db,
     enable_user_memories=True,
     memory_manager=memory_manager,

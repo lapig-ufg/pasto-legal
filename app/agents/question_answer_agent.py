@@ -2,7 +2,8 @@ from pathlib import Path
 
 from agno.run import RunContext
 from agno.agent import Agent
-from agno.models.google import Gemini
+
+from app.configs.models import model
 
 
 files = [
@@ -59,5 +60,5 @@ question_answer_agent = Agent(
     debug_mode=True,
     use_instruction_tags=False,
     instructions=get_instructions,
-    model=Gemini(id="gemini-3-flash-preview", temperature=0),
+    model=model,
 )

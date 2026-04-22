@@ -2,7 +2,6 @@ import textwrap
 
 from agno.run import RunContext
 from agno.agent import Agent
-from agno.models.google import Gemini
 
 from app.tools.property_crud_tools import (
     remove_property,
@@ -18,6 +17,7 @@ from app.tools.property_crud_tools import (
     reject_car_selection
     )
 from app.utils.interfaces.property_record import RuralProperty
+from app.configs.models import model
 
 
 def get_instructions(run_context: RunContext):
@@ -118,5 +118,5 @@ property_manager_agent = Agent(
     markdown=True,
     use_instruction_tags=False,
     instructions=get_instructions,
-    model=Gemini(id="gemini-3-flash-preview", temperature=0)
+    model=model
 )
