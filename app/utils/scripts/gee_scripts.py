@@ -264,6 +264,15 @@ def retrieve_feature_biomass_image(coords: List[List[List[List[float]]]], year: 
 
 def retrieve_feature_soil_texture_image(coords: List[List[List[List[float]]]]):
     try:
+        PALETTE = {
+            'Afloramento':'#707070',
+            'Muito Argiloso':'#a83800',
+            'Argila':'#aa8686',
+            'Siltoso':'#298289',
+            'Arenoso':'#fffe73',
+            'Médio':'#d7c5a5', 
+        }
+
         roi = ee.Geometry.MultiPolygon(coords)
 
         s2 = retrieve_sentinel_image(roi)
