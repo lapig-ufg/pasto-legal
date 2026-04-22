@@ -315,7 +315,11 @@ def query_pasture_statistics(coords: List[List[List[List[float]]]], year: int) -
                 age_data_list.append(age_data)
 
         # ==================== Query Vigor ====================
-        VIGOR_DICT = {'1':'Baixo', '2':'Médio', '3':'Alto'}
+        VIGOR_DICT = {
+            '1':'Baixo: pastagens com baixo vigor vegetativo e indícios de degradação severa, potencialmente biológica.',
+            '2':'Médio: pastagens com médio vigor vegativo e indícios de degração moderada.',
+            '3':'Alto: pastagens com alto vigor vegetativo.'
+        }
 
         vigor_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_vigor_v3')
         last_vigor = vigor_asset.select(year - 2000)
