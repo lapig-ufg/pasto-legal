@@ -10,8 +10,8 @@ from typing import List
 
 from agno.utils.log import log_error
 
-from app.utils.scripts.image_scripts import add_legend
-from app.utils.interfaces.property_stats import PropertyStats, PastureStats, SoilTextureStats, SoilTextureData
+from app.utils.scripts.image_scripts import add_legend, add_legend_descriptor
+from app.utils.interfaces.property_stats import PropertyStats, PastureStats, TopographicStats
 
 
 if not (GEE_SERVICE_ACCOUNT := os.environ.get('GEE_SERVICE_ACCOUNT')):
@@ -28,7 +28,22 @@ try:
 except Exception as e:
     log_error(f"Authentication failed: {e}")
     raise ValueError("GEE_PROJECT environment variables must be set.")
+
+
+def retrieve_sentinel_image(roi) -> PIL.Image:
+    sDate = ee.Date.fromYMD(datetime.date.today().year - 1, datetime.date.today().month, 1)
+    eDate= sDate.advance(1, 'year')
+
+    sentinel = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+        .filterBounds(roi)
+        .filterDate(sDate, eDate)
+        .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',10))
+        .median()
+    )
+    sentinel = sentinel.visualize(**{"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000})
     
+    return sentinel
+
 
 def retrieve_feature_images(coords: List[List[List[List[float]]]]) -> List[PIL.Image]:
     """
@@ -88,33 +103,33 @@ def retrieve_feature_images(coords: List[List[List[List[float]]]]) -> List[PIL.I
 
         return result_imgs
     
-    except ee.EEException:
+    except ee.EEException as error:
         log_error(traceback.format_exc())
         raise RuntimeError(
             f"Falha ao processar as coordenadas no satélite. "
-            f"Verifique se as coordenadas da área estão corretas. Detalhes: {str(e)}"
+            f"Verifique se as coordenadas da área estão corretas. Detalhes: {str(error)}"
         )
-    except requests.exceptions.HTTPError:
+    except requests.exceptions.HTTPError as error:
         log_error(traceback.format_exc())
         raise RuntimeError(
             f"O servidor de imagens do satélite retornou um erro. "
-            f"Tente solicitar a imagem novamente em alguns instantes. Detalhes: {str(e)}"
+            f"Tente solicitar a imagem novamente em alguns instantes. Detalhes: {str(error)}"
         )
-    except requests.exceptions.RequestException:
+    except requests.exceptions.RequestException as error:
         log_error(traceback.format_exc())
         raise RuntimeError(
             f"Não foi possível baixar a imagem por falha de conexão. "
-            f"Pode haver instabilidade na rede. Detalhes: {str(e)}"
+            f"Pode haver instabilidade na rede. Detalhes: {str(error)}"
         )
-    except PIL.UnidentifiedImageError:
+    except PIL.UnidentifiedImageError as error:
         log_error(traceback.format_exc())
         raise RuntimeError(
-            f"O arquivo recebido do satélite está corrompido ou num formato inesperado. Detalhes: {str(e)}"
+            f"O arquivo recebido do satélite está corrompido ou num formato inesperado. Detalhes: {str(error)}"
         )
-    except Exception:
+    except Exception as error:
         log_error(traceback.format_exc())
         raise RuntimeError(
-            f"Ocorreu um erro inesperado ao gerar a imagem da fazenda. Detalhes: {str(e)}"
+            f"Ocorreu um erro inesperado ao gerar a imagem da fazenda. Detalhes: {str(error)}"
         )
 
 
@@ -215,35 +230,126 @@ def retrieve_feature_biomass_image(coords: List[List[List[List[float]]]], year: 
 
         return img
 
-    except ValueError:
+    except ValueError as error:
         log_error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve um erro.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
-    except ee.EEException:
+    except ee.EEException as error:
         log_error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve uma falha de processamento.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
-    except requests.exceptions.HTTPError:
+    except requests.exceptions.HTTPError as error:
         log_error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que o servidor de imagens do satélite falhou.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
-    except requests.exceptions.RequestException:
+    except requests.exceptions.RequestException as error:
         log_error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve um problema de conexão ao baixar o mapa de biomassa.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
-    except Exception:
+    except Exception as error:
         log_error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve um erro inesperado.\n"
             "Peça ao usuário que tente novamente mais tarde."
+        )
+    
+
+def retrieve_feature_soil_texture_image(coords: List[List[List[List[float]]]]):
+    try:
+        PALETTE = {
+            'Afloramento':'#707070',
+            'Muito Argiloso':'#9B0F06',
+            'Argila':'#BFA28C',
+            'Siltoso':'#D8F467',
+            'Arenoso':'#FFD400',
+            'Médio':'#F0CFA1', 
+        }
+
+        roi = ee.Geometry.MultiPolygon(coords)
+
+        s2 = retrieve_sentinel_image(roi)
+        
+        palette = list(PALETTE.values())
+        idSoil = 'projects/mapbiomas-public/assets/brazil/soil/collection3/mapbiomas_brazil_collection3_soil_textural_group_v1'
+        texture = (
+            ee.ImageCollection(idSoil).toBands()
+                .select(['textural_group_000_030_v1_textural_group'])
+        )
+
+        texture = texture.rename(['0-30cm'])
+        
+        #Agregando informação de textura do solo
+        statssoil = texture.reduceRegion(
+            reducer=ee.Reducer.minMax(),
+            geometry=roi,
+            scale=30,
+            maxPixels=1e13
+        )
+
+        #Criando a imagem de visualização 
+        #Valor maximo e minimo da textura do solo
+        minsoil = statssoil.get(ee.String(texture.bandNames().get(0)).cat('_min'))
+        maxsoil = statssoil.get(ee.String(texture.bandNames().get(0)).cat('_max')) 
+        texture = texture.visualize(**{"min": minsoil, "max": maxsoil,"palette":palette}) 
+        
+        #Configurando a imagem de fundo no Google Earth Engine   
+        empty = ee.Image().byte()        
+        outline = empty.paint(ee.FeatureCollection([ee.Feature(roi)]), 1, 3)
+        outline = outline.updateMask(outline)
+        outline_rgb = outline.visualize(**{"palette":['FF0000']})
+
+        #Unificando os dados
+        final_image = s2.blend(texture.clip(roi))
+        final_image = final_image.blend(outline_rgb).clip(roi.buffer(256).bounds());
+            
+        # Gerando a url
+        url = final_image.getThumbURL({"dimensions": 256,"format": "png"})
+            
+        # Download
+        resposta = requests.get(url, timeout=60)
+        resposta.raise_for_status()
+        
+        # Converter para PIL.Image
+        img_pil = PIL.Image.open(BytesIO(resposta.content)) 
+        img_pil = add_legend_descriptor(img_pil,"Textura Solo", PALETTE)
+
+        return img_pil
+    
+    except ee.EEException as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Falha ao processar as coordenadas no satélite. "
+            f"Verifique se as coordenadas da área estão corretas. Detalhes: {str(error)}"
+        )
+    except requests.exceptions.HTTPError as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"O servidor de imagens do satélite retornou um erro. "
+            f"Tente solicitar a imagem novamente em alguns instantes. Detalhes: {str(error)}"
+        )
+    except requests.exceptions.RequestException as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Não foi possível baixar a imagem por falha de conexão. "
+            f"Pode haver instabilidade na rede. Detalhes: {str(error)}"
+        )
+    except PIL.UnidentifiedImageError as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"O arquivo recebido do satélite está corrompido ou num formato inesperado. Detalhes: {str(error)}"
+        )
+    except Exception as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Ocorreu um erro inesperado ao gerar a imagem da fazenda. Detalhes: {str(error)}"
         )
     
 
@@ -400,109 +506,76 @@ def query_pasture_statistics(coords: List[List[List[List[float]]]], year: int) -
 
         return result
     
-    except ValueError:
+    except ValueError as error:
         log_error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve um erro.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
-    except ee.EEException:
+    except ee.EEException as error:
         log_error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve uma falha de processamento.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
-    except requests.exceptions.HTTPError:
+    except requests.exceptions.HTTPError as error:
         log_error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que o servidor de imagens do satélite falhou.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
-    except requests.exceptions.RequestException:
+    except requests.exceptions.RequestException as error:
         log_error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve um problema de conexão ao baixar o mapa de biomassa.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
-    except Exception:
+    except Exception as error:
         log_error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve um erro inesperado.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
     
-def query_soil_texture_stats(coords: List[List[List[List[float]]]], year: int):
-    """
-    Extração de estatísticas de textura de solo.
-    """
-    from app.utils.interfaces.property_stats import SoilTextureStats, SoilTextureData
 
-    try:
-        roi = ee.Geometry.MultiPolygon(coords)
+def query_topographic_stats(coords: List[List[List[List[float]]]]):
+    from app.utils.interfaces.property_stats import Value
 
-        CLASSES = {
-            1: 'Muito Argiloso',
-            2: 'Argila',
-            3: 'Siltoso',
-            4: 'Arenoso',
-            5: 'Médio',
-            6: 'Afloramento'
-        }
-        
-        soil_asset = ee.ImageCollection('projects/mapbiomas-public/assets/brazil/soil/collection3/mapbiomas_brazil_collection3_soil_textural_subgroup_v1')
-        texture = soil_asset.toBands().select([
-                    'textural_subgroup_000_030_v1_textural_subgroup',
-                    'textural_subgroup_030_060_v1_textural_subgroup',
-                    'textural_subgroup_060_100_v1_textural_subgroup'
-                ])
-            
-        texture = texture.rename(['0-30cm','30-60cm', '60-100cm'])
-
-        stats = texture.reduceRegion(
-            reducer=ee.Reducer.mode(),
-            geometry=roi,
-            scale=30,
-            maxPixels=1e13
-        ).getInfo()
-
-        soil_texture_data_list: List[SoilTextureData] = []
-        for key in stats.keys():
-            soil_texture_data_list.append(
-                SoilTextureData(
-                    texture=CLASSES[int(stats[key])],
-                    depth=key
-                )
-            )
-
-        return SoilTextureStats(year=year, textures=soil_texture_data_list)
+    roi = ee.Geometry.MultiPolygon(coords)
     
-    except ValueError:
-        log_error(traceback.format_exc())
-        raise RuntimeError(
-            f"Peça desculpas e informe que houve um erro.\n"
-            "Peça ao usuário que tente novamente mais tarde."
-        )
-    except ee.EEException:
-        log_error(traceback.format_exc())
-        raise RuntimeError(
-            f"Peça desculpas e informe que houve uma falha de processamento.\n"
-            "Peça ao usuário que tente novamente mais tarde."
-        )
-    except requests.exceptions.HTTPError:
-        log_error(traceback.format_exc())
-        raise RuntimeError(
-            f"Peça desculpas e informe que o servidor de imagens do satélite falhou.\n"
-            "Peça ao usuário que tente novamente mais tarde."
-        )
-    except requests.exceptions.RequestException:
-        log_error(traceback.format_exc())
-        raise RuntimeError(
-            f"Peça desculpas e informe que houve um problema de conexão ao baixar o mapa de biomassa.\n"
-            "Peça ao usuário que tente novamente mais tarde."
-        )
-    except Exception:
-        log_error(traceback.format_exc())
-        raise RuntimeError(
-            f"Peça desculpas e informe que houve um erro inesperado.\n"
-            "Peça ao usuário que tente novamente mais tarde."
-        )
+    #Buscar a coleção
+    dem_col = ee.ImageCollection("COPERNICUS/DEM/GLO30").filterBounds(roi)
+    
+    #Pegar a projeção de uma imagem original para não perder a escala em metros
+    proj = dem_col.first().projection()
+    
+    #Criar o mosaico e forçar a projeção correta
+    demdata = dem_col.select('DEM').mosaic().setDefaultProjection(proj)
+    
+    # 4. Calcular o slope (agora ele entende a relação metros/metros)
+    slope = ee.Terrain.slope(demdata)
+    
+    # Cálculo das estatísticas
+    statsdem = demdata.reduceRegion(
+        reducer=ee.Reducer.mean(),
+        geometry=roi,
+        scale=30,
+        maxPixels=1e13
+    )
+    
+    statsslope = slope.reduceRegion(
+        reducer=ee.Reducer.mean(),
+        geometry=roi,
+        scale=30,
+        maxPixels=1e13
+    )
+
+    #Converter o valor de elevacao e declividade
+    res_elev = statsdem.getInfo().get('DEM', 0)
+    res_slope = statsslope.getInfo().get('slope', 0)
+
+    #Retornar os valores de elevação e declividade
+    return TopographicStats(
+        elevation=Value(value=round(res_elev, 2), unity="metros"),
+        slope=Value(value=round(res_slope, 2), unity="graus")
+    )

@@ -80,26 +80,15 @@ class PastureStats(BaseModel):
     )
 
 
-class SoilTextureData(BaseModel):
-    texture: str = Field(
+class TopographicStats(BaseModel):
+    elevation: Value = Field(
         ...,
-        description="Classe de textura de solo predominante."
+        description="Altitude média do terreno em metros."
     )
 
-    depth: str = Field(
+    slope: Value = Field(
         ...,
-        description="Profundida da textura de solo."
-    )
-
-
-class SoilTextureStats(BaseModel):
-    year: int = Field(
-        description="Ano da estatística."
-    )
-
-    textures: List[SoilTextureData] = Field(
-        ...,
-        description="Mapeamento de textura de solo."
+        description="Declividade média do terreno em graus."
     )
 
 
@@ -114,7 +103,7 @@ class PropertyStats(BaseModel):
         default_factory=list
     )
 
-    list_soil_texture_stats: Optional[List[SoilTextureStats]] = Field(
+    list_soil_texture_stats: Optional[List[TopographicStats]] = Field(
         description="Mapeamento de textura de solo.",
         default_factory=list
     )

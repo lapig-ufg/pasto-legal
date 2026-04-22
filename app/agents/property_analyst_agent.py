@@ -6,8 +6,9 @@ from agno.tools.calculator import CalculatorTools
 from app.tools.property_analyst_tools import (
     generate_property_image,
     generate_biomass_image,
+    generate_soil_texture_image,
     get_pasture_stats,
-    get_soil_texture_stats
+    get_topographic_stats
     )
 from app.utils.interfaces.property_record import RuralProperty
 from app.configs.models import model
@@ -77,9 +78,10 @@ property_analyst_agent = Agent(
     tools=[
         CalculatorTools(exclude_tools=["is_prime", "factorial"]),
         get_pasture_stats,
-        get_soil_texture_stats,
+        get_topographic_stats,
         generate_property_image,
-        generate_biomass_image
+        generate_biomass_image,
+        generate_soil_texture_image
     ],
     skills=skills,
     use_instruction_tags=False,
