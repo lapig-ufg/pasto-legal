@@ -264,20 +264,11 @@ def retrieve_feature_biomass_image(coords: List[List[List[List[float]]]], year: 
 
 def retrieve_feature_soil_texture_image(coords: List[List[List[List[float]]]]):
     try:
-        PALETTE = {
-            'Afloramento':'#707070',
-            'Muito Argiloso':'#9B0F06',
-            'Argila':'#BFA28C',
-            'Siltoso':'#D8F467',
-            'Arenoso':'#FFD400',
-            'Médio':'#F0CFA1', 
-        }
-
         roi = ee.Geometry.MultiPolygon(coords)
 
         s2 = retrieve_sentinel_image(roi)
         
-        palette = list(PALETTE.values())
+        palette = ['#707070','#a83800','#aa8686','#298289','#fffe73','#d7c5a5']
         idSoil = 'projects/mapbiomas-public/assets/brazil/soil/collection3/mapbiomas_brazil_collection3_soil_textural_group_v1'
         texture = (
             ee.ImageCollection(idSoil).toBands()
@@ -296,9 +287,7 @@ def retrieve_feature_soil_texture_image(coords: List[List[List[List[float]]]]):
 
         #Criando a imagem de visualização 
         #Valor maximo e minimo da textura do solo
-        minsoil = statssoil.get(ee.String(texture.bandNames().get(0)).cat('_min'))
-        maxsoil = statssoil.get(ee.String(texture.bandNames().get(0)).cat('_max')) 
-        texture = texture.visualize(**{"min": minsoil, "max": maxsoil,"palette":palette}) 
+        texture = texture.visualize(**{"min": 1, "max": 6,"palette": palette}) 
         
         #Configurando a imagem de fundo no Google Earth Engine   
         empty = ee.Image().byte()        
