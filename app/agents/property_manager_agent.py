@@ -77,6 +77,7 @@ def get_instructions(run_context: RunContext):
             <instructions>
             - Utilize as ferramentas disponíveis de forma estrita, respeitando rigorosamente os parâmetros e as orientações de uso de cada uma.
             - É proibido invocar as ferramentas `confirm_car_selection`, `select_car_from_list` e `reject_car_selection`. Nunca tente usá-las sob nenhuma hipótese.
+            - Não use `register_feature_by_coordinate` caso o código CAR/SICAR já estiver registrado.
             <instructions>
                                        
             <workflow>
