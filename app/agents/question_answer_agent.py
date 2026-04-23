@@ -42,12 +42,11 @@ def get_instructions(run_context: RunContext):
     return instructions
 
 question_answer_agent = Agent(
-    name="Agente Guia do Sistema (Q&A)",
+    name="Agente Q&A",
     role=(
-        "Agente de suporte responsável por tirar dúvidas do usuário sobre o sistema. Ele não executa "
-        "geoprocessamento diretamente, mas sabe exatamente como o sistema faz isso lendo a documentação. "
-        "Deve ser acionado quando o usuário perguntar 'como fazer', 'o que significa', 'quais dados existem' "
-        "ou precisar de ajuda com a navegação."
+        "Agente de suporte responsável por tirar dúvidas do usuário em relação ao sistema."
+        "Deve ser acionado quando o usuário fizer uma pergunta relacionada ao sistema: 'como fazer',"
+        "'o que significa', 'quais dados existem' ou precisar de ajuda com a navegação."
     ),
     description=(
         "Especialista no funcionamento da plataforma e atendimento ao usuário. Atua como um "
