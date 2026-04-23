@@ -1,12 +1,13 @@
 import os
+import re
 import uuid
 import json
+import random
 import tempfile
-import re
 import streamlit as st
-import requests
 
 from typing import List
+from agno.media import Image, Audio
 
 from app.agents.main_team import pasto_legal_team
 
@@ -30,7 +31,7 @@ def new_user(user_id, user_name):
     users = get_users()
 
     if not any(user['id'] == user_id for user in users):
-        users.append({"id": user_id, "name": user_name})
+        users.append({"id": user_id, "nickname": user_name})
         with open(DB_FILE, "w") as f:
             json.dump(users, f, indent=4)
 
@@ -130,35 +131,38 @@ for message in st.session_state.messages:
                 st.audio(aud)
 
 # Inputs do usuário
+if 'file_uploader_key' not in st.session_state:
+    st.session_state.file_uploader_key = 0
+
 files_uploaded = st.file_uploader(
     "Envie imagens/áudio (png, jpg, mp3, etc)",
+    key=f"file_uploader_{st.session_state.file_uploader_key}",
     type=["png", "jpg", "jpeg", "webp", "wav", "mp3", "mp4"],
     accept_multiple_files=True,
 )
 
-if "audio_key" not in st.session_state:
-    st.session_state.audio_key = 0
+if "audio_uploader_key" not in st.session_state:
+    st.session_state.audio_uploader_key = 0
 
-audio_value = st.audio_input("🎤 Gravar áudio", key=f"audio_recorder_{st.session_state.audio_key}")
+audio_input_value = st.audio_input(
+    "🎤 Gravar áudio",
+    key=f"audio_uploader_{st.session_state.audio_uploader_key}",
+    )
 
 chat_input_value = st.chat_input("Pergunte sobre pastagem...")
 
 col_btn, _ = st.columns([0.4, 0.6])
 with col_btn:
-    loc_btn_clicked = st.button("📍 Enviar Localização da Propriedade")
-
-loc_message = """Minhas coordenadas são Lat: -15.82994 S Long: -49.43353."""
+    loc_input_value = st.button("📍 Enviar Localização da Propriedade")
 
 user_query = None
-using_audio_input = False
 
-if loc_btn_clicked:
-    user_query = loc_message
+if loc_input_value:
+    user_query = """Minhas coordenadas são Lat: -15.82994 S Long: -49.43353."""
 elif chat_input_value:
     user_query = chat_input_value
-elif audio_value:
-    user_query = "🎙️ [Áudio recebido]"
-    using_audio_input = True
+elif audio_input_value:
+    user_query = "[Áudio recebido]"
 
 def process_uploaded_files(uploaded_files) -> List[str]:
     """Salva arquivos temporariamente e retorna os caminhos para o Agente."""
@@ -174,22 +178,24 @@ if user_query:
     st.session_state.messages.append({"role": "user", "content": user_query})
     with st.chat_message("user"):
         st.markdown(user_query)
-        if using_audio_input and audio_value:
-            st.audio(audio_value)
+        if audio_input_value:
+            st.audio(audio_input_value)
 
     files_to_process = []
+    
     if files_uploaded:
         files_to_process.extend(files_uploaded)
-    if using_audio_input and audio_value:
-        files_to_process.append(audio_value)
+    if audio_input_value:
+        files_to_process.append(audio_input_value)
 
     all_file_paths = process_uploaded_files(files_to_process)
     
-    image_paths = [p for p in all_file_paths if p.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
-    audio_paths = [p for p in all_file_paths if p.lower().endswith(('.wav', '.mp3', '.ogg', '.mp4'))]
+    image_path = [Image(filepath=p) for p in all_file_paths if p.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
+    audio_path = [Audio(filepath=p, ext=p[:-4]) for p in all_file_paths if p.lower().endswith(('.wav', '.mp3', '.ogg', '.mp4'))]
 
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
+        
         full_response = ""
         response = None
         
@@ -197,18 +203,14 @@ if user_query:
             run_kwargs = {
                 "input": user_query,
                 "user_id": st.session_state.session_id,
+                "session_id": st.session_state.session_id,
                 "stream": False,
             }
 
-            if image_paths:
-                run_kwargs["images"] = image_paths 
-            if audio_paths:
-                from agno.media import Audio
-                run_kwargs["audio"] = []
-                for p in audio_paths:
-                    ext = p.lower().split('.')[-1]
-                    if ext in ('wav', 'mp3', 'ogg', 'mp4'):
-                        run_kwargs["audio"].append(Audio(filepath=p, format=ext))
+            if image_path:
+                run_kwargs["images"] = image_path 
+            if audio_path:
+                run_kwargs["audio"] = audio_path
 
             # TODO: Implementar files.
             with st.spinner("Analisando dados e gerando resposta..."):
@@ -307,7 +309,7 @@ if user_query:
             st.error(f"Erro ao processar: {e}")
             full_response = f"Desculpe, ocorreu um erro: {str(e)}"
         finally:
-            for path in image_paths:
+            for path in image_path:
                 try:
                     os.remove(path)
                 except:
@@ -336,6 +338,9 @@ if user_query:
         
         st.session_state.messages.append(new_message)
 
-    if using_audio_input:
-        st.session_state.audio_key += 1
+        st.session_state.file_uploader_key += 1
+        st.session_state.audio_uploader_key += 1
+
         st.rerun()
+
+        

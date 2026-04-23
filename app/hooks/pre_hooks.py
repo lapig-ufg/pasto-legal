@@ -6,11 +6,10 @@ from pydantic import BaseModel, Field
 
 from agno.run import RunContext
 from agno.run.agent import RunInput
-from agno.team import Team
 from agno.agent import Agent
 from agno.models.google import Gemini
 
-from app.utils.dummy_logger import error
+from app.utils.interfaces.property_record import RuralProperty
 
 
 if not (APP_ENV := os.environ.get('APP_ENV')):

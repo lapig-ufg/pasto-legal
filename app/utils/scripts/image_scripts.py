@@ -3,6 +3,60 @@ import PIL
 from PIL import Image, ImageFont, ImageColor, ImageDraw
 
 
+def add_legend_descriptor(image_pil: Image, title: str, classes: dict):
+    """
+    Cria uma nova imagem com a legenda posicionada externamente à direita.
+    """
+    width, height = image_pil.size
+    
+    # 1. Configurações de estilo e dimensões da legenda
+    legend_width = 100  # Largura da área da legenda
+    margin = 5
+    item_height = 20
+    
+    try:
+        font = ImageFont.truetype("assets/fonts/DejaVuSans-Bold.ttf", 8)
+        title_font = ImageFont.truetype("assets/fonts/DejaVuSans-Bold.ttf", 10)
+    except:
+        font = ImageFont.load_default()
+        title_font = ImageFont.load_default()
+
+    # 2. Criar uma nova imagem com largura extra para a legenda
+    # Nova largura = largura original + largura da legenda
+    new_width = width + legend_width
+    new_image = Image.new("RGB", (new_width, height), "white")
+    
+    # 3. Colar a imagem original na nova imagem (no lado esquerdo)
+    new_image.paste(image_pil, (0, 0))
+    
+    draw = ImageDraw.Draw(new_image)
+    
+    # 4. Desenhar a legenda na área em branco (à direita)
+    x_offset = width + margin
+    y_offset = margin
+    
+    # Desenhar Título
+    draw.text((x_offset, y_offset), title, fill="black", font=title_font)
+    y_offset += 20 # Espaço após o título
+    
+    # Desenhar itens da legenda
+    for label, color in classes.items():
+        # Quadrado de cor
+        patch_size = 10
+        draw.rectangle(
+            [x_offset, y_offset, x_offset + patch_size, y_offset + patch_size],
+            fill=color, 
+            outline="black"
+        )
+        
+        # Texto da classe
+        draw.text((x_offset + patch_size + 4, y_offset), label, fill="black", font=font)
+        
+        y_offset += item_height
+        
+    return new_image
+
+
 def get_mosaic(imgs: list[PIL.Image]) -> Image:
     first = imgs[0]
 

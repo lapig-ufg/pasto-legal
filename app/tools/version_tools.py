@@ -1,4 +1,5 @@
 from pathlib import Path
+from importlib.metadata import version
 
 from agno.tools import tool
 
@@ -9,28 +10,27 @@ def consult_update_notes() -> str:
     Lê e retorna as notas de atualização (patch notes) do sistema Pasto Legal.
     Use esta ferramenta quando o usuário perguntar sobre a versão atual, novidades ou atualizações.
     """
-    diretorio_base = Path(__file__).resolve().parent.parent.parent
-    pasta_notas = diretorio_base / "docs" / "release_notes"
+    base_path = Path(__file__).resolve().parent.parent.parent
+    folder_path = base_path / "docs" / "release_notes"
     
-    if not pasta_notas.exists():
+    if not folder_path.exists():
         return "Erro: O diretório de notas de versão não foi encontrado no sistema."
         
     try:
-        arquivos_md = sorted(pasta_notas.glob("*.md"))
-        if not arquivos_md:
+        files = sorted(folder_path.glob("*.md"))
+        if not files:
             return "Aviso: Nenhuma nota de versão foi encontrada no repositório."
-        arquivo_alvo = arquivos_md[-1]
+        target_file = files[-1]
             
-        if not arquivo_alvo.exists():
+        if not target_file.exists():
             return f"Erro: As notas de atualização não foram encontradas."
             
-        with open(arquivo_alvo, "r", encoding="utf-8") as f:
+        with open(target_file, "r", encoding="utf-8") as f:
             conteudo = f.read()
             
         return (
-            f"Conteúdo do patch lido com sucesso:\n\n{conteudo}\n\n"
-            "INSTRUÇÃO DO SISTEMA: Repasse essas informações ao usuário utilizando "
-            "ESTRITAMENTE a formatação de texto do WhatsApp (*negrito*, _itálico_). "
+            f"Conteúdo do patch:\n\n{conteudo}\n\n"
+            "Repasse essas informações INTEGRALMENTE ao usuário utilizando ESTRITAMENTE a formatação de texto do WhatsApp (*negrito*, _itálico_). "
             "Não utilize formatação Markdown como #, ## ou **."
         )
         

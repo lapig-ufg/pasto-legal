@@ -1,12 +1,12 @@
-from .analyst_agent import analyst_agent
-from .generic_agent import generic_agent
-from .sicar_agent import sicar_agent
+from .question_answer_agent import question_answer_agent
+from .property_analyst_agent import property_analyst_agent
+from .property_manager_agent import property_manager_agent
 from .main_team import pasto_legal_team
 
 
 __all__ = [
-    "analyst_agent",
-    "generic_agent",
-    "sicar_agent",
+    "property_analyst_agent",
+    "property_manager_agent",
+    "question_answer_agent",
     "pasto_legal_team",
 ]
