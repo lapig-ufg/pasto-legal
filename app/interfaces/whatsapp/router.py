@@ -4,6 +4,10 @@ from base64 import urlsafe_b64decode, urlsafe_b64encode
 from time import time
 from typing import Any, Literal, NamedTuple, Optional, Type, Union
 from uuid import uuid4
+from contextlib import suppress
+
+import redis
+import pickle
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import PlainTextResponse
@@ -31,8 +35,14 @@ from app.interfaces.whatsapp.helpers import (
     upload_and_send_media_async,
 )
 
-_ERROR_MESSAGE = "Sorry, there was an error processing your message. Please try again later."
-_SESSION_RESET_MESSAGE = "New conversation started!"
+valkey_client = redis.Redis(host='localhost', port=6379, db=0)
+
+_LONG_SLEEP = 12
+_SHORT_SLEEP = 4
+
+_EXECUTION_MESSAGE = "Ainda estamos processando dua última mensagem. Por favor, aguarde..."
+_ERROR_MESSAGE = "Desculpe, ocorreu um erro ao processar sua mensagem. Por favor, tente novamente mais tarde."
+_SESSION_RESET_MESSAGE = "Nova conversa iniciada!"
 
 # Metadata lines from ReasoningTools that aren't useful to end users
 _REASONING_SKIP_PREFIXES = ("Action:", "Next Action:", "Confidence:")
@@ -221,7 +231,18 @@ def attach_routes(
             return
         # Splits identity: user_id (possibly encrypted) for DB storage, phone_number (raw) for API sends
         user_id = _encrypt_phone(phone_number, encryption_key) if enable_encryption and encryption_key else phone_number
+        timestamp = message.get("timestamp")
         try:
+            valkey_execution_lock = valkey_client.lock(f"debounce_exec:{user_id}", timeout=60, blocking=False)
+
+            valkey_client.hset(f"debounce_status:{user_id}", timestamp, False)
+            valkey_client.set(f"debounce_tf:{user_id}", timestamp)
+
+            if valkey_execution_lock.locked():
+                if not valkey_execution_lock.acquire():
+                    await send_whatsapp_message_async(phone_number, _EXECUTION_MESSAGE, config) 
+                    return
+
             message_id = message.get("id")
             await typing_indicator_async(message_id, config)
 
@@ -231,6 +252,7 @@ def attach_routes(
                 # "unsupported" is WhatsApp's label for stickers and other rich types
                 label = "this message type" if msg_type == "unsupported" else msg_type.title()
                 await send_whatsapp_message_async(phone_number, f"Sorry, {label} is not supported yet.", config)
+                valkey_client.hdel(f"debounce_status:{user_id}", timestamp)
                 return
 
             # /new starts a fresh session — old session data is preserved
@@ -239,6 +261,10 @@ def attach_routes(
                     await send_whatsapp_message_async(
                         phone_number, "Session reset requires storage to be configured.", config
                     )
+                
+                    valkey_client.delete(f"debounce_ts:{user_id}")
+                    valkey_client.delete(f"debounce_msgs:{user_id}")
+                    valkey_client.hdel(f"debounce_status:{user_id}", timestamp)
                     return
                 try:
                     new_session_id = f"wa:{entity_id}:{user_id}:{uuid4().hex[:8]}"
@@ -258,6 +284,10 @@ def attach_routes(
                 except Exception as e:
                     log_warning(f"Failed to persist /new session: {e}")
                     await send_whatsapp_message_async(phone_number, _ERROR_MESSAGE, config)
+
+                valkey_client.delete(f"debounce_ts:{user_id}")
+                valkey_client.delete(f"debounce_msgs:{user_id}")
+                valkey_client.hdel(f"debounce_status:{user_id}", timestamp)
                 return
 
             log_info(f"Processing message from {user_id[:12]}: {parsed.text}")
@@ -287,16 +317,70 @@ def attach_routes(
 
             # Download media from Meta servers and wrap as Agno media objects
             media_kwargs, skipped_media = await download_event_media_async(parsed, config)
-            run_kwargs: dict = {
+
+            if valkey_messages_lock.acquire():
+                valkey_client.rpush(
+                    f"debounce_msgs:{user_id}", 
+                    {
+                        "timestamp": timestamp,
+                        "text": parsed.text,
+                        "media_kwargs": pickle.dump(media_kwargs),
+                    }
+                )
+                valkey_messages_lock.release()
+            else:
+                raise Exception("Valkey lock failed!")
+            
+            is_img = message.get("type") == "image"
+            has_caption = message.get("caption") is not None
+            await asyncio.sleep(_LONG_SLEEP if is_img and not has_caption else _SHORT_SLEEP)
+
+            if valkey_timestamp_lock.acquire():
+                all_timestamps = valkey_client.get(f"debounce_ts:{user_id}")
+
+                all_timestamps[timestamp] = "done"
+                valkey_client.set(f"debounce_ts:{user_id}", all_timestamps)
+
+                latest_ts = max(all_timestamps.keys())
+                if latest_ts and latest_ts != timestamp:
+                    # Another message arrived, let the newer task handle the batch
+                    valkey_timestamp_lock.release()
+                    return
+                
+                valkey_execution_lock.acquire()
+                
+                while valkey_timestamp_lock.acquire() and not any(lambda ts: ts == "processing", all_timestamps.values()):
+                    valkey_timestamp_lock.release()
+                    await asyncio.sleep(1)
+
+                valkey_client.delete(f"debounce_ts:{user_id}")
+                valkey_timestamp_lock.release()
+            
+            if not valkey_messages_lock.acquire():
+                raise Exception("Valkey lock failed!")
+
+            raw_msgs = valkey_client.lrange(f"debounce_msgs:{user_id}", 0, -1)
+            all_msgs = sorted([pickle.loads(m) for m in raw_msgs], key=lambda x: x["timestamp"])
+            valkey_client.delete(f"debounce_msgs:{user_id}")
+            valkey_messages_lock.release()
+
+            final_text = ""
+            run_kwargs = {
                 "user_id": user_id,
-                "session_id": session_id,
-                **media_kwargs,
+                "session_id": session_id
             }
+
+            for msg in all_msgs:
+                text += msg.get("text", "")
+                for key, value in msg.items():
+                    old_value: list = run_kwargs.get(key, [])
+                    new_value = old_value + value
+                    run_kwargs[key] = new_value
 
             # Prepend skip notice so the agent (and user) knows media was dropped
             if skipped_media:
                 notice = "[Some media could not be downloaded: " + "; ".join(skipped_media) + "]\n\n"
-                parsed.text = notice + parsed.text
+                final_text = notice + final_text
 
             if send_user_number_to_context:
                 run_kwargs["dependencies"] = {
@@ -317,7 +401,8 @@ def attach_routes(
 
             typing_task = asyncio.create_task(_keep_typing())
             try:
-                response = await entity.arun(parsed.text, **run_kwargs)  # type: ignore[union-attr]
+                response = await entity.arun(final_text, **run_kwargs)  # type: ignore[union-attr]
+                valkey_execution_lock.release()
             finally:
                 typing_task.cancel()
 
@@ -357,6 +442,10 @@ def attach_routes(
         except Exception as e:
             log_error(f"Error processing message: {e}")
             try:
+                if valkey_lock.locked():
+                    with suppress(Exception):
+                        valkey_lock.release()
+                    
                 await send_whatsapp_message_async(phone_number, _ERROR_MESSAGE, config)
             except Exception as send_error:
                 log_error(f"Error sending error message: {send_error}")
