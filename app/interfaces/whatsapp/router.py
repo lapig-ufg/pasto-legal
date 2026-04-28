@@ -223,6 +223,7 @@ def attach_routes(
 
         return WhatsAppWebhookResponse(status="processing")
 
+    # TODO: Criar um buffer para mensagens pós valkey_execution_lock.
     async def process_message(message: dict):
         # Extract early so error handler can notify the user
         phone_number = message.get("from")
@@ -236,6 +237,8 @@ def attach_routes(
             valkey_execution_lock = valkey_client.lock(f"debounce_exec:{user_id}", timeout=60, blocking=False)
 
             valkey_client.hset(f"debounce_status:{user_id}", timestamp, False)
+
+            # old_tf < new_tf
             valkey_client.set(f"debounce_tf:{user_id}", timestamp)
 
             if valkey_execution_lock.locked():
