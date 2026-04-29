@@ -263,12 +263,8 @@ def attach_routes(
                 await send_whatsapp_message_async(phone_number, f"Sorry, {label} is not supported yet.", config)
                 return
             
-            valkey_timestamp_lock = valkey_client.lock(f"debounce_lock_ts:{user_id}", timeout=60, blocking=True, blocking_timeout=5)
-            if not valkey_timestamp_lock.acquire():
-                raise Exception("Valkey lock failed!")
-            
-            valkey_execution_lock = valkey_client.lock(f"debounce_lock_exec:{user_id}", timeout=60, blocking=False)
-            if valkey_execution_lock.locked():
+            valkey_execution_lock = valkey_client.lock(f"debounce_lock:{user_id}", timeout=60, blocking=True, blocking_timeout=5)
+            if valkey_execution_lock.acquire():
                 await send_whatsapp_message_async(phone_number, _EXECUTION_MESSAGE, config) 
                 return
                 
@@ -309,7 +305,7 @@ def attach_routes(
                 valkey_client.delete(f"debounce_status:{user_id}", f"debounce_msgs:{user_id}")
                 return
             
-            valkey_timestamp_lock.release()
+            valkey_execution_lock.release()
 
             log_info(f"Processing message from {user_id[:12]}: {parsed.text}")
 
@@ -350,19 +346,15 @@ def attach_routes(
             valkey_client.hset(f"debounce_status:{user_id}", timestamp, _DebouceStatus.COMPLETE.value)
             
             await asyncio.sleep(_LONG_SLEEP if (message.get("type") == "image" and not message.get("caption")) else _SHORT_SLEEP)
-
-            if not valkey_timestamp_lock.acquire():
-                raise Exception("Valkey lock failed!")
-            
-            raw_latest = valkey_client.get(f"debounce_ts:{user_id}")
-            latest_ts = raw_latest.decode('utf-8') if raw_latest else None
-            if latest_ts and latest_ts != timestamp:
-                return
             
             if not valkey_execution_lock.acquire():
                 return
             
-            valkey_timestamp_lock.release()
+            raw_latest = valkey_client.get(f"debounce_ts:{user_id}")
+            latest_ts = raw_latest.decode('utf-8') if raw_latest else None
+            if latest_ts and latest_ts != timestamp:
+                valkey_execution_lock.release()
+                return
 
             wait_loops = 0
             while wait_loops < 30:
@@ -453,9 +445,6 @@ def attach_routes(
             except Exception as send_error:
                 log_error(f"Error sending error message: {send_error}")
         finally:
-            if valkey_timestamp_lock.locked():
-                with suppress(Exception):
-                    valkey_timestamp_lock.release()
             if valkey_execution_lock.locked():
                 with suppress(Exception):
                     valkey_execution_lock.release()
