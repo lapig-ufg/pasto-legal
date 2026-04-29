@@ -270,8 +270,7 @@ def attach_routes(
                 return
                 
             valkey_client.hset(f"debounce_status:{user_id}", timestamp, _DebouceStatus.PENDING.value)
-            raw_old_ts = valkey_client.get(f"debounce_ts:{user_id}")
-            old_ts = raw_old_ts.decode('utf-8') if raw_old_ts else None
+            old_ts = valkey_client.get(f"debounce_ts:{user_id}")
             
             if not old_ts or int(old_ts) <= int(timestamp):
                 valkey_client.set(f"debounce_ts:{user_id}", timestamp)
@@ -353,8 +352,7 @@ def attach_routes(
             if not valkey_execution_lock.acquire():
                 return
             
-            raw_latest = valkey_client.get(f"debounce_ts:{user_id}")
-            latest_ts = raw_latest.decode('utf-8') if raw_latest else None
+            latest_ts = valkey_client.get(f"debounce_ts:{user_id}")
             if latest_ts and latest_ts != timestamp:
                 log_info(f"Dropping process {timestamp}, not the latest: {latest_ts}...")
                 valkey_execution_lock.release()
@@ -363,7 +361,7 @@ def attach_routes(
 
             wait_loops = 0
             while wait_loops < 30:
-                statuses = [s.decode('utf-8') for s in valkey_client.hvals(f"debounce_status:{user_id}")]
+                statuses = valkey_client.hvals(f"debounce_status:{user_id}")
                 if not any([_DebouceStatus(s) == _DebouceStatus.PENDING for s in statuses]):
                     break
                 await asyncio.sleep(1)
