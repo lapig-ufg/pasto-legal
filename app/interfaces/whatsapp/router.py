@@ -54,7 +54,7 @@ valkey_client = redis.Redis(
 _LONG_SLEEP = 8
 _SHORT_SLEEP = 4
 
-_EXECUTION_MESSAGE = "Ainda estamos processando dua última mensagem. Por favor, aguarde..."
+_EXECUTION_MESSAGE = "Ainda estamos processando sua última mensagem. Por favor, aguarde..."
 _ERROR_MESSAGE = "Desculpe, ocorreu um erro ao processar sua mensagem. Por favor, tente novamente mais tarde."
 _SESSION_RESET_MESSAGE = "Nova conversa iniciada!"
 
@@ -264,7 +264,7 @@ def attach_routes(
                 return
             
             valkey_execution_lock = valkey_client.lock(f"debounce_lock:{user_id}", timeout=60, blocking=True, blocking_timeout=5)
-            if valkey_execution_lock.acquire():
+            if not valkey_execution_lock.acquire():
                 log_info("Dropping message! Execution already in cursor...")
                 await send_whatsapp_message_async(phone_number, _EXECUTION_MESSAGE, config) 
                 return
