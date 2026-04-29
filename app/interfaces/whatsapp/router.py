@@ -265,6 +265,7 @@ def attach_routes(
             
             valkey_execution_lock = valkey_client.lock(f"debounce_lock:{user_id}", timeout=60, blocking=True, blocking_timeout=5)
             if valkey_execution_lock.acquire():
+                log_info("Dropping message! Execution already in cursor...")
                 await send_whatsapp_message_async(phone_number, _EXECUTION_MESSAGE, config) 
                 return
                 
@@ -345,16 +346,20 @@ def attach_routes(
             valkey_client.rpush(f"debounce_msgs:{user_id}", pickle.dumps(msg_data))
             valkey_client.hset(f"debounce_status:{user_id}", timestamp, _DebouceStatus.COMPLETE.value)
             
+            log_info(f"Process {timestamp} went to sleep!")
             await asyncio.sleep(_LONG_SLEEP if (message.get("type") == "image" and not message.get("caption")) else _SHORT_SLEEP)
             
+            log_info(f"Process {timestamp} woke up!")
             if not valkey_execution_lock.acquire():
                 return
             
             raw_latest = valkey_client.get(f"debounce_ts:{user_id}")
             latest_ts = raw_latest.decode('utf-8') if raw_latest else None
             if latest_ts and latest_ts != timestamp:
+                log_info(f"Dropping process {timestamp}, not the latest: {latest_ts}...")
                 valkey_execution_lock.release()
                 return
+            log_info("Executing process!")
 
             wait_loops = 0
             while wait_loops < 30:
