@@ -342,7 +342,7 @@ def attach_routes(
                 "timestamp": timestamp,
             }
 
-            valkey_client.rpush(f"debounce_msgs:{user_id}", pickle.dumps(msg_data))
+            valkey_client.rpush(f"debounce_msgs:{user_id}", pickle.dumps(msg_data).hex())
             valkey_client.hset(f"debounce_status:{user_id}", timestamp, _DebouceStatus.COMPLETE.value)
             
             log_info(f"Process {timestamp} went to sleep!")
@@ -371,7 +371,7 @@ def attach_routes(
             raw_msgs = valkey_client.lrange(f"debounce_msgs:{user_id}", 0, -1)
             valkey_client.delete(f"debounce_msgs:{user_id}")
 
-            all_msgs = sorted([pickle.loads(m) for m in raw_msgs], key=lambda x: int(x["timestamp"]))
+            all_msgs = sorted([pickle.loads(bytes.fromhex(m)) for m in raw_msgs], key=lambda x: int(x["timestamp"]))
 
             final_text = ""
             run_kwargs = {"user_id": user_id,"session_id": session_id}
