@@ -35,42 +35,17 @@ except Exception as e:
     raise ValueError("GEE_PROJECT environment variables must be set.")
 
 
-def _get_base_image(roi, year: int = None) -> PIL.Image:
+def _get_base_image(roi: ee.Geometry, year: int = None) -> ee.Image:
     """
-    Gera imagen de satélite para um polígono.
+    Gera imagem de satélite (mediana) em cor real para um polígono.
     
     Args:
-        coords: Lista de coordenadas representando o MultiPolygon da fazenda.
+        roi (ee.Geometry): Região de interesse (polígono da fazenda).
+        year (int, optional): Ano desejado. Se None, usa a data atual.
         
     Returns:
-        PIL.Image: Imagem final correspondente ao polígono.
+        ee.Image: Imagem Earth Engine pronta para visualização (RGB, 8-bit).
     """
-
-
-#    var s_date = ee.Date.fromYMD(2002 - 1, 12, 1)
-#    var e_date = s_date.advance(1, 'year')
-#
-#    function applyScale(image) {
-#    var opticalBands = image.select('SR_B.').multiply(0.0000275).add(-0.2);
-#    return image.addBands(opticalBands, null, true);
-#    }
-#
-#    var image_collection = ee.ImageCollection("LANDSAT/LE07/C02/T1_L2")
-#    .filterBounds(geometry)
-#    .filterDate(s_date, e_date)
-#    .filter(ee.Filter.lt("CLOUD_COVER", 30))
-#    .map(applyScale) // Aplica o fator de escala
-#    .median();
-#
-#    // Agora o max deve ser em torno de 0.3 (refletância real)
-#    var visParams = {"bands": ["SR_B3", "SR_B2", "SR_B1"], "min": 0, "max": 0.4};
-#
-#    var image = image_collection.visualize(visParams)
-#
-#    Map.addLayer(image)
-#    Map.centerObject(geometry)
-
-
     try:
         if not year:
             date = datetime.date.today()
@@ -80,39 +55,52 @@ def _get_base_image(roi, year: int = None) -> PIL.Image:
         s_date = ee.Date.fromYMD(date.year - 1, date.month, 1)
         e_date = s_date.advance(1, 'year')
 
+        # Função de escalonamento para Landsat C2 L2
+        def apply_scale_landsat(image: ee.Image):
+            optical_bands = image.select('SR_B.').multiply(0.0000275).add(-0.2)
+            return image.addBands(optical_bands, None, True)
+
+        needs_scaling = False
+        
         if date.year >= 2016:
             asset = "COPERNICUS/S2_SR_HARMONIZED"
-            filter_prop = "CLOUDY_PIXEL_PERCENTAGE"
+            cloud_prop = "CLOUDY_PIXEL_PERCENTAGE"
             visualize_params = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
-
+            
         elif date.year >= 2013:
             asset = "LANDSAT/LC08/C02/T1_L2"
-            filter_prop = "CLOUD_COVER"
-            visualize_params = {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 1}
-
+            cloud_prop = "CLOUD_COVER"
+            visualize_params = {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0.0, "max": 0.3}
+            needs_scaling = True
+            
         elif date.year == 2012:
             asset = "LANDSAT/LE07/C02/T1_L2"
-            filter_prop = "CLOUD_COVER"
-            visualize_params = {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 1}
-
+            cloud_prop = "CLOUD_COVER"
+            visualize_params = {"bands": ["SR_B3", "SR_B2", "SR_B1"], "min": 0.0, "max": 0.3}
+            needs_scaling = True
+            
         elif date.year >= 2003:
             asset = "LANDSAT/LT05/C02/T1_L2"
-            filter_prop = "CLOUD_COVER"
-            visualize_params = {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 1}
-
+            cloud_prop = "CLOUD_COVER"
+            visualize_params = {"bands": ["SR_B3", "SR_B2", "SR_B1"], "min": 0.0, "max": 0.3}
+            needs_scaling = True
+            
         else:
             asset = "LANDSAT/LE07/C02/T1_L2"
-            filter_prop = "CLOUD_COVER"
-            visualize_params = {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 1}
+            cloud_prop = "CLOUD_COVER"
+            visualize_params = {"bands": ["SR_B3", "SR_B2", "SR_B1"], "min": 0.0, "max": 0.3}
+            needs_scaling = True
 
         image_collection = (ee.ImageCollection(asset)
             .filterBounds(roi)
             .filterDate(s_date, e_date)
-            .filter(ee.Filter.lt(filter_prop, 10))
-            .median()
+            .filter(ee.Filter.lt(cloud_prop, 10))
         )
 
-        image = image_collection.visualize(**visualize_params)
+        if needs_scaling:
+            image_collection = image_collection.map(apply_scale_landsat)
+
+        image = image_collection.median().visualize(**visualize_params)
         
         return image
     
