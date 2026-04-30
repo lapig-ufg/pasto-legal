@@ -10,8 +10,13 @@ from typing import List
 
 from agno.utils.log import log_error
 
-from app.utils.scripts.image_scripts import add_legend
-from app.utils.interfaces.property_stats import PropertyStats, PastureStats
+from app.utils.scripts.image_scripts import add_legend, add_legend_descriptor
+from app.utils.interfaces.property_stats import PropertyStats, PastureStats, TopographicStats
+
+
+_FEATURE_BUFFER = 256
+
+_IMAGE_DIMENSION = 512
 
 
 if not (GEE_SERVICE_ACCOUNT := os.environ.get('GEE_SERVICE_ACCOUNT')):
@@ -26,7 +31,116 @@ try:
     ee.Initialize(credentials, project=GEE_PROJECT)
     GEE_CONNECTED_FLAG = True
 except Exception as e:
-    print(f"Authentication failed: {e}")
+    log_error(f"Authentication failed: {e}")
+    raise ValueError("GEE_PROJECT environment variables must be set.")
+
+
+def _get_base_image(roi: ee.Geometry, year: int = None) -> ee.Image:
+    """
+    Gera imagem de satélite (mediana) em cor real para um polígono.
+    
+    Args:
+        roi (ee.Geometry): Região de interesse (polígono da fazenda).
+        year (int, optional): Ano desejado. Se None, usa a data atual.
+        
+    Returns:
+        ee.Image: Imagem Earth Engine pronta para visualização (RGB, 8-bit).
+    """
+    try:
+        if not year:
+            date = datetime.date.today()
+        else:
+            date = datetime.date(year, 12, 31)  
+
+        s_date = ee.Date.fromYMD(date.year - 1, date.month, 1)
+        e_date = s_date.advance(1, 'year')
+
+        # Função de escalonamento para Landsat C2 L2
+        def apply_scale_landsat(image: ee.Image):
+            optical_bands = image.select('SR_B.').multiply(0.0000275).add(-0.2)
+            return image.addBands(optical_bands, None, True)
+
+        needs_scaling = False
+        
+        if date.year >= 2016:
+            asset = "COPERNICUS/S2_SR_HARMONIZED"
+            cloud_prop = "CLOUDY_PIXEL_PERCENTAGE"
+            visualize_params = {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}
+            
+        elif date.year >= 2013:
+            asset = "LANDSAT/LC08/C02/T1_L2"
+            cloud_prop = "CLOUD_COVER"
+            visualize_params = {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0.0, "max": 0.3}
+            needs_scaling = True
+            
+        elif date.year == 2012:
+            asset = "LANDSAT/LE07/C02/T1_L2"
+            cloud_prop = "CLOUD_COVER"
+            visualize_params = {"bands": ["SR_B3", "SR_B2", "SR_B1"], "min": 0.0, "max": 0.3}
+            needs_scaling = True
+            
+        elif date.year >= 2003:
+            asset = "LANDSAT/LT05/C02/T1_L2"
+            cloud_prop = "CLOUD_COVER"
+            visualize_params = {"bands": ["SR_B3", "SR_B2", "SR_B1"], "min": 0.0, "max": 0.3}
+            needs_scaling = True
+            
+        else:
+            asset = "LANDSAT/LE07/C02/T1_L2"
+            cloud_prop = "CLOUD_COVER"
+            visualize_params = {"bands": ["SR_B3", "SR_B2", "SR_B1"], "min": 0.0, "max": 0.3}
+            needs_scaling = True
+
+        image_collection = (ee.ImageCollection(asset)
+            .filterBounds(roi)
+            .filterDate(s_date, e_date)
+            .filter(ee.Filter.lt(cloud_prop, 10))
+        )
+
+        if needs_scaling:
+            image_collection = image_collection.map(apply_scale_landsat)
+
+        image = image_collection.median().visualize(**visualize_params)
+        
+        return image
+    
+    except ee.EEException as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Falha ao processar as coordenadas no satélite. "
+            f"Verifique se as coordenadas da área estão corretas. Detalhes: {str(error)}"
+        )
+    except requests.exceptions.HTTPError as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"O servidor de imagens do satélite retornou um erro. "
+            f"Tente solicitar a imagem novamente em alguns instantes. Detalhes: {str(error)}"
+        )
+    except requests.exceptions.RequestException as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Não foi possível baixar a imagem por falha de conexão. "
+            f"Pode haver instabilidade na rede. Detalhes: {str(error)}"
+        )
+    except PIL.UnidentifiedImageError as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"O arquivo recebido do satélite está corrompido ou num formato inesperado. Detalhes: {str(error)}"
+        )
+    except Exception as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Ocorreu um erro inesperado ao gerar a imagem da fazenda. Detalhes: {str(error)}"
+        )
+
+
+def _draw_feature_boundaries(roi):
+    empty = ee.Image().byte()
+    outline = empty.paint(ee.FeatureCollection([ee.Feature(roi)]), 1, 3)
+    outline = outline.updateMask(outline)
+    outline_rgb = outline.visualize(**{"palette":['FF0000']})
+
+    return outline_rgb
 
 
 def retrieve_feature_images(coords: List[List[List[List[float]]]]) -> List[PIL.Image]:
@@ -40,75 +154,53 @@ def retrieve_feature_images(coords: List[List[List[List[float]]]]) -> List[PIL.I
         List[PIL.Image]: Uma lista de imagens (PIL.Image) correspondentes a cada polígono.
     """
     try:
-        # 1. Cria a geometria total para otimizar a busca da imagem base
-        roi = ee.Geometry.MultiPolygon(coords)
-
-        today = datetime.date.today()
-        s_date = ee.Date.fromYMD(today.year - 1, today.month, 1)
-        e_date = s_date.advance(1, 'year')
-
-        # 2. Configura e processa a imagem base (feita apenas 1x para toda a fazenda)
-        base_collection = (
-            ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
-            .filterBounds(roi)
-            .filterDate(s_date, e_date)
-            .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',10))
-            .median()
-        )
-        base_collection = base_collection.visualize(**{"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000})
-
-        geometries = roi.geometries().getInfo()
-
         result_imgs = []
+        for _coords in coords:
+            roi = ee.Geometry.MultiPolygon([_coords])
 
-        # 3. Itera diretamente sobre a lista Python (evita o .getInfo() que custa tempo e rede)
-        for geometry in geometries:
-            # Instancia apenas o polígono atual
-            feature = ee.Feature(geometry)
+            base_image = _get_base_image(roi=roi)
 
-            # 4. Desenha o contorno
-            empty = ee.Image().byte()
-            outline = empty.paint(ee.FeatureCollection([feature]), 1, 3)
-            outline = outline.updateMask(outline)
-            outline_rgb = outline.visualize(**{"palette":['FF0000']})
+            outline = _draw_feature_boundaries(roi=roi)
 
-            # 5. Mescla as imagens e recorta com a margem de 256m
-            final_image = base_collection.blend(outline_rgb).clip(feature.buffer(256).bounds())
+            final_image = base_image.blend(outline).clip(roi.buffer(_FEATURE_BUFFER).bounds())
 
-            # 6. Gera URL e faz download
-            url = final_image.getThumbURL({"dimensions": 256,"format": "png"})
+            url = final_image.getThumbURL({"dimensions":_IMAGE_DIMENSION, "format":"png"})
 
             response = requests.get(url, timeout=60)
-            response.raise_for_status() # Levanta requests.exceptions.HTTPError em caso de falha HTTP
+            response.raise_for_status()
 
-            # 7. Converte e armazena
             img_pil = PIL.Image.open(BytesIO(response.content))
             result_imgs.append(img_pil)
 
         return result_imgs
     
-    except ee.EEException as e:
+    except ee.EEException as error:
+        log_error(traceback.format_exc())
         raise RuntimeError(
             f"Falha ao processar as coordenadas no satélite. "
-            f"Verifique se as coordenadas da área estão corretas. Detalhes: {str(e)}"
+            f"Verifique se as coordenadas da área estão corretas. Detalhes: {str(error)}"
         )
-    except requests.exceptions.HTTPError as e:
+    except requests.exceptions.HTTPError as error:
+        log_error(traceback.format_exc())
         raise RuntimeError(
             f"O servidor de imagens do satélite retornou um erro. "
-            f"Tente solicitar a imagem novamente em alguns instantes. Detalhes: {str(e)}"
+            f"Tente solicitar a imagem novamente em alguns instantes. Detalhes: {str(error)}"
         )
-    except requests.exceptions.RequestException as e:
+    except requests.exceptions.RequestException as error:
+        log_error(traceback.format_exc())
         raise RuntimeError(
             f"Não foi possível baixar a imagem por falha de conexão. "
-            f"Pode haver instabilidade na rede. Detalhes: {str(e)}"
+            f"Pode haver instabilidade na rede. Detalhes: {str(error)}"
         )
-    except PIL.UnidentifiedImageError as e:
+    except PIL.UnidentifiedImageError as error:
+        log_error(traceback.format_exc())
         raise RuntimeError(
-            f"O arquivo recebido do satélite está corrompido ou num formato inesperado. Detalhes: {str(e)}"
+            f"O arquivo recebido do satélite está corrompido ou num formato inesperado. Detalhes: {str(error)}"
         )
-    except Exception as e:
+    except Exception as error:
+        log_error(traceback.format_exc())
         raise RuntimeError(
-            f"Ocorreu um erro inesperado ao gerar a imagem da fazenda. Detalhes: {str(e)}"
+            f"Ocorreu um erro inesperado ao gerar a imagem da fazenda. Detalhes: {str(error)}"
         )
 
 
@@ -136,38 +228,19 @@ def retrieve_feature_biomass_image(coords: List[List[List[List[float]]]], year: 
         if year < min_year or year > max_year:
             raise ValueError(f"O ano deve estar entre {min_year} e {max_year}.")
         
-        # 1. Geometria e Datas
         roi = ee.Geometry.MultiPolygon(coords)
 
-        s_date = ee.Date.fromYMD(year, 1, 1)
-        e_date = s_date.advance(1, 'year')
-
-        # 2. Imagem Base (Sentinel-2)
-        base_collection = (
-            ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
-            .filterBounds(roi)
-            .filterDate(s_date, e_date)
-            .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',10))
-            .median()
-        )
-        base_collection = base_collection.visualize(**{"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000}) 
-
-        # 3. Camada de Biomassa (MapBiomas)
         biomass = biomass_asset.select([year - 2000]).clip(roi)
-        
-        palette_biomass = ['#000033','#9400D3','#FF00FF','#00FFFF','#FFFFFF']
-    
-        # 4. Cálculo de Estatísticas (Otimização do getInfo)
+
         stats_biomass_ee = biomass.reduceRegion(
-                reducer=ee.Reducer.minMax(),
-                geometry=roi,
-                scale=30,
-                maxPixels=1e13
+            reducer=ee.Reducer.minMax(),
+            geometry=roi,
+            scale=30,
+            maxPixels=1e13
         )
 
         stats_dict = stats_biomass_ee.getInfo()
 
-        # Busca as chaves dinamicamente (para não depender do nome exato da banda)
         min_key = next((k for k in stats_dict if k.endswith('_min')), None)
         max_key = next((k for k in stats_dict if k.endswith('_max')), None)
 
@@ -177,64 +250,128 @@ def retrieve_feature_biomass_image(coords: List[List[List[List[float]]]], year: 
         min_bio_val = stats_dict[min_key]
         max_bio_val = stats_dict[max_key]    
         
-        bioprop = biomass.visualize(**{"min": min_bio_val, "max": max_bio_val, "palette": palette_biomass})        
+        palette = ['#000033','#9400D3','#FF00FF','#00FFFF','#FFFFFF']
+        bioprop = biomass.visualize(**{"min": min_bio_val, "max": max_bio_val, "palette": palette})        
         
-        # 6. Contorno da Propriedade
-        empty = ee.Image().byte()
-        outline = empty.paint(ee.FeatureCollection([ee.Feature(roi)]), 1, 3)
-        outline = outline.updateMask(outline)
-        outline_rgb = outline.visualize(**{"palette":['FF0000']})
+        base_image = _get_base_image(roi=roi, year=year)
 
-        # 7. Unificação e Recorte (Buffer de 400m para contexto)
-        final_image = base_collection.blend(bioprop.clip(roi))
-        final_image = final_image.blend(outline_rgb).clip(roi.buffer(256).bounds());
+        outline = _draw_feature_boundaries(roi=roi)
+
+        final_image = base_image.blend(bioprop.clip(roi))
+        final_image = final_image.blend(outline).clip(roi.buffer(_FEATURE_BUFFER).bounds());
         
-        # 8. Geração de URL e Download (Resolução ajustada para 512)
-        url = final_image.getThumbURL({"dimensions": 512,"format": "png"})
+        url = final_image.getThumbURL({"dimensions":_IMAGE_DIMENSION, "format": "png"})
         
         resposta = requests.get(url, timeout=60)
         resposta.raise_for_status()
     
-        # 9. Conversão PIL
         img = PIL.Image.open(BytesIO(resposta.content))
 
-        # 10. Inserção da Legenda (Usando os valores que já temos em memória)
         img = add_legend(
             img, 
             title=f"Biomassa\npasto ({str(2024)})", 
             vmin=round(float(min_bio_val) * 0.09), # ton->pixel 
             vmax=round(float(max_bio_val) * 0.09), # ton->pixel
-            palette=palette_biomass
+            palette=palette
         )
 
         return img
 
-    except ValueError:
-        raise RuntimeError(
-            f"Peça desculpas e informe que houve um erro.\n"
-            "Peça ao usuário que tente novamente mais tarde."
-        )
-    except ee.EEException:
+    except ValueError as error:
+        log_error(traceback.format_exc())
+        raise error
+    except ee.EEException as error:
+        log_error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve uma falha de processamento.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
-    except requests.exceptions.HTTPError:
+    except requests.exceptions.HTTPError as error:
+        log_error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que o servidor de imagens do satélite falhou.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
-    except requests.exceptions.RequestException:
+    except requests.exceptions.RequestException as error:
+        log_error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve um problema de conexão ao baixar o mapa de biomassa.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
-    except Exception:
+    except Exception as error:
+        log_error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve um erro inesperado.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
     
+
+def retrieve_feature_soil_texture_image(coords: List[List[List[List[float]]]]):
+    try:
+        PALETTE = {
+            'Afloramento':'#707070',
+            'Muito Argiloso':'#a83800',
+            'Argila':'#aa8686',
+            'Siltoso':'#298289',
+            'Arenoso':'#fffe73',
+            'Médio':'#d7c5a5', 
+        }
+
+        roi = ee.Geometry.MultiPolygon(coords)
+        
+        soil_texture_asset = ee.ImageCollection("projects/mapbiomas-public/assets/brazil/soil/collection3/mapbiomas_brazil_collection3_soil_textural_group_v1")
+        soil_texture = soil_texture_asset.toBands().select(['textural_group_000_030_v1_textural_group'])
+        soil_texture = soil_texture.rename(['0-30cm'])
+
+        palette = ['#707070','#a83800','#aa8686','#298289','#fffe73','#d7c5a5']
+        final = soil_texture.visualize(**{"min": 1, "max": 6, "palette": palette}) 
+        
+        base_image = _get_base_image(roi=roi)
+
+        outline = _draw_feature_boundaries(roi=roi)
+
+        final_image = base_image.blend(final.clip(roi))
+        final_image = final_image.blend(outline).clip(roi.buffer(_FEATURE_BUFFER).bounds());
+            
+        url = final_image.getThumbURL({"dimensions": _IMAGE_DIMENSION, "format": "png"})
+            
+        resposta = requests.get(url, timeout=60)
+        resposta.raise_for_status()
+        
+        img_pil = PIL.Image.open(BytesIO(resposta.content)) 
+        img_pil = add_legend_descriptor(img_pil,"Textura Solo", PALETTE)
+
+        return img_pil
+    
+    except ee.EEException as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Falha ao processar as coordenadas no satélite. "
+            f"Verifique se as coordenadas da área estão corretas. Detalhes: {str(error)}"
+        )
+    except requests.exceptions.HTTPError as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"O servidor de imagens do satélite retornou um erro. "
+            f"Tente solicitar a imagem novamente em alguns instantes. Detalhes: {str(error)}"
+        )
+    except requests.exceptions.RequestException as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Não foi possível baixar a imagem por falha de conexão. "
+            f"Pode haver instabilidade na rede. Detalhes: {str(error)}"
+        )
+    except PIL.UnidentifiedImageError as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"O arquivo recebido do satélite está corrompido ou num formato inesperado. Detalhes: {str(error)}"
+        )
+    except Exception as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Ocorreu um erro inesperado ao gerar a imagem da fazenda. Detalhes: {str(error)}"
+        )
+
 
 def query_pasture_statistics(coords: List[List[List[List[float]]]], year: int) -> PropertyStats:
     """
@@ -304,7 +441,11 @@ def query_pasture_statistics(coords: List[List[List[List[float]]]], year: int) -
                 age_data_list.append(age_data)
 
         # ==================== Query Vigor ====================
-        VIGOR_DICT = {'1':'Baixo', '2':'Médio', '3':'Alto'}
+        VIGOR_DICT = {
+            '1':'Baixo: pastagens com baixo vigor vegetativo e indícios de degradação severa, potencialmente biológica.',
+            '2':'Médio: pastagens com médio vigor vegativo e indícios de degração moderada.',
+            '3':'Alto: pastagens com alto vigor vegetativo.'
+        }
 
         vigor_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_vigor_v3')
         last_vigor = vigor_asset.select(year - 2000)
@@ -385,35 +526,76 @@ def query_pasture_statistics(coords: List[List[List[List[float]]]], year: int) -
 
         return result
     
-    except ValueError as e:
-        error = traceback.format_exc()
-        log_error(error)
+    except ValueError as error:
+        log_error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve um erro.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
-    except ee.EEException as e:
-        log_error(str(e))
+    except ee.EEException as error:
+        log_error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve uma falha de processamento.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
-    except requests.exceptions.HTTPError as e:
-        log_error(str(e))
+    except requests.exceptions.HTTPError as error:
+        log_error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que o servidor de imagens do satélite falhou.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
-    except requests.exceptions.RequestException as e:
-        log_error(str(e))
+    except requests.exceptions.RequestException as error:
+        log_error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve um problema de conexão ao baixar o mapa de biomassa.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
-    except Exception:
-        error = traceback.format_exc()
-        log_error(error)
+    except Exception as error:
+        log_error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve um erro inesperado.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
+    
+
+def query_topographic_stats(coords: List[List[List[List[float]]]]):
+    from app.utils.interfaces.property_stats import Value
+
+    roi = ee.Geometry.MultiPolygon(coords)
+    
+    #Buscar a coleção
+    dem_col = ee.ImageCollection("COPERNICUS/DEM/GLO30").filterBounds(roi)
+    
+    #Pegar a projeção de uma imagem original para não perder a escala em metros
+    proj = dem_col.first().projection()
+    
+    #Criar o mosaico e forçar a projeção correta
+    demdata = dem_col.select('DEM').mosaic().setDefaultProjection(proj)
+    
+    # 4. Calcular o slope (agora ele entende a relação metros/metros)
+    slope = ee.Terrain.slope(demdata)
+    
+    # Cálculo das estatísticas
+    statsdem = demdata.reduceRegion(
+        reducer=ee.Reducer.mean(),
+        geometry=roi,
+        scale=30,
+        maxPixels=1e13
+    )
+    
+    statsslope = slope.reduceRegion(
+        reducer=ee.Reducer.mean(),
+        geometry=roi,
+        scale=30,
+        maxPixels=1e13
+    )
+
+    #Converter o valor de elevacao e declividade
+    res_elev = statsdem.getInfo().get('DEM', 0)
+    res_slope = statsslope.getInfo().get('slope', 0)
+
+    #Retornar os valores de elevação e declividade
+    return TopographicStats(
+        elevation=Value(value=round(res_elev, 2), unity="metros"),
+        slope=Value(value=round(res_slope, 2), unity="graus")
+    )

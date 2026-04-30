@@ -10,7 +10,7 @@ from app.utils.interfaces.property_stats import PastureStats
 from app.utils.interfaces.property_record import RuralProperty
 
 
-@tool(tool_hooks=[validate_selected_property_hook, validate_rate_limit_hook])
+@tool(tool_hooks=[validate_selected_property_hook])
 def generate_property_image(run_context: RunContext, car_codes: list[str]) -> ToolResult:
     """
     Gera uma imagem de satélite em alta resolução (RGB) da propriedade rural.
@@ -33,13 +33,14 @@ def generate_property_image(run_context: RunContext, car_codes: list[str]) -> To
         return ToolResult(content=f"Erro ao gerar imagem: {str(e)}")
 
 
-@tool(tool_hooks=[validate_selected_property_hook, validate_rate_limit_hook])
+@tool(tool_hooks=[validate_selected_property_hook])
 def generate_biomass_image(run_context: RunContext, car_codes: list[str], year: int = 2024) -> ToolResult:
     """
     Gera um mapa temático da biomassa (matéria seca) sobre os limites da propriedade rural.
     """
     try:
         registered_properties = run_context.session_state['registered_properties']
+        selected_property = next((prop for prop in registered_properties if prop["car_code"] == ', '.join(car_codes)), None)
         selected_property = next((prop for prop in registered_properties if prop["car_code"] == ', '.join(car_codes)), None)
         selected_property = RuralProperty.model_validate(selected_property)
 
