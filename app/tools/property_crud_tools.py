@@ -312,32 +312,6 @@ def reject_car_selection(run_context: RunContext):
 
 
 @tool(stop_after_tool_call=True)
-def get_selected_property(run_context: RunContext) -> Tuple[str, str]:
-    """
-    Retorna o nome e o identificador CAR da propriedade selecionada para análises.
-
-    return:
-        tuple: Nome e identificador CAR da propriedade selecionada.
-    """
-    selected_property = run_context.session_state.get('selected_property', None)
-
-    return (selected_property.get("nickname", None), selected_property["car_code"])
-
-
-@tool(stop_after_tool_call=True)
-def get_registered_properties(run_context: RunContext) -> List[Tuple[str, str]]:
-    """
-    Retorna a lista de propriedades registradas no sistema.
-    
-    return:
-        list: Lista de propriedades registradas no sistema.
-    """
-    registered_properties = run_context.session_state.get('registered_properties', [])
-
-    return [(p.get("nickname", None), p["car_code"]) for p in registered_properties] or None
-
-
-@tool(stop_after_tool_call=True)
 def set_property_name(run_context: RunContext, car_codes: List[str], name: str):
     """
     Atualizar o nome propriedade registrada no sistema.

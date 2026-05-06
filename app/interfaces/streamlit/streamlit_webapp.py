@@ -72,7 +72,8 @@ if not st.session_state["logged_in"]:
             selected_obj = st.selectbox(
                 "Escolha o usuário:", 
                 stored_users, 
-                format_func=lambda x: x['name']
+                #format_func=lambda x: x['name']
+                format_func=lambda x: x.get('user_name', 'Usuário')
             )
             
             if st.button("Entrar"):

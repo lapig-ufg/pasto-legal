@@ -1,16 +1,18 @@
 import textwrap
 from agno.run import RunContext
 from agno.agent import Agent
-from agno.models.google import Gemini
 from agno.skills import Skills, LocalSkills, SkillValidationError
 from agno.tools.calculator import CalculatorTools
 
 from app.tools.property_analyst_tools import (
     generate_property_image,
     generate_biomass_image,
-    get_pasture_stats
+    generate_soil_texture_image,
+    get_pasture_stats,
+    get_topographic_stats
     )
 from app.utils.interfaces.property_record import PropertyRecord
+from app.configs.models import model
 
 
 try:
@@ -58,6 +60,11 @@ def get_instructions(run_context: RunContext):
                 
         <instructions>
         {persona_instructions}
+        - Sempre informe o ano de referência das análise. Use 2024 como ano de referência para os dados mais atualizados.
+        - Seja o mais conciso possível, explicando os resultados de forma simples.
+        - Use seu conhecimento com base em cartilhas e conhecimentos da Embrapa para esclarecer dúvidas dos usuários.
+        - Gere imagens apenas quando explicitamente pedido pelo usuário.
+        - Gere apenas um tipo de imagem por vez. Nunca gere mais de um tipo de imagem por vez.
         - Use markdown no formato do WhatsApp. Não use bullet points.
         <instructions>
                                                                   
@@ -74,7 +81,7 @@ def get_instructions(run_context: RunContext):
     return instructions
 
 
-analyst_agent = Agent(
+property_analyst_agent = Agent(
     name="Agente Extensionista Agrônomo",
     role=(
         "Especialista em agropecuária e geoprocessamento. Resposável por análises de dados, "
@@ -96,11 +103,13 @@ analyst_agent = Agent(
     tools=[
         CalculatorTools(exclude_tools=["is_prime", "factorial"]),
         get_pasture_stats,
+        get_topographic_stats,
         generate_property_image,
-        generate_biomass_image
+        generate_biomass_image,
+        generate_soil_texture_image
     ],
     skills=skills,
     use_instruction_tags=False,
     instructions=get_instructions,
-    model=Gemini(id="gemini-3-flash-preview")
+    model=model
 )
