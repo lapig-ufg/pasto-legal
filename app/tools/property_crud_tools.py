@@ -16,13 +16,13 @@ from app.utils.scripts.sicar_scripts import (
     )
 from app.utils.scripts.image_scripts import get_mosaic
 from app.utils.scripts.gee_scripts import retrieve_feature_images
-from app.utils.interfaces.property_record import PropertyRecord, RuralProperty
+from app.utils.interfaces.property_record import RuralProperty
 
 
 # TODO: Se o usuário informar uma URL de coordenadas de uma propriedade que já existe no sistema, validar se a propriedade existe por meio do CAR. Se existir então retornar menssagem que já existe.
 
 @tool(stop_after_tool_call=True)
-def register_feature_by_coordinate(run_context: RunContext, latitude: float, longitude: float, name: str = None):
+def register_feature_by_coordinate(run_context: RunContext, latitude: float, longitude: float):
     """
     Registra uma nova propriedade rural baseando-se nas coordenadas fornecidas.
 
@@ -44,20 +44,19 @@ def register_feature_by_coordinate(run_context: RunContext, latitude: float, lon
         )
     
     registered_map = {
-        prop["car_code"]: property_record
-        for property_record in run_context.session_state.get("registered_properties", [])
-        for prop in property_record["properties"]
+        prop["car_code"]: prop
+        for prop in run_context.session_state.get("registered_properties", [])
     }
     for prop in properties:
-        car_code = prop["car_code"]
+        car_code = prop.car_code
         if car_code in registered_map:
             record = registered_map[car_code]
-            property_record = PropertyRecord.model_validate(record) 
+            property_record = RuralProperty.model_validate(record) 
             return ToolResult(content=str(property_record))
 
-    run_context.session_state["candidate_properties"] = properties 
+    run_context.session_state["candidate_properties"] = [prop.model_dump() for prop in properties] 
 
-    imgs = retrieve_feature_images([prop["spatial_features"]["coordinates"][0] for prop in properties])
+    imgs = retrieve_feature_images([prop.get_coords()[0] for prop in properties])
     
     if len(properties) == 1:
         img = imgs[0]
@@ -65,14 +64,10 @@ def register_feature_by_coordinate(run_context: RunContext, latitude: float, lon
         buffer = BytesIO()
         img.save(buffer, format="PNG")
 
-        result_text = (
-            f"  > Identificador CAR: {properties[0]["car_code"]}, "
-            f"Tamanho da área: {round(properties[0]["spatial_features"]["total_area"])} ha, "
-            f"Município: {properties[0]["spatial_features"]["municipality"]}."
-        )
+        result_text = f"> {properties[0].describe()}"
 
         return ToolResult(
-            content=(f"Pergunte ao usuário se a seguinte propriedade é a correta:\n{result_text}"),
+            content=f"Pergunte ao usuário se a seguinte propriedade é a correta:\n{result_text}",
             images=[Image(content=buffer.getvalue())]
             )
     
@@ -83,16 +78,12 @@ def register_feature_by_coordinate(run_context: RunContext, latitude: float, lon
         mosaic.save(buffer, format="PNG")
 
         options_text = []
-        for i, p in enumerate(properties):
-            options_text.append(
-                f"  > Opção {i + 1} - Identificador CAR {p["car_code"]}, "
-                f"Tamanho da área {round(p["spatial_features"]["total_area"])} ha, "
-                f"município de {p["spatial_features"]["municipality"]}."
-            )
+        for index, prop in enumerate(properties):
+            options_text.append(f"  > Opção {index + 1} - {prop.describe()}")
         result_text = "\n".join(options_text)
 
         return ToolResult(
-            content=(f"Pergunte ao usuário qual das seguinte propriedades é a correta:\n{result_text}"),
+            content=f"Pergunte ao usuário qual das seguinte propriedades é a correta:\n{result_text}",
             images=[Image(content=buffer.getvalue())]
             )
 
@@ -125,6 +116,7 @@ def register_feature_by_car(run_context: RunContext, car_codes: List[str], name:
         )
         
     properties = fetch_property_by_car_locally(car_codes=car_codes)
+    _property = RuralProperty.unify(properties)
 
     if not properties:
         return ToolResult(
@@ -133,58 +125,32 @@ def register_feature_by_car(run_context: RunContext, car_codes: List[str], name:
                 "Peça que tente novamente e verificar se as coordenadas estão corretas."
             )
         )
-    
-    new_record = PropertyRecord(nickname=name, properties=[RuralProperty.model_validate(prop) for prop in properties])
-    old_registered_properties = run_context.session_state.get("registered_properties", [])
-    old_registered_properties.append(new_record.model_dump())
-    run_context.session_state["registered_properties"] = old_registered_properties
 
-    imgs = retrieve_feature_images([prop["spatial_features"]["coordinates"][0] for prop in properties])
+    run_context.session_state["candidate_properties"] = [_property.model_dump()] 
+
+    imgs = retrieve_feature_images(_property.get_coords())
+
+    mosaic = get_mosaic(imgs)
+
+    buffer = BytesIO()
+    mosaic.save(buffer, format="PNG")
+
+    result_text = f"  > {_property.describe()}"
     
     if len(properties) == 1:
-        img = imgs[0]
-
-        buffer = BytesIO()
-        img.save(buffer, format="PNG")
-
-        result_text = (
-            f"  > Identificador CAR: {properties[0]["car_code"]}, "
-            f"Tamanho da área: {round(properties[0]["spatial_features"]["total_area"])} ha, "
-            f"Município: {properties[0]["spatial_features"]["municipality"]}."
-        )
-
-        # TODO: Melhorar prompt de resultado. Uma explicação melhor do estado do sistema.
         return ToolResult(
             content=(
-                "Informe ao usuário que os seguintes CARs foram unificados e registrada em uma unica propriedade no sistema:\n"
-                f"{result_text}\n"
-                "Seja proativo, pergunte ao usuário se ele gostaria de atribuir um nome para a propriedade."),
+                f"Informe ao usuário que a seguinte propriedade foi encontrada:\n{result_text}\n"
+                "Peça que para o usuário confirmar se a propriedade é a correta."),
             images=[Image(content=buffer.getvalue())]
             )
     
     else:
-        mosaic = get_mosaic(imgs)
-
-        # TODO: função para fazer mosaico sem números.
-        buffer = BytesIO()
-        mosaic.save(buffer, format="PNG")
-
-        options_text = []
-        for i, p in enumerate(properties):
-            options_text.append(
-                f"- Identificador CAR {p["car_code"]}, "
-                f"Tamanho da área {round(p["spatial_features"]["total_area"])} ha, "
-                f"município de {p["spatial_features"]["municipality"]}."
-            )
-        result_text = "\n".join(options_text)
-
-        # TODO: Melhorar prompt de resultado. Uma explicação melhor do estado do sistema.
         return ToolResult(
             content=(
-                "Informe ao usuário que as seguintes propriedades foram unificadas e registradas no sistema:\n"
-                f"{result_text}\n"
-                "Seja proativo, pergunte ao usuário se ele gostaria de atribuir um nome para a união das propriedades."
-                ),
+                f"Informe ao usuário que as seguintes propriedades foram encontrada:\n{result_text}\n"
+                "Informe que elas foram agrupadas em um único registro que o sistema ira interpretar como uma propriedade única.\n"
+                "Peça que para o usuário confirmar se as propriedades são as corretas."),
             images=[Image(content=buffer.getvalue())]
             )
 
@@ -220,24 +186,23 @@ def register_feature_by_url(run_context: RunContext, url: str) -> ToolResult:
     if not properties:
         return (
             "Peça desculpas ao usuário e informe que nenhuma propriedade foi encontrada nesta coordenada.\n"
-            "Peça que tente novamente e verificar se a URL do Google Maps esta correta."
+            "Peça que tente novamente e verificar se as coordenadas estão corretas."
         )
     
     registered_map = {
-        prop["car_code"]: property_record
-        for property_record in run_context.session_state.get("registered_properties", [])
-        for prop in property_record["properties"]
+        prop["car_code"]: prop
+        for prop in run_context.session_state.get("registered_properties", [])
     }
     for prop in properties:
-        car_code = prop["car_code"]
+        car_code = prop.car_code
         if car_code in registered_map:
             record = registered_map[car_code]
-            property_record = PropertyRecord.model_validate(record) 
+            property_record = RuralProperty.model_validate(record) 
             return ToolResult(content=str(property_record))
-    
-    run_context.session_state["candidate_properties"] = properties
-    
-    imgs = retrieve_feature_images([p["spatial_features"]["coordinates"][0] for p in properties])
+
+    run_context.session_state["candidate_properties"] = [prop.model_dump() for prop in properties] 
+
+    imgs = retrieve_feature_images([prop.get_coords()[0] for prop in properties])
     
     if len(properties) == 1:
         img = imgs[0]
@@ -245,14 +210,10 @@ def register_feature_by_url(run_context: RunContext, url: str) -> ToolResult:
         buffer = BytesIO()
         img.save(buffer, format="PNG")
 
-        result_text = (
-            f"  > Identificador CAR: {properties[0]["car_code"]}, "
-            f"Tamanho da área: {round(properties[0]["spatial_features"]["total_area"])} ha, "
-            f"Município: {properties[0]["spatial_features"]["municipality"]}."
-        )
+        result_text = f"> {properties[0].describe()}"
 
         return ToolResult(
-            content=(f"Pergunte ao usuário se a seguinte propriedade é a correta:\n{result_text}"),
+            content=f"Pergunte ao usuário se a seguinte propriedade é a correta:\n{result_text}",
             images=[Image(content=buffer.getvalue())]
             )
     
@@ -263,16 +224,12 @@ def register_feature_by_url(run_context: RunContext, url: str) -> ToolResult:
         mosaic.save(buffer, format="PNG")
 
         options_text = []
-        for i, p in enumerate(properties):
-            options_text.append(
-                f"  > {i + 1} - Identificador CAR {p["car_code"]}, "
-                f"Tamanho da área {round(p["spatial_features"]["total_area"])} ha, "
-                f"município de {p["spatial_features"]["municipality"]}."
-            )
+        for index, prop in enumerate(properties):
+            options_text.append(f"  > Opção {index + 1} - {prop.describe()}")
         result_text = "\n".join(options_text)
 
         return ToolResult(
-            content=(f"Pergunte ao usuário qual das seguinte propriedades é a correta:\n{result_text}"),
+            content=f"Pergunte ao usuário qual das seguinte propriedades é a correta:\n{result_text}",
             images=[Image(content=buffer.getvalue())]
             )
 
@@ -300,9 +257,9 @@ def select_car_from_list(run_context: RunContext, selection: int):
     run_context.session_state['selected_property'] = selected_property
     run_context.session_state['candidate_properties'] = []
 
-    new_record = PropertyRecord(properties=[RuralProperty.model_validate(selected_property)])
+    new_property = RuralProperty.model_validate(selected_property)
     old_registered_properties = run_context.session_state.get("registered_properties", [])
-    old_registered_properties.append(new_record.model_dump())  
+    old_registered_properties.append(new_property.model_dump())  
     run_context.session_state["registered_properties"] = old_registered_properties                             
 
     return ToolResult(
@@ -327,13 +284,12 @@ def confirm_car_selection(run_context: RunContext):
     
     selected_property = candidate_properties[0]
 
-    run_context.session_state['selected_property'] = selected_property
     run_context.session_state['candidate_properties'] = []
 
-    new_record = PropertyRecord(properties=[RuralProperty.model_validate(selected_property)])
+    new_property = RuralProperty.model_validate(selected_property)
     old_registered_properties = run_context.session_state.get("registered_properties", [])
-    old_registered_properties.append(new_record.model_dump())  
-    run_context.session_state["registered_properties"] = old_registered_properties    
+    old_registered_properties.append(new_property.model_dump())  
+    run_context.session_state["registered_properties"] = old_registered_properties         
 
     return ToolResult(
         content=(
@@ -356,47 +312,21 @@ def reject_car_selection(run_context: RunContext):
 
 
 @tool(stop_after_tool_call=True)
-def get_selected_property(run_context: RunContext) -> Tuple[str, str]:
-    """
-    Retorna o nome e o identificador CAR da propriedade selecionada para análises.
-
-    return:
-        tuple: Nome e identificador CAR da propriedade selecionada.
-    """
-    selected_property = run_context.session_state.get('selected_property', None)
-
-    return (selected_property.get("nickname", None), selected_property["car_code"])
-
-
-@tool(stop_after_tool_call=True)
-def get_registered_properties(run_context: RunContext) -> List[Tuple[str, str]]:
-    """
-    Retorna a lista de propriedades registradas no sistema.
-    
-    return:
-        list: Lista de propriedades registradas no sistema.
-    """
-    registered_properties = run_context.session_state.get('registered_properties', [])
-
-    return [(p.get("nickname", None), p["car_code"]) for p in registered_properties] or None
-
-
-@tool(stop_after_tool_call=True)
-def set_property_name(run_context: RunContext, property_id: str, name: str):
+def set_property_name(run_context: RunContext, car_codes: List[str], name: str):
     """
     Atualizar o nome propriedade registrada no sistema.
 
     Args:
-        car(str): Código de Cadastro Ambiental Rural (CAR)
+        car_codes(str): Códigos CAR da propriedade.
         name (str): Nome da propriedade.
     """
     registered_properties = run_context.session_state.get('registered_properties', [])
-    selected_property = next((prop for prop in registered_properties if prop["id"] == property_id), None)
+    selected_property = next((prop for prop in registered_properties if prop["car_code"] == ', '.join(car_codes)), None)
     
     if selected_property is None:
         return ToolResult(content="Não foi possível registrar o nome da propriedade.")
     
-    new_selected_property = PropertyRecord.model_validate(selected_property)
+    new_selected_property = RuralProperty.model_validate(selected_property)
     new_selected_property.nickname = name
 
     registered_properties.remove(selected_property)

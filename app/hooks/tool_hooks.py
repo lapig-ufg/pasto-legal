@@ -12,7 +12,7 @@ def validate_selected_property_hook(run_context: RunContext, function_call: Call
     """
     session_state = run_context.session_state
 
-    if session_state and 'selected_property' in session_state:
+    if session_state and 'registered_properties' in session_state:
         return function_call(**arguments)
 
     return (

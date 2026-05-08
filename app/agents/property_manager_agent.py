@@ -2,14 +2,11 @@ import textwrap
 
 from agno.run import RunContext
 from agno.agent import Agent
-from agno.models.google import Gemini
 
 from app.tools.property_crud_tools import (
     remove_property,
     remove_registered_properties,
     set_property_name,
-    get_registered_properties,
-    get_selected_property,
     register_feature_by_url,
     register_feature_by_car,
     register_feature_by_coordinate,
@@ -17,7 +14,8 @@ from app.tools.property_crud_tools import (
     confirm_car_selection,
     reject_car_selection
     )
-from app.utils.interfaces.property_record import PropertyRecord, RuralProperty
+from app.utils.interfaces.property_record import RuralProperty
+from app.configs.models import model
 
 
 def get_instructions(run_context: RunContext):
@@ -48,7 +46,7 @@ def get_instructions(run_context: RunContext):
         else:
             options_text = []
             for i, prop in enumerate(candidate_properties):
-                options_text.append(f"> Opção {i + 1} - {str(prop)}")
+                options_text.append(f"> Opção {i + 1} - {prop.describe()}")
             result_text = "\n".join(options_text)
 
             instructions = textwrap.dedent(f"""
@@ -63,9 +61,9 @@ def get_instructions(run_context: RunContext):
                 - Use markdown no formato do WhatsApp.
             """).strip()
     else:
-        registered_properties = [PropertyRecord.model_validate(record) for record in session_state.get("registered_properties", [])]
+        registered_properties = [RuralProperty.model_validate(prop) for prop in session_state.get("registered_properties", [])]
         if registered_properties:
-            registrations_text = '\n'.join([str(record) for record in registered_properties])
+            registrations_text = '\n'.join([str(prop) for prop in registered_properties])
         else:
             registrations_text = "Vazio"
 
@@ -77,6 +75,8 @@ def get_instructions(run_context: RunContext):
             <instructions>
             - Utilize as ferramentas disponíveis de forma estrita, respeitando rigorosamente os parâmetros e as orientações de uso de cada uma.
             - É proibido invocar as ferramentas `confirm_car_selection`, `select_car_from_list` e `reject_car_selection`. Nunca tente usá-las sob nenhuma hipótese.
+            - Não use `register_feature_by_coordinate` caso o código CAR/SICAR já estiver registrado.
+            - Se o código CAR/SICAR não estiver registrado, utilize `register_feature_by_coordinate` para registra-lo.
             <instructions>
                                        
             <workflow>
@@ -106,8 +106,6 @@ property_manager_agent = Agent(
         remove_property,
         remove_registered_properties,
         set_property_name,
-        get_registered_properties,
-        get_selected_property,
         register_feature_by_url,
         register_feature_by_car,
         register_feature_by_coordinate,
@@ -118,5 +116,5 @@ property_manager_agent = Agent(
     markdown=True,
     use_instruction_tags=False,
     instructions=get_instructions,
-    model=Gemini(id="gemini-3-flash-preview", temperature=0)
+    model=model
 )

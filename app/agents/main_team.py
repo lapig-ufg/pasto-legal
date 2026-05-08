@@ -5,14 +5,17 @@ from agno.run import RunContext
 from agno.team.team import Team
 from agno.models.google import Gemini
 
-from app.agents import analyst_agent, property_manager_agent
+from app.agents import property_analyst_agent, property_manager_agent, question_answer_agent
 from app.managers.memory_manager import memory_manager
 from app.database.agno_db import db
 from app.tools.tts_tools import audioTTS
 from app.tools.feedback_tools import record_frustration_feedback, record_analisys_feedback
 from app.tools.version_tools import consult_update_notes
 from app.hooks.pre_hooks import validate_phone_authorization
+from app.guardrails.pii_detection_guardrail import pii_detection_guardrail
 from app.utils.interfaces.property_record import PropertyRecord
+from app.configs.models import model
+
 
 
 if not (APP_ENV := os.environ.get('APP_ENV')):
@@ -40,16 +43,17 @@ def get_instructions(run_context: RunContext) -> str:
 
     if session_state.get("candidate_properties", None):
         instructions = textwrap.dedent("""\
-            - O usuário está em um fluxo de atendimento focado na seleção de propriedade rural (CAR).
-            - Você deve usar a ferramenta `delegate_task_to_member` para repassar o controle da conversa ao `Gestor de Propriedades Rurais`.
+            - O usuário está em um fluxo de atendimento focado na confirmação/seleção de propriedade rural (CAR).
+            - O usuário deve completar o fluxo de seleção de propriedade rural antes de proceguir com as análise.
+            - Você deve usar a ferramenta `delegate_task_to_member` para repassar o controle da conversa ao `gestor-de-propriedades-rurais` para finalizar o cadastro da propriedade.
             - Não responda diretamente ao usuário com mensagens de texto.
-            - Não chame o agente 'Agente Analista'.
             - Não use a ferramenta `update_user_memory`.
+            - Chame o agente `gestor-de-propriedades-rurais`.
         """).strip()
     else:
         registered_properties = [PropertyRecord.model_validate(record) for record in session_state.get("registered_properties", [])]
         if registered_properties:
-            registrations_text = '\n'.join([str(record) for record in registered_properties])
+            registrations_text = '\n'.join([str(prop) for prop in registered_properties])
         else:
             registrations_text = "Vazio"
 
@@ -66,12 +70,16 @@ def get_instructions(run_context: RunContext) -> str:
             - Seja sempre muito educado, feliz e demonstre entusiasmo em ajudar o produtor.
             - Você coordena outros agentes, mas isso deve ser invisível ao usuário. Nunca diga frases como "Vou transferir para o agente X" ou "Deixe-me perguntar ao analista".
             - Nunca diga "preciso confirmar isso depois".
-            - Use markdown no formato do WhatsApp. Não use bullet points.
+            - Se a resposta do membro da equipe for para o usuário, entregue-a integralmente, sem alterações ou comentários adicionais.
+            - Se a resposta do membro da equipe for uma instrução, execute-a imediatamente aplicando suas diretrizes e conhecimentos.
+            - Use markdown no formato do WhatsApp. Nunca use bullet points.
             <instructions>
                         
             <workflow>
-            - Se o usuário enviar uma coordenadas geográficas, identificar CAR/SICAR ou URL do Google Maps não registradas SEMPRE:
-                - Chame o `Gestor de Propriedades` Rurais imediatamente.                                         
+            - Sempre que o usuário enviar uma coordenadas geográficas, URL do Google Maps ou código CAR/SICAR ainda não registrado no sistema:
+                - AÇÕES:
+                    1. Chame o `gestor-de-propriedades-rurais` Rurais imediatamente, mesmo que a operação tenha falhado anteriormente.
+                    2. Oriente o usuário de acordo com as instruções retornadas pelo agente.                                         
 
             - Se o usuário enviar um arquivo de áudio ou vídeo:
                 - AÇÕES:
@@ -101,7 +109,7 @@ def get_instructions(run_context: RunContext) -> str:
 
 pasto_legal_team = Team(
     name="Equipe PastoLegal",
-    model=Gemini(id="gemini-3-flash-preview", temperature=0),
+    model=model,
     db=db,
     enable_user_memories=True,
     memory_manager=memory_manager,
@@ -109,8 +117,9 @@ pasto_legal_team = Team(
     num_history_runs=3,
     add_session_summary_to_context=True,
     members=[
-        analyst_agent,
-        property_manager_agent
+        property_analyst_agent,
+        property_manager_agent,
+        question_answer_agent
         ],
     debug_mode=True,
     pre_hooks=pre_hooks,
