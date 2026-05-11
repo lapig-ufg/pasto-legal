@@ -12,11 +12,10 @@ from app.tools.tts_tools import audioTTS
 from app.tools.feedback_tools import record_frustration_feedback, record_analisys_feedback
 from app.tools.version_tools import consult_update_notes
 from app.guardrails.pii_detection_guardrail import pii_detection_guardrail
-from app.utils.interfaces.property_record import PropertyRecord
+from app.utils.interfaces.property_record import RuralProperty
 from app.configs.models import model
 from app.tools.user_tools import set_user_persona
-from app.hooks.pre_hooks import validate_phone_authorization, detect_user_persona_hook
-
+from app.hooks.pre_hooks import validate_phone_authorization
 
 if not (APP_ENV := os.environ.get('APP_ENV')):
     raise ValueError("APP_ENV environment variables must be set.")
@@ -27,22 +26,22 @@ if APP_ENV == "production":
     debug_mode = False
     pre_hooks.append(validate_phone_authorization)
     pre_hooks.append(pii_detection_guardrail)
-    pre_hooks.append(detect_user_persona_hook)
 elif APP_ENV == "stagging":
     debug_mode = True
     pre_hooks.append(validate_phone_authorization)
     pre_hooks.append(pii_detection_guardrail)
-    pre_hooks.append(detect_user_persona_hook)
+
 elif APP_ENV == "development":
     debug_mode = True
     pre_hooks.append(pii_detection_guardrail)
-    pre_hooks.append(detect_user_persona_hook)
+
+
 
 
 def get_instructions(run_context: RunContext) -> str:
     session_state = run_context.session_state or {}
 
-    user_persona = session_state.get("user_persona", "Desconhecido") 
+    user_persona = session_state.get("user_persona", "Desconhecido")  
         # TODO: Implementar uma linha de instruções para usuários novos aceitarem os termos e condições.
 
     if session_state.get("candidate_properties", None):
@@ -55,7 +54,7 @@ def get_instructions(run_context: RunContext) -> str:
             - Chame o agente `gestor-de-propriedades-rurais`.
         """).strip()
     else:
-        registered_properties = [PropertyRecord.model_validate(record) for record in session_state.get("registered_properties", [])]
+        registered_properties = [RuralProperty.model_validate(record) for record in session_state.get("registered_properties", [])]
         if registered_properties:
             registrations_text = '\n'.join([str(record) for record in registered_properties])
         else:
@@ -148,7 +147,8 @@ pasto_legal_team = Team(
         audioTTS,
         record_frustration_feedback,
         record_analisys_feedback,
-        consult_update_notes
+        consult_update_notes,
+        set_user_persona
         ],
     description="Você é um coordenador de equipe de IA especializado em pecuária e agricultura, extremamente educado e focado em resolver problemas do produtor rural.",
     use_instruction_tags=False,

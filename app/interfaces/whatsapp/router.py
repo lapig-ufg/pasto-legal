@@ -1,7 +1,5 @@
 import os
 import asyncio
-import tempfile
-import os
 import hashlib
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from time import time
@@ -39,7 +37,6 @@ from app.interfaces.whatsapp.helpers import (
     typing_indicator_async,
     upload_and_send_media_async,
 )
-
 
 if not (VALKEY_HOST:=os.getenv("VALKEY_HOST")):
     raise ValueError("VALKEY_HOST environment variables must be set.")
@@ -217,6 +214,10 @@ def attach_routes(
         name="whatsapp_webhook",
         description="Process incoming WhatsApp messages",
         response_model=WhatsAppWebhookResponse,
+        responses={
+            200: {"description": "Event processed successfully"},
+            403: {"description": "Invalid webhook signature"},
+        },
     )
     async def webhook(request: Request, background_tasks: BackgroundTasks):
         payload = await request.body()
@@ -229,23 +230,16 @@ def attach_routes(
         body = await request.json()
 
         if body.get("object") != "whatsapp_business_account":
+            log_warning(f"Received non-WhatsApp webhook object: {body.get('object')}")
             return WhatsAppWebhookResponse(status="ignored")
 
+        # ACK immediately, process in background. Meta retries if no 200 within ~20s
         for entry in body.get("entry", []):
             for change in entry.get("changes", []):
                 for message in change.get("value", {}).get("messages", []):
-                    phone_number = message.get("from")
-                    if not phone_number:
-                        continue
-                    
-                    user_id = _encrypt_phone(phone_number, encryption_key) if enable_encryption and encryption_key else phone_number
+                    background_tasks.add_task(process_message, message)
 
-                    
-                    # Envia a mensagem direto para o novo motor assíncrono (Debounce com Redis)
-                    background_tasks.add_task(process_message, message)        
-                    return WhatsAppWebhookResponse(status="processing")
-
-    
+        return WhatsAppWebhookResponse(status="processing")
 
     # TODO: Criar um buffer para mensagens pós valkey_execution_lock.
     async def process_message(message: dict):
@@ -404,42 +398,48 @@ def attach_routes(
                 try:
                     while True:
                         await asyncio.sleep(20)
-                        await typing_indicator_async(message_id, config) #
+                        await typing_indicator_async(message_id, config)
                 except asyncio.CancelledError:
                     pass
 
             typing_task = asyncio.create_task(_keep_typing())
-
-            
             try:
                 response = await entity.arun(final_text, **run_kwargs)  # type: ignore[union-attr]
             finally:
                 typing_task.cancel()
 
-            
             if response.status == "ERROR":
-                await send_whatsapp_message_async(phone_number, _ERROR_MESSAGE, config) #
+                await send_whatsapp_message_async(phone_number, _ERROR_MESSAGE, config)
                 log_error(response.content)
                 return
 
-            if response.content:
-                # O split divide a string onde houver [PAUSA], o strip remove espaços e quebras de linha residuais
-                chunks = [chunk.strip() for chunk in response.content.split("[PAUSA]") if chunk.strip()]
-                
-                for i, chunk in enumerate(chunks):
-                    # Envia o pedaço atual
-                    await send_whatsapp_message_async(phone_number, chunk, config)
-                    
-                    # Se não for o último pedaço, aplica o delay e o indicador de digitação
-                    if i < len(chunks) - 1:
-                        await asyncio.sleep(1.5)
-                        # Reacende o indicador de digitação para o próximo bloco
-                        await typing_indicator_async(message_id, config)
-            
-            for attr, media_type in (("images", "image"), ("videos", "video"), ("files", "document"), ("audio", "audio")):
+            if show_reasoning and hasattr(response, "reasoning_content") and response.reasoning_content:
+                reasoning = _format_reasoning(response.reasoning_content)
+                if reasoning:
+                    await send_whatsapp_message_async(phone_number, reasoning, config, italics=True)
+
+            for attr, media_type in (
+                ("images", "image"),
+                ("videos", "video"),
+                ("files", "document"),
+                ("audio", "audio"),
+            ):
                 items = getattr(response, attr, None)
                 if items:
-                    await upload_and_send_media_async(items, media_type, phone_number, config) #
+                    await upload_and_send_media_async(items, media_type, phone_number, config)
+            if response.response_audio:
+                await upload_and_send_media_async(
+                    [response.response_audio], "audio", phone_number, config, send_text_fallback=False
+                )
+
+            response_tools = getattr(response, "tools", None)
+            # Only suppress text if a WA tool ran AND didn't error
+            tools_sent_message = response_tools and any(
+                t.tool_name in _WA_TOOL_NAMES and not t.tool_call_error for t in response_tools
+            )
+            # Send text if no tool already messaged the user
+            if not tools_sent_message and response.content:
+                await send_whatsapp_message_async(phone_number, response.content, config)
 
         except Exception as e:
             log_error(f"Error processing message: {e}")
