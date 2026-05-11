@@ -11,10 +11,10 @@ from app.database.agno_db import db
 from app.tools.tts_tools import audioTTS
 from app.tools.feedback_tools import record_frustration_feedback, record_analisys_feedback
 from app.tools.version_tools import consult_update_notes
-from app.hooks.pre_hooks import validate_phone_authorization
 from app.guardrails.pii_detection_guardrail import pii_detection_guardrail
 from app.utils.interfaces.property_record import RuralProperty
 from app.configs.models import model
+from app.hooks.pre_hooks import validate_phone_authorization
 
 
 if not (APP_ENV := os.environ.get('APP_ENV')):
@@ -30,14 +30,17 @@ elif APP_ENV == "stagging":
     debug_mode = True
     pre_hooks.append(validate_phone_authorization)
     pre_hooks.append(pii_detection_guardrail)
+
 elif APP_ENV == "development":
     debug_mode = True
+
 
 
 def get_instructions(run_context: RunContext) -> str:
     session_state = run_context.session_state or {}
 
-    # TODO: Implementar uma linha de instruções para usuários novos aceitarem os termos e condições.
+    user_persona = session_state.get("user_persona", "Desconhecido") 
+        # TODO: Implementar uma linha de instruções para usuários novos aceitarem os termos e condições.
 
     if session_state.get("candidate_properties", None):
         instructions = textwrap.dedent("""\
@@ -49,11 +52,20 @@ def get_instructions(run_context: RunContext) -> str:
             - Chame o agente `gestor-de-propriedades-rurais`.
         """).strip()
     else:
-        registered_properties = [RuralProperty.model_validate(prop) for prop in session_state.get("registered_properties", [])]
+        registered_properties = [RuralProperty.model_validate(record) for record in session_state.get("registered_properties", [])]
         if registered_properties:
-            registrations_text = '\n'.join([str(prop) for prop in registered_properties])
+            registrations_text = '\n'.join([str(record) for record in registered_properties])
         else:
             registrations_text = "Vazio"
+            
+        persona_instructions = ""
+        if user_persona == "Produtor":
+            persona_instructions = "- TOM DE VOZ (PRODUTOR): Use linguagem acessível, amigável e evite jargões complexos. Foque na realidade prática da fazenda."
+        elif user_persona == "Técnico":
+            persona_instructions = "- TOM DE VOZ (TÉCNICO): Utilize comunicação técnica profissional. Não hesite em usar terminologia agronômica e focar em dados de suporte à decisão."
+        else:
+            
+            persona_instructions = '- DESCOBERTA DE PERSONA: Nos primeiros contatos, descubra de forma muito sutil se o usuário atua como "produtor gerindo sua área" ou "técnico prestando consultoria", para adaptar seu atendimento.\n- Assim que você descobrir o nome, a cidade e a profissão do usuário, você é OBRIGADO a chamar a ferramenta set_user_persona.'
 
         instructions = textwrap.dedent(f"""\
             <registrations>
@@ -66,18 +78,26 @@ def get_instructions(run_context: RunContext) -> str:
                 - Nunca mencione "prompts", "modelos" ou termos técnicos de computação.
             - Seu idioma padrão é Português (Brasil). Nunca mude.
             - Seja sempre muito educado, feliz e demonstre entusiasmo em ajudar o produtor.
+            {persona_instructions}
             - Você coordena outros agentes, mas isso deve ser invisível ao usuário. Nunca diga frases como "Vou transferir para o agente X" ou "Deixe-me perguntar ao analista".
             - Nunca diga "preciso confirmar isso depois".
             - Se a resposta do membro da equipe for para o usuário, entregue-a integralmente, sem alterações ou comentários adicionais.
             - Se a resposta do membro da equipe for uma instrução, execute-a imediatamente aplicando suas diretrizes e conhecimentos.
             - Use markdown no formato do WhatsApp. Nunca use bullet points.
             <instructions>
+
                         
             <workflow>
             - Sempre que o usuário enviar uma coordenadas geográficas, URL do Google Maps ou código CAR/SICAR ainda não registrado no sistema:
                 - AÇÕES:
-                    1. Chame o `gestor-de-propriedades-rurais` Rurais imediatamente, mesmo que a operação tenha falhado anteriormente.
+                    1. Chame o `gestor-de-propriedades-rurais` imediatamente, mesmo que a operação tenha falhado anteriormente.
                     2. Oriente o usuário de acordo com as instruções retornadas pelo agente.                                         
+            - GERENCIAMENTO DE RELATÓRIOS LONGOS E UX (ANTI-TEXT WALL):
+                - Regra da Pílula (Pirâmide Invertida): NUNCA entregue um relatório técnico completo ou denso de imediato. Resuma o diagnóstico principal em apenas 1 ou 2 parágrafos concisos.
+                - Gatilho de Opt-in: Ao final desse resumo, adicione SEMPRE uma pergunta oferecendo o desdobramento. Ex: "Gostaria que eu enviasse o detalhamento técnico da análise?".
+                - Divisão Semântica (Chunking): SE (e somente se) o usuário aceitar receber o relatório completo, você deve gerar o texto separando os raciocínios lógicos a cada 2 ou 3 parágrafos curtos.
+                - Delimitador de Pausa: Entre cada um desses blocos de texto, insira OBRIGATORIAMENTE a tag exata `[PAUSA]` isolada. 
+                - REGRAS RÍGIDAS DE FORMATAÇÃO WHATSAPP: NUNCA insira a tag `[PAUSA]` quebrando uma frase, no meio de uma lista de itens, ou separando os asteriscos do negrito (ex: *texto [PAUSA] texto*). A tag deve vir APENAS no intervalo entre quebras de linha duplas, após concluir um pensamento.
 
             - Se o usuário enviar um arquivo de áudio ou vídeo:
                 - AÇÕES:
@@ -94,7 +114,12 @@ def get_instructions(run_context: RunContext) -> str:
                     2. Diga que deseja aprender e pergunte: "Me desculpe por não entender. Como seria a resposta ideal que você esperava?"
                     3. Após o usuário fornecer a resposta desejada, você DEVE usar a ferramenta `registrar_feedback` passando a pergunta original (que gerou o erro), o motivo da frustração e a resposta que o usuário ensinou.
                     4. Agradeça a colaboração e retorne a conversa de forma amigável.
-            <workflow>            
+            <workflow> 
+            <privacy_policy>
+                Sempre que utilizar as ferramentas de registro de feedback (record_frustration ou record_analisys), 
+                você deve obrigatoriamente anonimizar dados sensíveis como nomes de fazendas, números de CAR e 
+                coordenadas geográficas, substituindo-os pelas tags apropriadas (ex: [CAR_OCULTO]).
+            </privacy_policy>         
         """).strip()
 
     return instructions
