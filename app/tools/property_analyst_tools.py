@@ -10,10 +10,19 @@ from app.utils.interfaces.property_stats import PastureStats
 from app.utils.interfaces.property_record import RuralProperty
 
 
-@tool(tool_hooks=[validate_selected_property_hook])
+@tool(tool_hooks=[validate_selected_property_hook, validate_rate_limit_hook])
 def generate_property_image(run_context: RunContext, car_codes: list[str]) -> ToolResult:
     """
-    Gera uma imagem de satélite em alta resolução (RGB) da propriedade rural.
+    Gera uma imagem de satélite em alta resolução (RGB) da propriedade rural,
+    incluindo a delimitação geográfica, com base nos últimos dois meses.
+
+    Use apenas quando o usuário pedir para visualizar a propriedade.
+
+    params:
+        car_codes (list[str]): Lista de códigos CAR da propriedade.
+
+    Return:
+        ToolResult: Imagem PNG da visão aérea com delimitação geográfica.
     """
     try:
         registered_properties = run_context.session_state['registered_properties']
@@ -33,10 +42,17 @@ def generate_property_image(run_context: RunContext, car_codes: list[str]) -> To
         return ToolResult(content=f"Erro ao gerar imagem: {str(e)}")
 
 
-@tool(tool_hooks=[validate_selected_property_hook])
+@tool(tool_hooks=[validate_selected_property_hook, validate_rate_limit_hook])
 def generate_biomass_image(run_context: RunContext, car_codes: list[str], year: int = 2024) -> ToolResult:
     """
     Gera um mapa temático da biomassa (matéria seca) sobre os limites da propriedade rural.
+
+    params:
+        car_codes (list[str]): Lista de códigos CAR da propriedade.
+        year (int): O ano para a consulta dos dados (2000-2024). O ano mais recente é 2024.
+
+    Return:
+        ToolResult: Mapa renderizado em formato PNG.
     """
     try:
         registered_properties = run_context.session_state['registered_properties']
@@ -60,7 +76,20 @@ def generate_biomass_image(run_context: RunContext, car_codes: list[str], year: 
 @tool(tool_hooks=[validate_selected_property_hook])
 def get_pasture_stats(run_context: RunContext, car_codes: list[str], year: int = 2024):
     """
-    Realiza uma análise técnica detalhada do uso do solo e pastagem.
+    Recupera estatísticas de bimoassa, vigor vegetativo, idade da pastagem e classificação de uso do solo.
+   
+    Use esta ferramenta quando o usuário perguntar sobre:
+    - Saúde ou qualidade da pastagem (degradação, vigor).
+    - Quantidade de biomassa disponível.
+    - Classificação de uso do solo (LULC) incluindo: Silvicultura, Cana, Soja, Arroz, Café, Citrus, etc.
+    - Idade da pastagem.
+
+    params:
+        car_codes (list[str]): Lista de códigos CAR da propriedade.
+        year (str): O ano para a consulta dos dados (2000-2024). O ano mais recente é 2024.
+
+    Return:
+        Dicionário contendo a área de biomassa, vigor da pastagem, idade e uso e cobertura do solo.
     """
     try:
 

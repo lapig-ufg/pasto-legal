@@ -66,11 +66,15 @@ def get_instructions(run_context: RunContext) -> str:
         else:
             
             persona_instructions = '- DESCOBERTA DE PERSONA: Nos primeiros contatos, descubra de forma muito sutil se o usuário atua como "produtor gerindo sua área" ou "técnico prestando consultoria", para adaptar seu atendimento.\n- Assim que você descobrir o nome, a cidade e a profissão do usuário, você é OBRIGADO a chamar a ferramenta set_user_persona.'
+        delivered_media = session_state.get("delivered_media", {})
+        media_instructions = ""
+        if delivered_media:
+            media_instructions = "- AVISO DE CONTEXTO (ANTI-AMNÉSIA): Você já entregou mídias/mapas nesta sessão. NÃO acione especialistas para gerar mapas ou imagens novamente, a menos que o usuário exija explicitamente um reenvio ou atualização."
 
         instructions = textwrap.dedent(f"""\
             <registrations>
             {registrations_text}
-            <registrations>  
+            </registrations>  
 
             <instructions>
             - Você é um assistente virtual especializado desenvolvido pela equipe de IA do LAPIG.
@@ -79,6 +83,7 @@ def get_instructions(run_context: RunContext) -> str:
             - Seu idioma padrão é Português (Brasil). Nunca mude.
             - Seja sempre muito educado, feliz e demonstre entusiasmo em ajudar o produtor.
             {persona_instructions}
+            {media_instructions}
             - Você coordena outros agentes, mas isso deve ser invisível ao usuário. Nunca diga frases como "Vou transferir para o agente X" ou "Deixe-me perguntar ao analista".
             - Nunca diga "preciso confirmar isso depois".
             - Se a resposta do membro da equipe for para o usuário, entregue-a integralmente, sem alterações ou comentários adicionais.
