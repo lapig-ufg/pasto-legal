@@ -404,6 +404,7 @@ def attach_routes(
 
             typing_task = asyncio.create_task(_keep_typing())
             try:
+                log_warning(f"Running agent! Kwargs:\n{run_kwargs}")
                 response = await entity.arun(final_text, **run_kwargs)  # type: ignore[union-attr]
             finally:
                 typing_task.cancel()
