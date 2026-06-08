@@ -1,10 +1,7 @@
 import json
-
-from datetime import datetime
 from typing import Callable, Dict, Any
-
 from agno.run import RunContext
-
+from datetime import datetime, timedelta
 
 def validate_selected_property_hook(run_context: RunContext, function_call: Callable, arguments: Dict[str, Any]) -> Any:
     """
@@ -20,56 +17,37 @@ def validate_selected_property_hook(run_context: RunContext, function_call: Call
         "Peça desculpas ao usuário. Peça que o usuário informe uma propriedade."
     )
 
-
 def validate_rate_limit_hook(run_context: Any, function_call: Callable, arguments: Dict[str, Any]) -> Any:
-    """
-    Hook universal para evitar que análises e mídias pesadas sejam reprocessadas
-    devido à perda de contexto em conversas longas (amnésia do LLM).
-    """
+    """ Hook universal para evitar reprocessamento e controlar expiração (7 dias). """
     session_state = run_context.session_state or {}
+
+    delivered_media = session_state.get("delivered_media", {})
     
-    delivered_media: Dict[str, Dict[str, Any]] = session_state.get("delivered_media", {})
+    search_key = json.dumps({"func": function_call.__name__, "args": arguments}, sort_keys=True)
 
-    clean_args = {k: v for k, v in arguments.items() if k not in ['run_context', 'session', 'session_state']}
+    if search_key in delivered_media:
+        saved_date_str = delivered_media[search_key]
+        try:
+            saved_date = datetime.fromisoformat(saved_date_str)
 
-    today = datetime.now().date()
+            if datetime.now() - saved_date < timedelta(days=7):
+                return "A mídia solicitada já foi gerada com esses exatos parâmetros e entregue nesta sessão."
+        except Exception:
+            pass
 
-    key_data = {
-        "function_name": function_call.__name__,
-        "arguments": clean_args,
-        "date": today.isoformat()
-    }
-    search_key = json.dumps(key_data, sort_keys=True)
 
-    delete_list = []
-    for key, value_data in delivered_media.items():
-        entry_date_str = value_data.get("timestamp")
+    try:
+        result = function_call(**arguments)        
+        if hasattr(result, 'content') and "Erro" in str(result.content):
+            return result
         
-        if entry_date_str:
-            entry_date = datetime.fromisoformat(entry_date_str).date()
-            dias_passados = (today - entry_date).days
-            
-            if dias_passados > 6:
-                delete_list.append(key)
+        if not hasattr(result, 'images') or not result.images:
+             return "Erro: A integração com o satélite retornou uma mídia vazia. Tente novamente."
 
-    for key in delete_list:
-        del delivered_media[key]
+        delivered_media[search_key] = datetime.now().isoformat()
+        run_context.session_state["delivered_media"] = delivered_media
 
-    if search_key in delivered_media and delivered_media[search_key].get("delivered") is True:
-        tool_name = function_call.__name__
-        return (
-            f"Aviso: Esta análise ({tool_name}) já foi enviada ao usuário nesta sessão. "
-            f"Responda apenas em texto usando os dados do contexto que você já possui."
-        )
+        return result
 
-    delivered_media[search_key] = {
-        "delivered": True,
-        "timestamp": today.isoformat()
-    }
-    
-    if run_context.session_state is None:
-        run_context.session_state = {}
-        
-    run_context.session_state["delivered_media"] = delivered_media
-
-    return function_call(**arguments)
+    except Exception as e:
+        return f"Erro na integração externa: Falha ao executar {function_call.__name__}. Detalhe: {str(e)}"
