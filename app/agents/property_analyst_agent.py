@@ -11,7 +11,7 @@ from app.tools.property_analyst_tools import (
     get_pasture_stats,
     get_topographic_stats
     )
-from app.utils.interfaces.property_record import PropertyRecord
+from app.utils.interfaces.property_record import RuralProperty
 from app.configs.models import model
 
 
@@ -29,7 +29,7 @@ def get_instructions(run_context: RunContext):
     # Captura a persona definida na sessão
     user_persona = session_state.get("user_persona", "Desconhecido")
 
-    registered_properties = [PropertyRecord.model_validate(record) for record in session_state.get("registered_properties", [])]
+    registered_properties = [RuralProperty.model_validate(record) for record in session_state.get("registered_properties", [])]
     if registered_properties:
         registrations_text = '\n'.join([str(record) for record in registered_properties])
     else:

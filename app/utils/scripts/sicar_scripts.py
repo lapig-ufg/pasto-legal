@@ -288,9 +288,8 @@ def fetch_coordinates_by_url(url: str) -> tuple[float | None, float | None]:
         response.raise_for_status()
 
         url_final = response.url
-        print(url_final, flush=True)
 
-        match_url = re.search(r'(-?\d+\.\d+)(?:,|%2C)\s*\+?(-?\d+\.\d+)', url_final)
+        match_url = re.search(r'/maps/(?:place|search)(?:.*)/\@?(-?\d+\.\d+),\+?(-?\d+\.\d+)', url_final)
         if match_url:
             return float(match_url.group(1)), float(match_url.group(2))
 
