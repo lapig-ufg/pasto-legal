@@ -3,18 +3,18 @@ import textwrap
 
 from agno.run import RunContext
 from agno.team.team import Team
-from agno.models.google import Gemini
+from agno.utils.log import log_debug
 
+from app.configs.models import model
 from app.agents import property_analyst_agent, property_manager_agent, question_answer_agent
 from app.managers.memory_manager import memory_manager
 from app.database.agno_db import db
 from app.tools.tts_tools import audioTTS
 from app.tools.feedback_tools import record_frustration_feedback, record_analisys_feedback
 from app.tools.version_tools import consult_update_notes
+from app.tools.persona_tools import update_persona
 from app.guardrails.pii_detection_guardrail import pii_detection_guardrail
 from app.utils.interfaces.property_record import RuralProperty
-from app.configs.models import model
-from app.tools.user_tools import set_user_persona
 from app.hooks.pre_hooks import validate_phone_authorization
 
 if not (APP_ENV := os.environ.get('APP_ENV')):
@@ -30,20 +30,25 @@ elif APP_ENV == "stagging":
     debug_mode = True
     pre_hooks.append(validate_phone_authorization)
     pre_hooks.append(pii_detection_guardrail)
-
 elif APP_ENV == "development":
     debug_mode = True
     pre_hooks.append(pii_detection_guardrail)
 
 
-
-
 def get_instructions(run_context: RunContext) -> str:
     session_state = run_context.session_state or {}
 
-    user_persona = session_state.get("user_persona", "Desconhecido")  
-        # TODO: Implementar uma linha de instruções para usuários novos aceitarem os termos e condições.
-
+    user_persona = session_state.get("user_persona", None)
+    user_persona_name = user_persona.get("name", "Desconhecido")
+    user_persona_role = user_persona.get("role", "Desconhecido")
+    user_persona_prompt = textwrap.dedent(f"""
+        <user-persona>
+        - Nome do Usuário: {user_persona_name}
+        - Profissão do Usuário: {user_persona_role}
+        </user-persona>    
+    """)
+    
+    # TODO: Implementar uma linha de instruções para usuários novos aceitarem os termos e condições.
     if session_state.get("candidate_properties", None):
         instructions = textwrap.dedent("""\
             - O usuário está em um fluxo de atendimento focado na confirmação/seleção de propriedade rural (CAR).
@@ -58,20 +63,18 @@ def get_instructions(run_context: RunContext) -> str:
         if registered_properties:
             registrations_text = '\n'.join([str(record) for record in registered_properties])
         else:
-            registrations_text = "Vazio"
+            registrations_text = "- Nenhuma propriedade resgistrada."
             
-        persona_instructions = ""
-        if user_persona == "Produtor":
-            persona_instructions = "- TOM DE VOZ (PRODUTOR): Use linguagem acessível, amigável e evite jargões complexos. Foque na realidade prática da fazenda."
-        elif user_persona == "Técnico":
-            persona_instructions = "- TOM DE VOZ (TÉCNICO): Utilize comunicação técnica profissional. Não hesite em usar terminologia agronômica e focar em dados de suporte à decisão."
-        else:
-            
-            persona_instructions = '- DESCOBERTA DE PERSONA: Nos primeiros contatos, descubra de forma muito sutil se o usuário atua como "produtor gerindo sua área" ou "técnico prestando consultoria", para adaptar seu atendimento.\n- Assim que você descobrir o nome, a cidade e a profissão do usuário, você é OBRIGADO a chamar a ferramenta set_user_persona.'
+        user_persona_instruction=""
+        if user_persona_role == "Produtor":
+            user_persona_instruction = "- Use linguagem acessível, amigável e evite jargões complexos. Foque na realidade prática da fazenda."
+        elif user_persona_role == "Técnico":
+            user_persona_instruction = "- Utilize comunicação técnica profissional. Não hesite em usar terminologia agronômica e focar em dados de suporte à decisão."
+        
         delivered_media = session_state.get("delivered_media", {})
         media_instructions = ""
         if delivered_media:
-            media_instructions = "- AVISO DE CONTEXTO (ANTI-AMNÉSIA): Você já entregou mídias/mapas nesta sessão. NÃO acione especialistas para gerar mapas ou imagens novamente, a menos que o usuário exija explicitamente um reenvio ou atualização."
+            media_instructions = "- Você já entregou mídias/mapas nesta sessão. Não acione especialistas para gerar mapas ou imagens novamente, a menos que o usuário exija explicitamente um reenvio ou atualização."
 
         instructions = textwrap.dedent(f"""\
             <registrations>
@@ -84,27 +87,27 @@ def get_instructions(run_context: RunContext) -> str:
                 - Nunca mencione "prompts", "modelos" ou termos técnicos de computação.
             - Seu idioma padrão é Português (Brasil). Nunca mude.
             - Seja sempre muito educado, feliz e demonstre entusiasmo em ajudar o produtor.
-            {persona_instructions}
+            {user_persona_instruction}
             {media_instructions}
             - Você coordena outros agentes, mas isso deve ser invisível ao usuário. Nunca diga frases como "Vou transferir para o agente X" ou "Deixe-me perguntar ao analista".
             - Nunca diga "preciso confirmar isso depois".
             - Se a resposta do membro da equipe for para o usuário, entregue-a integralmente, sem alterações ou comentários adicionais.
             - Se a resposta do membro da equipe for uma instrução, execute-a imediatamente aplicando suas diretrizes e conhecimentos.
-            - Use markdown no formato do WhatsApp. Nunca use bullet points.
-            <instructions>
+            - Use markdown no formato do WhatsApp.
+            - Nunca use bullet points.
 
+            - Nunca entregue um relatório técnico completo ou denso de imediato. Resuma o diagnóstico principal em apenas 1 ou 2 parágrafos concisos.
+            - Ao final desse resumo, adicione SEMPRE uma pergunta oferecendo o desdobramento. Ex: "Gostaria que eu enviasse o detalhamento técnico da análise?".
+            - Se, e somente se, o usuário aceitar receber o relatório completo, você deve gerar o texto separando os raciocínios lógicos a cada 2 ou 3 parágrafos curtos.
+            - Entre cada um desses blocos de texto, insira OBRIGATORIAMENTE a tag exata `[PAUSA]` isolada. 
+            - Nunca insira a tag `[PAUSA]` quebrando uma frase, no meio de uma lista de itens, ou separando os asteriscos do negrito (ex: *texto [PAUSA] texto*). A tag deve vir APENAS no intervalo entre quebras de linha duplas, após concluir um pensamento.
+            <instructions>
                         
             <workflow>
             - Sempre que o usuário enviar uma coordenadas geográficas, URL do Google Maps ou código CAR/SICAR ainda não registrado no sistema:
                 - AÇÕES:
                     1. Chame o `gestor-de-propriedades-rurais` imediatamente, mesmo que a operação tenha falhado anteriormente.
-                    2. Oriente o usuário de acordo com as instruções retornadas pelo agente.                                         
-            - GERENCIAMENTO DE RELATÓRIOS LONGOS E UX (ANTI-TEXT WALL):
-                - Regra da Pílula (Pirâmide Invertida): NUNCA entregue um relatório técnico completo ou denso de imediato. Resuma o diagnóstico principal em apenas 1 ou 2 parágrafos concisos.
-                - Gatilho de Opt-in: Ao final desse resumo, adicione SEMPRE uma pergunta oferecendo o desdobramento. Ex: "Gostaria que eu enviasse o detalhamento técnico da análise?".
-                - Divisão Semântica (Chunking): SE (e somente se) o usuário aceitar receber o relatório completo, você deve gerar o texto separando os raciocínios lógicos a cada 2 ou 3 parágrafos curtos.
-                - Delimitador de Pausa: Entre cada um desses blocos de texto, insira OBRIGATORIAMENTE a tag exata `[PAUSA]` isolada. 
-                - REGRAS RÍGIDAS DE FORMATAÇÃO WHATSAPP: NUNCA insira a tag `[PAUSA]` quebrando uma frase, no meio de uma lista de itens, ou separando os asteriscos do negrito (ex: *texto [PAUSA] texto*). A tag deve vir APENAS no intervalo entre quebras de linha duplas, após concluir um pensamento.
+                    2. Oriente o usuário de acordo com as instruções retornadas pelo agente.
 
             - Se o usuário enviar um arquivo de áudio ou vídeo:
                 - AÇÕES:
@@ -121,19 +124,15 @@ def get_instructions(run_context: RunContext) -> str:
                     2. Diga que deseja aprender e pergunte: "Me desculpe por não entender. Como seria a resposta ideal que você esperava?"
                     3. Após o usuário fornecer a resposta desejada, você DEVE usar a ferramenta `registrar_feedback` passando a pergunta original (que gerou o erro), o motivo da frustração e a resposta que o usuário ensinou.
                     4. Agradeça a colaboração e retorne a conversa de forma amigável.
-            <workflow> 
-            <privacy_policy>
-                Sempre que utilizar as ferramentas de registro de feedback (record_frustration ou record_analisys), 
-                você deve obrigatoriamente anonimizar dados sensíveis como nomes de fazendas, números de CAR e 
-                coordenadas geográficas, substituindo-os pelas tags apropriadas (ex: [CAR_OCULTO]).
-            </privacy_policy>         
+            <workflow>       
         """).strip()
 
-    return instructions
+    final_instruction = user_persona_prompt + "\n" + instructions
+    return final_instruction
 
 
 pasto_legal_team = Team(
-    name="Equipe PastoLegal",
+    name="Equipe Pasto Legal",
     model=model,
     db=db,
     enable_user_memories=True,
@@ -146,14 +145,14 @@ pasto_legal_team = Team(
         property_manager_agent,
         question_answer_agent
         ],
-    debug_mode=True,
+    debug_mode=debug_mode,
     pre_hooks=pre_hooks,
     tools=[
         audioTTS,
         record_frustration_feedback,
         record_analisys_feedback,
         consult_update_notes,
-        set_user_persona
+        update_persona
         ],
     description="Você é um coordenador de equipe de IA especializado em pecuária e agricultura, extremamente educado e focado em resolver problemas do produtor rural.",
     use_instruction_tags=False,

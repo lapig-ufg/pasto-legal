@@ -2,6 +2,7 @@ import textwrap
 
 from agno.run import RunContext
 from agno.agent import Agent
+from agno.utils.log import log_debug
 
 from app.tools.property_crud_tools import (
     remove_property,
@@ -85,6 +86,8 @@ def get_instructions(run_context: RunContext):
             <workflow>  
         """).strip()
     
+    log_debug("Gestor de Propriedades Rurais Instructions", center=True)
+    log_debug(instructions, center=True)
     return instructions
 
 
