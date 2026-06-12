@@ -9,8 +9,8 @@ from agno.tools.function import ToolResult
 from agno.media import Image
 
 from app.utils.scripts.sicar_scripts import (
-    fetch_property_by_coordinates_locally,
-    fetch_property_by_car_locally,
+    fetch_property_by_car,
+    fetch_property_by_coordinates,
     fetch_coordinates_by_url,
     clean_car_code
     )
@@ -35,7 +35,7 @@ def register_feature_by_coordinate(run_context: RunContext, latitude: float, lon
     Returns:
         ToolResult: Resultado da busca contendo imagem e instruções para o próximo passo.
     """
-    properties = fetch_property_by_coordinates_locally(latitude=latitude, longitude=longitude)
+    properties = fetch_property_by_coordinates(latitude=latitude, longitude=longitude)
 
     if not properties:
         return (
@@ -115,7 +115,7 @@ def register_feature_by_car(run_context: RunContext, car_codes: List[str], name:
             )
         )
         
-    properties = fetch_property_by_car_locally(car_codes=car_codes)
+    properties = fetch_property_by_car(car_codes=car_codes)
     _property = RuralProperty.unify(properties)
 
     if not properties:
@@ -181,7 +181,7 @@ def register_feature_by_url(run_context: RunContext, url: str) -> ToolResult:
     except Exception as error:
         return ToolResult(content=str(error))
     
-    properties = fetch_property_by_coordinates_locally(latitude=latitude, longitude=longitude)
+    properties = fetch_property_by_coordinates(latitude=latitude, longitude=longitude)
 
     if not properties:
         return (
