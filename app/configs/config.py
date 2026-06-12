@@ -107,14 +107,14 @@ class StaggingConfig(ProductionConfig):
 config_map = {
     "production": ProductionConfig,
     "development": DevelopmentConfig,
-    "staging": StaggingConfig
+    "stagging": StaggingConfig
 }
 
 if (env_app := os.getenv("APP_ENV", None).lower()) is None:
     raise("APP_ENV environment variables must be set.")
 
 if env_app not in ["production", "development", "stagging"]:
-    raise("APP_ENV has to be 'prod' or 'develop'.")
+    raise("APP_ENV has to be 'production', 'development' or 'stagging'.")
 
 # Instancia a classe de configuração correta
 config = config_map[env_app]()
