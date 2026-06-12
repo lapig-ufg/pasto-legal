@@ -19,8 +19,6 @@ from app.configs.config import config
 try:
     skills = Skills(loaders=[LocalSkills("app/skills/property_analyst_agent")])
 except SkillValidationError as e:
-    print(f"Skill validation failed: {e}")
-    print(f"Errors: {e.errors}")
     skills = None
 
 

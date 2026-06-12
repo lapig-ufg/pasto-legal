@@ -103,7 +103,7 @@ conn.execute("PRAGMA memory_limit='1GB'")
 conn.execute("PRAGMA threads=1")
 
 
-def _map_feature_to_property_record(feature: json) -> Dict:
+def _map_feature_to_property_record(feature: json) -> RuralProperty:
     """
     Mapeia uma feature GeoJSON para a estrutura aninhada RuralProperty.
 
@@ -135,7 +135,7 @@ def _map_feature_to_property_record(feature: json) -> Dict:
     )
 
 
-def _map_row_to_property_record(row: dict) -> Dict:
+def _map_row_to_property_record(row: dict) -> RuralProperty:
     """
     Mapeia uma linha do banco de dados para a estrutura aninhada RuralProperty.
 

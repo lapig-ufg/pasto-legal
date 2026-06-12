@@ -44,13 +44,10 @@ def get_instructions(run_context: RunContext) -> str:
     
     # TODO: Implementar uma linha de instruções para usuários novos aceitarem os termos e condições.
     if session_state.get("candidate_properties", None):
+        log_debug("PROPERTY SELECTION PATH", center=True)
         instructions = textwrap.dedent("""\
-            - O usuário está em um fluxo de atendimento focado na confirmação/seleção de propriedade rural (CAR).
-            - O usuário deve completar o fluxo de seleção de propriedade rural antes de proceguir com as análise.
-            - Você deve usar a ferramenta `delegate_task_to_member` para repassar o controle da conversa ao `gestor-de-propriedades-rurais` para finalizar o cadastro da propriedade.
-            - Não responda diretamente ao usuário com mensagens de texto.
-            - Não use a ferramenta `update_user_memory`.
-            - Chame o agente `gestor-de-propriedades-rurais`.
+            - Sua única tarefa é chamar o `gestor-de-propriedades-rurais` usando a ferramenta `delegate_task_to_member`.
+            - Depois, siga as instruções exatamente como forem passadas.
         """).strip()
     else:
         registered_properties = [RuralProperty.model_validate(record) for record in session_state.get("registered_properties", [])]

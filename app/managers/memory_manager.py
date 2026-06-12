@@ -1,10 +1,14 @@
 import textwrap
+
 from agno.models.google import Gemini
 from agno.memory import MemoryManager
+
 from app.database.agno_db import db
+from app.configs.config import config
+
 
 memory_manager: MemoryManager = MemoryManager(
-    model=Gemini(id="gemini-3-flash-preview", temperature=0),
+    model=config.model,
     memory_capture_instructions=textwrap.dedent("""
         Memories should capture personal information about the user that is relevant to the current conversation, such as:
         - Personal facts: name, age, occupation, interests, and preferences

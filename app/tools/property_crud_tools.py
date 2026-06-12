@@ -20,7 +20,6 @@ from app.utils.interfaces.property_record import RuralProperty
 
 
 # TODO: Se o usuário informar uma URL de coordenadas de uma propriedade que já existe no sistema, validar se a propriedade existe por meio do CAR. Se existir então retornar menssagem que já existe.
-
 @tool(stop_after_tool_call=True)
 def register_feature_by_coordinate(run_context: RunContext, latitude: float, longitude: float):
     """
@@ -43,10 +42,7 @@ def register_feature_by_coordinate(run_context: RunContext, latitude: float, lon
             "Peça que tente novamente e verificar se as coordenadas estão corretas."
         )
     
-    registered_map = {
-        prop["car_code"]: prop
-        for prop in run_context.session_state.get("registered_properties", [])
-    }
+    registered_map = {prop["car_code"]: prop for prop in run_context.session_state.get("registered_properties", [])}
     for prop in properties:
         car_code = prop.car_code
         if car_code in registered_map:

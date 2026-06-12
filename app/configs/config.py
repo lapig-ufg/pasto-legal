@@ -40,7 +40,7 @@ class BaseConfig:
 
     GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", None)
 
-    OLLAMA_HOST: str = os.getenv("OLLAMA_MODEL_ID", "http://host.docker.internal:11434")
+    OLLAMA_HOST: str = os.getenv("OLLAMA_MODEL_ID", None)
     OLLAMA_API_KEY: str = os.getenv("OLLAMA_API_KEY", None)
 
     def __init__(self):
