@@ -1,4 +1,3 @@
-import os
 import ee
 import PIL
 import datetime
@@ -12,23 +11,16 @@ from agno.utils.log import log_error
 
 from app.utils.scripts.image_scripts import add_legend, add_legend_descriptor
 from app.utils.interfaces.property_stats import PropertyStats, PastureStats, TopographicStats
+from app.configs.config import config
 
 
 _FEATURE_BUFFER = 256
 
 _IMAGE_DIMENSION = 512
 
-
-if not (GEE_SERVICE_ACCOUNT := os.environ.get('GEE_SERVICE_ACCOUNT')):
-    raise ValueError("GEE_SERVICE_ACCOUNT environment variables must be set.")
-if not (GEE_KEY_FILE := os.environ.get('GEE_KEY_FILE')):
-    raise ValueError("GEE_KEY_FILE environment variables must be set.")
-if not (GEE_PROJECT := os.environ.get('GEE_PROJECT')):
-    raise ValueError("GEE_PROJECT environment variables must be set.")
-
 try:
-    credentials = ee.ServiceAccountCredentials(GEE_SERVICE_ACCOUNT, GEE_KEY_FILE)
-    ee.Initialize(credentials, project=GEE_PROJECT)
+    credentials = ee.ServiceAccountCredentials(config.GEE_SERVICE_ACCOUNT, config.GEE_KEY_FILE)
+    ee.Initialize(credentials, project=config.GEE_PROJECT)
     GEE_CONNECTED_FLAG = True
 except Exception as e:
     log_error(f"Authentication failed: {e}")

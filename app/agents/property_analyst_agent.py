@@ -3,6 +3,7 @@ from agno.run import RunContext
 from agno.agent import Agent
 from agno.skills import Skills, LocalSkills, SkillValidationError
 from agno.tools.calculator import CalculatorTools
+from agno.utils.log import log_debug
 
 from app.tools.property_analyst_tools import (
     generate_property_image,
@@ -12,7 +13,7 @@ from app.tools.property_analyst_tools import (
     get_topographic_stats
     )
 from app.utils.interfaces.property_record import RuralProperty
-from app.configs.models import model
+from app.configs.config import config
 
 
 try:
@@ -24,6 +25,7 @@ except SkillValidationError as e:
 
 
 def get_instructions(run_context: RunContext):
+    log_debug("Agente Extensionista Agrônomo Instructions", center=True)
     session_state = run_context.session_state or {}
     
     # Captura a persona definida na sessão
@@ -99,7 +101,7 @@ property_analyst_agent = Agent(
         "   - Executar análises técnicas com o Google Earth Engine.\n"
         "   - Gerar análises espaciais, relatórios e mapas temáticos.\n"
     ),
-    debug_mode=True,
+    debug_mode=config.DEBUG_MODE,
     tools=[
         CalculatorTools(exclude_tools=["is_prime", "factorial"]),
         get_pasture_stats,
@@ -111,5 +113,5 @@ property_analyst_agent = Agent(
     skills=skills,
     use_instruction_tags=False,
     instructions=get_instructions,
-    model=model
+    model=config.model
 )

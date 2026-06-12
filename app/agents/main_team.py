@@ -1,11 +1,9 @@
-import os
 import textwrap
 
 from agno.run import RunContext
 from agno.team.team import Team
 from agno.utils.log import log_debug
 
-from app.configs.models import model
 from app.agents import property_analyst_agent, property_manager_agent, question_answer_agent
 from app.managers.memory_manager import memory_manager
 from app.database.agno_db import db
@@ -16,29 +14,25 @@ from app.tools.persona_tools import update_persona
 from app.guardrails.pii_detection_guardrail import pii_detection_guardrail
 from app.utils.interfaces.property_record import RuralProperty
 from app.hooks.pre_hooks import validate_phone_authorization
-
-if not (APP_ENV := os.environ.get('APP_ENV')):
-    raise ValueError("APP_ENV environment variables must be set.")
+from app.configs.config import config
 
 pre_hooks = []
 
-if APP_ENV == "production":
-    debug_mode = False
+if config.APP_ENV == "production":
     pre_hooks.append(validate_phone_authorization)
     pre_hooks.append(pii_detection_guardrail)
-elif APP_ENV == "stagging":
-    debug_mode = True
+elif config.APP_ENV == "stagging":
     pre_hooks.append(validate_phone_authorization)
     pre_hooks.append(pii_detection_guardrail)
-elif APP_ENV == "development":
-    debug_mode = True
+elif config.APP_ENV == "development":
     pre_hooks.append(pii_detection_guardrail)
 
 
 def get_instructions(run_context: RunContext) -> str:
+    log_debug("Gestor de Propriedades Rurais Instructions", center=True)
     session_state = run_context.session_state or {}
 
-    user_persona = session_state.get("user_persona", None)
+    user_persona = session_state.get("user_persona", {})
     user_persona_name = user_persona.get("name", "Desconhecido")
     user_persona_role = user_persona.get("role", "Desconhecido")
     user_persona_prompt = textwrap.dedent(f"""
@@ -133,7 +127,7 @@ def get_instructions(run_context: RunContext) -> str:
 
 pasto_legal_team = Team(
     name="Equipe Pasto Legal",
-    model=model,
+    model=config.model,
     db=db,
     enable_user_memories=True,
     memory_manager=memory_manager,
@@ -145,7 +139,7 @@ pasto_legal_team = Team(
         property_manager_agent,
         question_answer_agent
         ],
-    debug_mode=debug_mode,
+    debug_mode=config.DEBUG_MODE,
     pre_hooks=pre_hooks,
     tools=[
         audioTTS,

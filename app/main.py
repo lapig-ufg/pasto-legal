@@ -1,5 +1,3 @@
-import os
-
 from agno.os import AgentOS
 
 from app.interfaces.whatsapp import Whatsapp

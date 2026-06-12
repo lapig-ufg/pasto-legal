@@ -13,6 +13,7 @@ class FrustrationFeedback(Base):
     desired_answer = Column(Text)
     context = Column(Text)
 
+
 class AnalysisFeedback(Base):
     __tablename__ = 'analysis_feedbacks'
 

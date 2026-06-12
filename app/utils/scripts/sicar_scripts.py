@@ -8,6 +8,7 @@ from typing import List, Dict
 
 from app.utils.interfaces.property_record import RuralProperty, SpatialFeatures, SicarMetadata
 from app.utils.mock_development import mock_property
+from app.configs.config import config
 
 # =====================================================================
 # Configuração do Banco de Dados (Engine DuckDB)
@@ -81,45 +82,44 @@ def _map_row_to_property_record(row: dict) -> Dict:
         )
     )
 
-# SC-4205100-9CF52298DA9740D4968BF6E2BE14E740, SC-4205100-11D656C565D04D43885AF2EC82EBA308, SC-4205100-71D333DF8E6B4824B19D77781C713B8D
-#@mock_property
-#def fetch_property_by_car_remote(car: str) -> List[Dict] | None:
-#    headers = {
-#        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-#        'Referer': 'https://consultapublica.car.gov.br/publico/imoveis/index'
-#    }
-#
-#    base_url = "https://consultapublica.car.gov.br/publico/imoveis/index"
-#    url_api = f"https://consultapublica.car.gov.br/publico/imoveis/search?text={car}"
-#
-#    try:
-#        with requests.Session() as sess:
-#            sess.get(base_url, verify=False, headers=headers, timeout=10)
-#
-#            response = sess.get(url_api, verify=False, headers=headers, timeout=10)
-#            response.raise_for_status()
-#
-#            geo_json = response.json()
-#            
-#            features = geo_json.get('features', [])
-#
-#            if not features:
-#                return None
-#
-#            return [_map_feature_to_property_record(feature) for feature in features]
-#
-#    except requests.exceptions.HTTPError as e:
-#        raise RuntimeError(f"O servidor do CAR retornou um erro HTTP. Detalhes: {str(e)}")
-#    except requests.exceptions.RequestException as e:
-#        raise RuntimeError(f"Falha de conexão ou timeout ao acessar a base pública do CAR. O sistema pode estar instável. Detalhes: {str(e)}")
-#    except json.JSONDecodeError:
-#        raise RuntimeError("O servidor do CAR retornou uma resposta inválida (não é um JSON). O site pode estar em manutenção.")
-#    except Exception as e:
-#        raise RuntimeError(f"Erro inesperado ao buscar a propriedade remotamente: {str(e)}")
+
+def __fetch_property_by_car_remote(car: str) -> List[Dict] | None:
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://consultapublica.car.gov.br/publico/imoveis/index'
+    }
+
+    base_url = "https://consultapublica.car.gov.br/publico/imoveis/index"
+    url_api = f"https://consultapublica.car.gov.br/publico/imoveis/search?text={car}"
+
+    try:
+        with requests.Session() as sess:
+            sess.get(base_url, verify=False, headers=headers, timeout=10)
+
+            response = sess.get(url_api, verify=False, headers=headers, timeout=10)
+            response.raise_for_status()
+
+            geo_json = response.json()
+            
+            features = geo_json.get('features', [])
+
+            if not features:
+                return None
+
+            return [_map_feature_to_property_record(feature) for feature in features]
+
+    except requests.exceptions.HTTPError as e:
+        raise RuntimeError(f"O servidor do CAR retornou um erro HTTP. Detalhes: {str(e)}")
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"Falha de conexão ou timeout ao acessar a base pública do CAR. O sistema pode estar instável. Detalhes: {str(e)}")
+    except json.JSONDecodeError:
+        raise RuntimeError("O servidor do CAR retornou uma resposta inválida (não é um JSON). O site pode estar em manutenção.")
+    except Exception as e:
+        raise RuntimeError(f"Erro inesperado ao buscar a propriedade remotamente: {str(e)}")
 
 
 @mock_property()
-def fetch_property_by_car_locally(car_codes: List[str]) -> List[RuralProperty]:
+def __fetch_property_by_car_locally(car_codes: List[str]) -> List[RuralProperty]:
     """
     Busca as informações de imóveis rurais utilizando uma lista de códigos únicos do CAR.
 
@@ -172,52 +172,51 @@ def fetch_property_by_car_locally(car_codes: List[str]) -> List[RuralProperty]:
     return result
 
 
-#def fetch_property_by_coordinates_remote(latitude: float, longitude: float) -> List[Dict]:
-#    """
-#    Busca os dados de uma propriedade rural na base pública remota do CAR usando coordenadas.
-#    
-#    Args:
-#        latitude (float): Latitude do ponto de busca (ex: -15.82994).
-#        longitude (float): Longitude do ponto de busca (ex: -49.43353).
-#
-#    Returns:
-#        List[Dict]: Lista de propriedades mapeadas para a entidade RuralProperty. Retorna uma lista vazia caso não exista imóvel na coordenada.
-#    """
-#    headers = {
-#        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-#        'Referer': 'https://consultapublica.car.gov.br/publico/imoveis/index'
-#    }
-#
-#    base_url = "https://consultapublica.car.gov.br/publico/imoveis/index"
-#    url_api = f"https://consultapublica.car.gov.br/publico/imoveis/getImovel?lat={latitude}&lng={longitude}"
-#
-#    try:
-#        with requests.Session() as sess:
-#            sess.get(base_url, verify=False, headers=headers, timeout=10)
-#
-#            response = sess.get(url_api, verify=False, headers=headers, timeout=10)
-#            response.raise_for_status()
-#
-#            geo_json = response.json()
-#            
-#            features = geo_json.get('features', [])
-#
-#            if not features:
-#                return None
-#            
-#            return [_map_feature_to_property_record(feature) for feature in features]
-#    except requests.exceptions.HTTPError as e:
-#        raise RuntimeError(f"O servidor do CAR retornou um erro HTTP. Detalhes: {str(e)}")
-#    except requests.exceptions.RequestException as e:
-#        raise RuntimeError(f"Falha de conexão ou timeout ao acessar a base pública do CAR. O sistema pode estar instável. Detalhes: {str(e)}")
-#    except json.JSONDecodeError:
-#        raise RuntimeError("O servidor do CAR retornou uma resposta inválida (não é um JSON). O site pode estar em manutenção.")
-#    except Exception as e:
-#        raise RuntimeError(f"Erro inesperado ao buscar a propriedade remotamente: {str(e)}")
+def __fetch_property_by_coordinates_remote(latitude: float, longitude: float) -> List[RuralProperty]:
+    """
+    Busca os dados de uma propriedade rural na base pública remota do CAR usando coordenadas.
+    
+    Args:
+        latitude (float): Latitude do ponto de busca (ex: -15.82994).
+        longitude (float): Longitude do ponto de busca (ex: -49.43353).
+
+    Returns:
+        List[Dict]: Lista de propriedades mapeadas para a entidade RuralProperty. Retorna uma lista vazia caso não exista imóvel na coordenada.
+    """
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://consultapublica.car.gov.br/publico/imoveis/index'
+    }
+
+    base_url = "https://consultapublica.car.gov.br/publico/imoveis/index"
+    url_api = f"https://consultapublica.car.gov.br/publico/imoveis/getImovel?lat={latitude}&lng={longitude}"
+
+    try:
+        with requests.Session() as sess:
+            sess.get(base_url, verify=False, headers=headers, timeout=10)
+
+            response = sess.get(url_api, verify=False, headers=headers, timeout=10)
+            response.raise_for_status()
+
+            geo_json = response.json()
+            
+            features = geo_json.get('features', [])
+
+            if not features:
+                return None
+            
+            return [_map_feature_to_property_record(feature) for feature in features]
+    except requests.exceptions.HTTPError as e:
+        raise RuntimeError(f"O servidor do CAR retornou um erro HTTP. Detalhes: {str(e)}")
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"Falha de conexão ou timeout ao acessar a base pública do CAR. O sistema pode estar instável. Detalhes: {str(e)}")
+    except json.JSONDecodeError:
+        raise RuntimeError("O servidor do CAR retornou uma resposta inválida (não é um JSON). O site pode estar em manutenção.")
+    except Exception as e:
+        raise RuntimeError(f"Erro inesperado ao buscar a propriedade remotamente: {str(e)}")
 
 
-@mock_property()
-def fetch_property_by_coordinates_locally(latitude: float, longitude: float) -> List[RuralProperty]:
+def __fetch_property_by_coordinates_locally(latitude: float, longitude: float) -> List[RuralProperty]:
     """
     Realiza busca geoespacial de imóveis rurais a partir de um ponto (Lat/Lon).
 
@@ -316,3 +315,12 @@ def clean_car_code(car_code: str) -> str | None:
         return None
     
     return re.sub(pattern, r"\1-\2-\3\4\5\6\7\8\9\10", search[0], flags=re.IGNORECASE)
+
+
+if config.APP_ENV == "development":
+    fetch_property_by_car = __fetch_property_by_car_remote
+    fetch_property_by_coordinates = __fetch_property_by_coordinates_remote
+else:
+    fetch_property_by_car = __fetch_property_by_car_locally
+    fetch_property_by_coordinates = __fetch_property_by_coordinates_locally
+   

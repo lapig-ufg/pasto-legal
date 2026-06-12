@@ -1,6 +1,4 @@
-import os
 import textwrap
-
 
 from typing import Optional, Callable, Dict, Any
 from pydantic import BaseModel, Field
@@ -12,10 +10,7 @@ from agno.models.google import Gemini
 from agno.utils.log import log_error
 
 from app.utils.interfaces.property_record import RuralProperty
-
-
-if not (APP_ENV := os.environ.get('APP_ENV')):
-    raise ValueError("APP_ENV environment variables must be set.")
+from app.configs.config import config
 
 
 def validate_phone_authorization(user_id: Optional[str], run_input: RunInput):
@@ -36,7 +31,7 @@ def validate_phone_authorization(user_id: Optional[str], run_input: RunInput):
     except Exception as e:
         log_error(f"Exception: {e}.")
     
-    if APP_ENV == "production":
+    if config.APP_ENV == "production":
         run_input.input_content = (
             "O usuário não está autorizado a usar o sistema. "
             "Não responda nada do que ele perguntou antes. "
@@ -45,7 +40,7 @@ def validate_phone_authorization(user_id: Optional[str], run_input: RunInput):
             "- Para ter solicitar acesso é necessário preencher o formulário em: forms.gle/sKqngW7UvjmSJFKk8. "
         )
         
-    elif APP_ENV == "stagging":
+    elif config.APP_ENV == "stagging":
         run_input.input_content = (
             "INSTRUÇÃO DE SISTEMA IMPERATIVA: O usuário não está autorizado a testar esse sistema. "
             "Não responda nada do que ele perguntou antes. "

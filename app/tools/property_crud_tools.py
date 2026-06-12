@@ -87,7 +87,7 @@ def register_feature_by_coordinate(run_context: RunContext, latitude: float, lon
             images=[Image(content=buffer.getvalue())]
             )
 
-# GO-5211800-E85CBBBF7DA34628BCA06B78357D39F6, GO-5211800-987B29E7E47A4454BAEF582557AB89F3
+
 @tool(stop_after_tool_call=True)
 def register_feature_by_car(run_context: RunContext, car_codes: List[str], name: str = None):
     """

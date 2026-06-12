@@ -3,7 +3,7 @@ from pathlib import Path
 from agno.run import RunContext
 from agno.agent import Agent
 
-from app.configs.models import model
+from app.configs.config import config
 
 
 files = [
@@ -56,8 +56,8 @@ question_answer_agent = Agent(
         "   - Ensinar o usuário a gerar mapas temáticos e interpretar análises do sistema.\n"
         "   - Consultar a base de conhecimento (documentos internos) para fornecer diretrizes exatas de uso.\n"
     ),
-    debug_mode=True,
+    debug_mode=config.DEBUG_MODE,
     use_instruction_tags=False,
     instructions=get_instructions,
-    model=model,
+    model=config.model,
 )
