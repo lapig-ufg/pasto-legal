@@ -13,12 +13,13 @@ from app.tools.version_tools import consult_update_notes
 from app.tools.persona_tools import update_persona
 from app.guardrails.pii_detection_guardrail import pii_detection_guardrail
 from app.utils.interfaces.property_record import RuralProperty
-from app.hooks.pre_hooks import validate_phone_authorization
+from app.hooks.pre_hooks import validate_phone_authorization, debug_session_state
 from app.configs.config import config
 
 pre_hooks = []
 
 if config.APP_ENV == "production":
+    pre_hooks.append(debug_session_state)
     pre_hooks.append(validate_phone_authorization)
     pre_hooks.append(pii_detection_guardrail)
 elif config.APP_ENV == "stagging":

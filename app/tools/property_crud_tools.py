@@ -1,12 +1,13 @@
 import re
 
 from io import BytesIO
-from typing import List, Tuple
+from typing import List
 
 from agno.run import RunContext
 from agno.tools import tool
 from agno.tools.function import ToolResult
 from agno.media import Image
+from agno.utils.log import log_debug
 
 from app.utils.scripts.sicar_scripts import (
     fetch_property_by_car,
@@ -85,15 +86,14 @@ def register_feature_by_coordinate(run_context: RunContext, latitude: float, lon
 
 
 @tool(stop_after_tool_call=True)
-def register_feature_by_car(run_context: RunContext, car_codes: List[str], name: str = None):
+def register_feature_by_car(run_context: RunContext, car_codes: List[str]):
     """
     Registra uma nova propriedade rural baseando-se nas coordenadas fornecidas.
     
     Use esta ferramenta quando o usuário fornecer um valor de CAR ainda não registrado no sistema.
     
     Args:
-        cars (List[str]): Código de Cadastro Ambiental Rural (CAR) padrão SICAR.
-        name (str): Nome da propriedade. `None` caso não seja informado.
+        cars (List[str]): Código de Cadastro Ambiental Rural (CAR) no padrão SICAR.
 
     Returns:
         ToolResult: Resultado da busca contendo imagem e instruções para o próximo passo.
@@ -110,6 +110,8 @@ def register_feature_by_car(run_context: RunContext, car_codes: List[str], name:
                 "Explique que o padrão exige: 2 letras do Estado, seguidas por 7 números, e terminando com 32 caracteres."
             )
         )
+    
+    log_debug("Chegou até aqui")
         
     properties = fetch_property_by_car(car_codes=car_codes)
     _property = RuralProperty.unify(properties)

@@ -16,6 +16,7 @@ from app.tools.property_crud_tools import (
     reject_car_selection
     )
 from app.utils.interfaces.property_record import RuralProperty
+from app.hooks.pre_hooks import debug_session_state
 from app.configs.config import config
 
 
@@ -113,6 +114,7 @@ property_manager_agent = Agent(
         select_car_from_list,
         reject_car_selection
         ],
+    pre_hooks=[debug_session_state],
     markdown=True,
     use_instruction_tags=False,
     instructions=get_instructions,

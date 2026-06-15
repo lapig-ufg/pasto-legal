@@ -7,9 +7,8 @@ from agno.run import RunContext
 from agno.run.agent import RunInput
 from agno.agent import Agent
 from agno.models.google import Gemini
-from agno.utils.log import log_error
+from agno.utils.log import log_error, log_debug
 
-from app.utils.interfaces.property_record import RuralProperty
 from app.configs.config import config
 
 
@@ -113,34 +112,15 @@ def validate_car_selection(run_context: RunContext, function_call: Callable, arg
     """
     session_state = run_context.session_state
 
-    if session_state and hasattr(session_state, "car_selected"):
-        return function_call(**arguments)
+    if session_state and not hasattr(session_state, "registered_properties"):
+        return textwrap.dedent("""
+            [SISTEMA] Bloqueio de Execução: Nenhum CAR registrado no sistema.
+            
+            Ação obrigatória para o Agente:
+            1. Informe que o sistema ainda não possui uma propriedade selecionada.
+            2. Solicite que o usuário envie a **localização** por meio do pino de localização do WhatsApp para que o sistema identifique o CAR automaticamente.
+        """).strip()
 
-    return textwrap.dedent("""
-        [SISTEMA] Bloqueio de Execução: Falta o CAR da propriedade.
-        
-        Motivo: A ferramenta solicitada requer o Cadastro Ambiental Rural (CAR), mas ele não está no contexto atual.
-        
-        Ação obrigatória para o Agente:
-        1. Informe que o sistema não sabe qual é a propriedade.
-        2. Solicite que o usuário envie a **localização** por meio do pino de localização do WhatsApp para que o sistema identifique o CAR automaticamente.
-    """).strip()
-    
-def detect_user_persona_hook(run_context: RunContext, run_input: RunInput):
-    """ Hook para detectar a persona do usuário de forma determinística antes da IA. """
-    # Garante que o dicionário de estado existe
-    if not run_context.session_state:
-        run_context.session_state = {}
-        
-    # Se a persona já foi definida antes, não precisa gastar processamento avaliando de novo
-    if run_context.session_state.get("user_persona") not in [None, "Desconhecido"]:
-        return
-
-    # Converte a entrada do usuário para texto minúsculo para facilitar a busca
-    mensagem = str(run_input).lower()
-
-    # Fallback Determinístico: Busca por palavras-chave
-    if "produtor" in mensagem:
-        run_context.session_state["user_persona"] = "Produtor"
-    elif "técnico" in mensagem or "consultor" in mensagem:
-        run_context.session_state["user_persona"] = "Técnico"
+def debug_session_state(run_context: RunContext):
+    log_debug("RUN CONTEXT", center=True)
+    log_debug(run_context.session_state)
