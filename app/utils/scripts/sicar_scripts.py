@@ -12,7 +12,6 @@ from requests.adapters import HTTPAdapter
 from agno.utils.log import log_debug
 
 from app.utils.interfaces.property_record import RuralProperty, SpatialFeatures, SicarMetadata
-from app.utils.mock_development import mock_property
 from app.configs.config import config
 
 # Suppress InsecureRequestWarning since we use verify=False for SICAR requests
@@ -204,7 +203,6 @@ def __fetch_property_by_car_remote(car_codes: List[str]) -> List[RuralProperty] 
     return [_map_feature_to_property_record(feature) for feature in all_features]
 
 
-@mock_property()
 def __fetch_property_by_car_locally(car_codes: List[str]) -> List[RuralProperty]:
     """
     Busca as informações de imóveis rurais utilizando uma lista de códigos únicos do CAR.
@@ -396,8 +394,10 @@ def clean_car_code(car_code: str) -> str | None:
 
 
 if config.APP_ENV == "development":
+    log_debug("Running SICAR remote.")
     fetch_property_by_car = __fetch_property_by_car_remote
     fetch_property_by_coordinates = __fetch_property_by_coordinates_remote
 else:
+    log_debug("Running SICAR local.")
     fetch_property_by_car = __fetch_property_by_car_locally
     fetch_property_by_coordinates = __fetch_property_by_coordinates_locally
