@@ -307,7 +307,7 @@ def attach_routes(
             
             valkey_execution_lock.release()
 
-            log_info(f"Processing message from {user_id[:12]}: {parsed.text}")
+            log_info(f"\033[32mProcessing message from {user_id[:12]}: {parsed.text}\033[0m")
 
             # Resolve session: check DB for latest, fall back to deterministic ID
             default_session_id = f"wa:{entity_id}:{user_id}"

@@ -122,5 +122,6 @@ def validate_car_selection(run_context: RunContext, function_call: Callable, arg
         """).strip()
 
 def debug_session_state(run_context: RunContext):
-    log_debug("RUN CONTEXT", center=True)
+    log_debug(f"\033[32mRUN CONTEXT\033[0m")
+    log_debug("", center=True)
     log_debug(run_context.session_state)
