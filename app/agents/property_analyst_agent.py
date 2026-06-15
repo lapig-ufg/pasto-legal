@@ -13,7 +13,6 @@ from app.tools.property_analyst_tools import (
     get_topographic_stats
     )
 from app.utils.interfaces.property_record import RuralProperty
-from app.hooks.pre_hooks import debug_session_state
 from app.configs.config import config
 
 
@@ -24,7 +23,6 @@ except SkillValidationError as e:
 
 
 def get_instructions(run_context: RunContext):
-    log_debug("Agente Extensionista Agrônomo Instructions", center=True)
     session_state = run_context.session_state or {}
     
     # Captura a persona definida na sessão
@@ -109,7 +107,6 @@ property_analyst_agent = Agent(
         generate_biomass_image,
         generate_soil_texture_image
     ],
-    pre_hooks=[debug_session_state],
     skills=skills,
     use_instruction_tags=False,
     instructions=get_instructions,

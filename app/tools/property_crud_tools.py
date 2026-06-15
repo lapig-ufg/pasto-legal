@@ -110,8 +110,6 @@ def register_feature_by_car(run_context: RunContext, car_codes: List[str]):
                 "Explique que o padrão exige: 2 letras do Estado, seguidas por 7 números, e terminando com 32 caracteres."
             )
         )
-    
-    log_debug("Chegou até aqui")
         
     properties = fetch_property_by_car(car_codes=car_codes)
     _property = RuralProperty.unify(properties)

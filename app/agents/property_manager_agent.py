@@ -16,12 +16,10 @@ from app.tools.property_crud_tools import (
     reject_car_selection
     )
 from app.utils.interfaces.property_record import RuralProperty
-from app.hooks.pre_hooks import debug_session_state
 from app.configs.config import config
 
 
 def get_instructions(run_context: RunContext):
-    log_debug("Gestor de Propriedades Rurais Instructions", center=True)
     session_state = run_context.session_state
 
     candidate_properties = [RuralProperty.model_validate(prop) for prop in session_state.get("candidate_properties", [])]
@@ -114,7 +112,6 @@ property_manager_agent = Agent(
         select_car_from_list,
         reject_car_selection
         ],
-    pre_hooks=[debug_session_state],
     markdown=True,
     use_instruction_tags=False,
     instructions=get_instructions,

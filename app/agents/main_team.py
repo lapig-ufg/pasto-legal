@@ -13,8 +13,7 @@ from app.tools.version_tools import consult_update_notes
 from app.tools.persona_tools import update_persona
 from app.guardrails.pii_detection_guardrail import pii_detection_guardrail
 from app.utils.interfaces.property_record import RuralProperty
-from app.hooks.pre_hooks import validate_phone_authorization, debug_session_state
-from app.hooks.post_hooks import pos_debug_session_state
+from app.hooks.pre_hooks import validate_phone_authorization
 from app.configs.config import config
 
 pre_hooks = []
@@ -23,7 +22,6 @@ if config.APP_ENV == "production":
     pre_hooks.append(validate_phone_authorization)
     pre_hooks.append(pii_detection_guardrail)
 elif config.APP_ENV == "stagging":
-    pre_hooks.append(debug_session_state)
     pre_hooks.append(validate_phone_authorization)
     pre_hooks.append(pii_detection_guardrail)
 elif config.APP_ENV == "development":
@@ -31,7 +29,6 @@ elif config.APP_ENV == "development":
 
 
 def get_instructions(run_context: RunContext) -> str:
-    log_debug("Gestor de Propriedades Rurais Instructions", center=True)
     session_state = run_context.session_state or {}
 
     user_persona = session_state.get("user_persona", {})
@@ -46,7 +43,6 @@ def get_instructions(run_context: RunContext) -> str:
     
     # TODO: Implementar uma linha de instruções para usuários novos aceitarem os termos e condições.
     if session_state.get("candidate_properties", None):
-        log_debug("PROPERTY SELECTION PATH", center=True)
         instructions = textwrap.dedent("""\
             - Sua única tarefa é chamar o `gestor-de-propriedades-rurais` usando a ferramenta `delegate_task_to_member`.
             - Depois, siga as instruções exatamente como forem passadas.
@@ -140,7 +136,6 @@ pasto_legal_team = Team(
         ],
     debug_mode=config.DEBUG_MODE,
     pre_hooks=pre_hooks,
-    post_hooks=[pos_debug_session_state],
     tools=[
         audioTTS,
         record_frustration_feedback,

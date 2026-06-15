@@ -394,10 +394,8 @@ def clean_car_code(car_code: str) -> str | None:
 
 
 if config.APP_ENV == "development":
-    log_debug("Running SICAR remote.")
     fetch_property_by_car = __fetch_property_by_car_remote
     fetch_property_by_coordinates = __fetch_property_by_coordinates_remote
 else:
-    log_debug("Running SICAR local.")
     fetch_property_by_car = __fetch_property_by_car_locally
     fetch_property_by_coordinates = __fetch_property_by_coordinates_locally

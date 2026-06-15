@@ -120,8 +120,3 @@ def validate_car_selection(run_context: RunContext, function_call: Callable, arg
             1. Informe que o sistema ainda não possui uma propriedade selecionada.
             2. Solicite que o usuário envie a **localização** por meio do pino de localização do WhatsApp para que o sistema identifique o CAR automaticamente.
         """).strip()
-
-def debug_session_state(run_context: RunContext):
-    log_debug(f"\033[32mRUN CONTEXT\033[0m")
-    log_debug("", center=True)
-    log_debug(run_context.session_state)

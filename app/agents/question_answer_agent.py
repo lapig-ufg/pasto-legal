@@ -3,7 +3,6 @@ from pathlib import Path
 from agno.run import RunContext
 from agno.agent import Agent
 
-from app.hooks.pre_hooks import debug_session_state
 from app.configs.config import config
 
 
@@ -57,7 +56,6 @@ question_answer_agent = Agent(
         "   - Ensinar o usuário a gerar mapas temáticos e interpretar análises do sistema.\n"
         "   - Consultar a base de conhecimento (documentos internos) para fornecer diretrizes exatas de uso.\n"
     ),
-    pre_hooks=[debug_session_state],
     debug_mode=config.DEBUG_MODE,
     use_instruction_tags=False,
     instructions=get_instructions,
