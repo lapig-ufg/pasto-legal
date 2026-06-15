@@ -9,6 +9,7 @@ from typing import List
 from agno.media import Image, Audio
 
 from app.agents.main_team import pasto_legal_team
+import app.utils.logger
 
 st.set_page_config(page_title="Pasto Legal", page_icon="🐂")
 

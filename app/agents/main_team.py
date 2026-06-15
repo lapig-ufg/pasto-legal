@@ -29,6 +29,7 @@ elif config.APP_ENV == "development":
 
 
 def get_instructions(run_context: RunContext) -> str:
+    log_debug("Hello WOrld")
     session_state = run_context.session_state or {}
 
     user_persona = session_state.get("user_persona", {})
