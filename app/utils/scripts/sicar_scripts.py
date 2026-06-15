@@ -97,7 +97,7 @@ def _sicar_session_request(url_api: str, timeout: int = 100) -> requests.Respons
 # =====================================================================
 conn = duckdb.connect(database=':memory:')
 
-conn.execute("INSTALL spatial; LOAD spatial;")
+conn.execute("LOAD spatial;")
 conn.execute("PRAGMA memory_limit='1GB'")
 conn.execute("PRAGMA threads=1")
 
