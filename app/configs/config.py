@@ -17,7 +17,7 @@ class BaseConfig:
     
     ARGO_APP_NAME: str = os.getenv("ARGO_APP_NAME", "Pasto Legal")
 
-    DATABASE_TYPE: str = os.getenv("DATABASE_TYPE", "sqlite")
+    DATABASE_TYPE: str = os.getenv("DATABASE_TYPE", None)
 
     POSTGRES_HOST: str = os.getenv("POSTGRES_HOST", None)
     POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", None)
