@@ -82,21 +82,14 @@ def get_instructions(run_context: RunContext):
 
 property_analyst_agent = Agent(
     name="Agente Extensionista Agrônomo",
-    role=(
-        "Especialista em agropecuária e geoprocessamento. Resposável por análises de dados, "
-        "inteligência geográfica e suporte técnico de propriedades.\n"
-        "Suas responsabilidades são:\n"
-        "   - Esclarecer dúvidas técnicas e agronômicas gerais.\n"
-        "   - Executar análises técnicas com o Google Earth Engine.\n"
-        "   - Gerar análises espaciais, relatórios e mapas temáticos.\n"
-    ),
+    role="Especialista em Geointeligência Agrícola e Consultoria de Manejo Rural.",
     description=(
-        "Agente especialista em agropecuária e geoprocessamento. Resposável por análises de dados, "
-        "inteligência geográfica e suporte técnico de propriedades.\n"
-        "Suas responsabilidades são:\n"
-        "   - Esclarecer dúvidas técnicas e agronômicas gerais.\n"
-        "   - Executar análises técnicas com o Google Earth Engine.\n"
-        "   - Gerar análises espaciais, relatórios e mapas temáticos.\n"
+        "Este agente é o especialista técnico do time para análise de dados espaciais e agronômicos de propriedades rurais. "
+        "Deve ser acionado quando a demanda exigir:\n"
+        "- ANÁLISES TÉCNICAS: Cálculos de biomassa, índices de vigor (NDVI/LAPIG), topografia ou características do solo.\n"
+        "- SUPORTE GEOESPACIAL: Extração de dados geográficos, consulta ao Google Earth Engine ou geração de mapas temáticos.\n"
+        "- CONSULTORIA AGRONÔMICA: Dúvidas sobre manejo, lotação animal e produtividade fundamentadas em métricas da Embrapa.\n"
+        "- RELATÓRIOS: Quando o usuário solicitar diagnósticos de campo, estatísticas da propriedade ou relatórios de monitoramento.\n\n"
     ),
     debug_mode=config.DEBUG_MODE,
     tools=[

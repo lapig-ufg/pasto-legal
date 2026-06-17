@@ -14,3 +14,5 @@ ENV PATH="/app/.venv/bin:$PATH"
 COPY pyproject.toml uv.lock ./
 
 RUN uv sync --frozen --no-cache
+
+RUN .venv/bin/python -c "import duckdb; duckdb.connect().execute('INSTALL spatial;')"

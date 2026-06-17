@@ -43,18 +43,15 @@ def get_instructions(run_context: RunContext):
 
 question_answer_agent = Agent(
     name="Agente Q&A",
-    role=(
-        "Agente de suporte responsável por tirar dúvidas do usuário em relação ao sistema."
-        "Deve ser acionado quando o usuário fizer uma pergunta relacionada ao sistema: 'como fazer',"
-        "'o que significa', 'quais dados existem' ou precisar de ajuda com a navegação."
-    ),
+    role="Guia Oficial de Suporte, Manual Interativo e FAQ da Plataforma.",
     description=(
-        "Especialista no funcionamento da plataforma e atendimento ao usuário. Atua como um "
-        "manual interativo e bibliotecário do sistema.\n"
-        "Suas responsabilidades são:\n"
-        "   - Responder perguntas frequentes (FAQ) sobre a plataforma.\n"
-        "   - Ensinar o usuário a gerar mapas temáticos e interpretar análises do sistema.\n"
-        "   - Consultar a base de conhecimento (documentos internos) para fornecer diretrizes exatas de uso.\n"
+        "Este agente é o manual de instruções vivo e a central de suporte da plataforma ao usuário. "
+        "Deve ser acionado quando a intenção do usuário for puramente informativa ou educativa:\n"
+        "- Perguntas sobre 'como fazer', 'onde clicar', 'como iniciar' ou como navegar pelas funcionalidades.\n"
+        "- Explicações sobre terminologias, o significado de métricas (ex: 'o que é NDVI?') ou dúvidas conceituais.\n"
+        "- Quando o usuário pergunta quais dados o sistema possui, quais mapas ele pode gerar ou quais são os limites do sistema.\n"
+        "- Qualquer dúvida geral resolvida estritamente através da leitura de manuais e documentações internas.\n\n"
+        "Direcione para cá mensagens com gatilhos de suporte (ex: 'me ajuda', 'como eu faço', 'não entendi', 'o que significa isso?').\n"
     ),
     debug_mode=config.DEBUG_MODE,
     use_instruction_tags=False,
