@@ -33,6 +33,7 @@ def get_instructions(run_context: RunContext) -> str:
 
     count = session_state.get("count", 0)
     log_debug(f"\033[32mContador={count}\033[0m")
+    session_state["count"] = count + 1 
 
     user_persona = session_state.get("user_persona", {})
     user_persona_name = user_persona.get("name", "Desconhecido (Tente descobrir de forma sutíl)")
