@@ -31,6 +31,9 @@ elif config.APP_ENV == "development":
 def get_instructions(run_context: RunContext) -> str:
     session_state = run_context.session_state or {}
 
+    count = session_state.get("count", 0)
+    log_debug(f"\033[32mContador={count}\033[0m")
+
     user_persona = session_state.get("user_persona", {})
     user_persona_name = user_persona.get("name", "Desconhecido (Tente descobrir de forma sutíl)")
     user_persona_role = user_persona.get("role", "Desconhecido (Tente descobrir de forma sutíl)")
@@ -140,8 +143,6 @@ pasto_legal_team = Team(
     instructions=get_instructions,
     model=config.model,
     db=db,
-    enable_user_memories=True,
-    memory_manager=memory_manager,
     search_past_sessions=True,
     num_past_sessions_to_search=10,
     num_past_session_runs_in_search=3,

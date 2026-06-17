@@ -1,6 +1,5 @@
 import textwrap
 
-from agno.models.google import Gemini
 from agno.memory import MemoryManager
 
 from app.database.agno_db import db
