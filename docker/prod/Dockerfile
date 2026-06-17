@@ -17,4 +17,6 @@ RUN uv sync --frozen --no-cache --no-install-project
 
 COPY . .
 
+RUN .venv/bin/python -c "import duckdb; duckdb.connect().execute('INSTALL spatial;')"
+
 RUN uv sync --frozen --no-cache

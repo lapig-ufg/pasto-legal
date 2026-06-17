@@ -1,15 +1,16 @@
-import os
 import json
 
 from pathlib import Path
 from functools import wraps
+
+from app.configs.config import config
 
 
 def mock_property():
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
-            if os.getenv("APP_ENV") == "development":
+            if config.APP_ENV == "development":
                 from app.utils.scripts.sicar_scripts import _map_feature_to_property_record
 
                 print(f"⚠️  [MOCK] Ignorando execução de: {func.__name__}", flush=True)

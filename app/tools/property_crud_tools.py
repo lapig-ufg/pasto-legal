@@ -1,16 +1,17 @@
 import re
 
 from io import BytesIO
-from typing import List, Tuple
+from typing import List
 
 from agno.run import RunContext
 from agno.tools import tool
 from agno.tools.function import ToolResult
 from agno.media import Image
+from agno.utils.log import log_debug
 
 from app.utils.scripts.sicar_scripts import (
-    fetch_property_by_coordinates_locally,
-    fetch_property_by_car_locally,
+    fetch_property_by_car,
+    fetch_property_by_coordinates,
     fetch_coordinates_by_url,
     clean_car_code
     )
@@ -20,7 +21,6 @@ from app.utils.interfaces.property_record import RuralProperty
 
 
 # TODO: Se o usuário informar uma URL de coordenadas de uma propriedade que já existe no sistema, validar se a propriedade existe por meio do CAR. Se existir então retornar menssagem que já existe.
-
 @tool(stop_after_tool_call=True)
 def register_feature_by_coordinate(run_context: RunContext, latitude: float, longitude: float):
     """
@@ -35,7 +35,7 @@ def register_feature_by_coordinate(run_context: RunContext, latitude: float, lon
     Returns:
         ToolResult: Resultado da busca contendo imagem e instruções para o próximo passo.
     """
-    properties = fetch_property_by_coordinates_locally(latitude=latitude, longitude=longitude)
+    properties = fetch_property_by_coordinates(latitude=latitude, longitude=longitude)
 
     if not properties:
         return (
@@ -43,10 +43,7 @@ def register_feature_by_coordinate(run_context: RunContext, latitude: float, lon
             "Peça que tente novamente e verificar se as coordenadas estão corretas."
         )
     
-    registered_map = {
-        prop["car_code"]: prop
-        for prop in run_context.session_state.get("registered_properties", [])
-    }
+    registered_map = {prop["car_code"]: prop for prop in run_context.session_state.get("registered_properties", [])}
     for prop in properties:
         car_code = prop.car_code
         if car_code in registered_map:
@@ -87,17 +84,16 @@ def register_feature_by_coordinate(run_context: RunContext, latitude: float, lon
             images=[Image(content=buffer.getvalue())]
             )
 
-# GO-5211800-E85CBBBF7DA34628BCA06B78357D39F6, GO-5211800-987B29E7E47A4454BAEF582557AB89F3
+
 @tool(stop_after_tool_call=True)
-def register_feature_by_car(run_context: RunContext, car_codes: List[str], name: str = None):
+def register_feature_by_car(run_context: RunContext, car_codes: List[str]):
     """
     Registra uma nova propriedade rural baseando-se nas coordenadas fornecidas.
     
     Use esta ferramenta quando o usuário fornecer um valor de CAR ainda não registrado no sistema.
     
     Args:
-        cars (List[str]): Código de Cadastro Ambiental Rural (CAR) padrão SICAR.
-        name (str): Nome da propriedade. `None` caso não seja informado.
+        cars (List[str]): Código de Cadastro Ambiental Rural (CAR) no padrão SICAR.
 
     Returns:
         ToolResult: Resultado da busca contendo imagem e instruções para o próximo passo.
@@ -115,7 +111,7 @@ def register_feature_by_car(run_context: RunContext, car_codes: List[str], name:
             )
         )
         
-    properties = fetch_property_by_car_locally(car_codes=car_codes)
+    properties = fetch_property_by_car(car_codes=car_codes)
     _property = RuralProperty.unify(properties)
 
     if not properties:
@@ -181,7 +177,7 @@ def register_feature_by_url(run_context: RunContext, url: str) -> ToolResult:
     except Exception as error:
         return ToolResult(content=str(error))
     
-    properties = fetch_property_by_coordinates_locally(latitude=latitude, longitude=longitude)
+    properties = fetch_property_by_coordinates(latitude=latitude, longitude=longitude)
 
     if not properties:
         return (

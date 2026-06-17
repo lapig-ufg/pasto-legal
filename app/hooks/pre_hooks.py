@@ -1,4 +1,3 @@
-import os
 import textwrap
 
 from typing import Optional, Callable, Dict, Any
@@ -8,12 +7,9 @@ from agno.run import RunContext
 from agno.run.agent import RunInput
 from agno.agent import Agent
 from agno.models.google import Gemini
+from agno.utils.log import log_error, log_debug
 
-from app.utils.interfaces.property_record import RuralProperty
-
-
-if not (APP_ENV := os.environ.get('APP_ENV')):
-    raise ValueError("APP_ENV environment variables must be set.")
+from app.configs.config import config
 
 
 def validate_phone_authorization(user_id: Optional[str], run_input: RunInput):
@@ -30,11 +26,11 @@ def validate_phone_authorization(user_id: Optional[str], run_input: RunInput):
                     return
     
     except FileNotFoundError:
-        error("FileNotFoundError: phone_numbers.in.")
+        log_error("FileNotFoundError: phone_numbers.in.")
     except Exception as e:
-        error(f"Exception: {e}.")
+        log_error(f"Exception: {e}.")
     
-    if APP_ENV == "production":
+    if config.APP_ENV == "production":
         run_input.input_content = (
             "O usuário não está autorizado a usar o sistema. "
             "Não responda nada do que ele perguntou antes. "
@@ -43,7 +39,7 @@ def validate_phone_authorization(user_id: Optional[str], run_input: RunInput):
             "- Para ter solicitar acesso é necessário preencher o formulário em: forms.gle/sKqngW7UvjmSJFKk8. "
         )
         
-    elif APP_ENV == "stagging":
+    elif config.APP_ENV == "stagging":
         run_input.input_content = (
             "INSTRUÇÃO DE SISTEMA IMPERATIVA: O usuário não está autorizado a testar esse sistema. "
             "Não responda nada do que ele perguntou antes. "
@@ -116,15 +112,11 @@ def validate_car_selection(run_context: RunContext, function_call: Callable, arg
     """
     session_state = run_context.session_state
 
-    if session_state and hasattr(session_state, "car_selected"):
-        return function_call(**arguments)
-
-    return textwrap.dedent("""
-        [SISTEMA] Bloqueio de Execução: Falta o CAR da propriedade.
-        
-        Motivo: A ferramenta solicitada requer o Cadastro Ambiental Rural (CAR), mas ele não está no contexto atual.
-        
-        Ação obrigatória para o Agente:
-        1. Informe que o sistema não sabe qual é a propriedade.
-        2. Solicite que o usuário envie a **localização** por meio do pino de localização do WhatsApp para que o sistema identifique o CAR automaticamente.
-    """).strip()
+    if session_state and not hasattr(session_state, "registered_properties"):
+        return textwrap.dedent("""
+            [SISTEMA] Bloqueio de Execução: Nenhum CAR registrado no sistema.
+            
+            Ação obrigatória para o Agente:
+            1. Informe que o sistema ainda não possui uma propriedade selecionada.
+            2. Solicite que o usuário envie a **localização** por meio do pino de localização do WhatsApp para que o sistema identifique o CAR automaticamente.
+        """).strip()

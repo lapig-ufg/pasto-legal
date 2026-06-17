@@ -16,5 +16,3 @@ psycopg-binary
 sqlalchemy
 python-multipart
 ffmpeg-python
-# Opcionais dependendo do ambiente
-# ffmpeg-python (para pydub se necessário)

@@ -2,6 +2,7 @@ import textwrap
 
 from agno.run import RunContext
 from agno.agent import Agent
+from agno.utils.log import log_debug
 
 from app.tools.property_crud_tools import (
     remove_property,
@@ -15,13 +16,11 @@ from app.tools.property_crud_tools import (
     reject_car_selection
     )
 from app.utils.interfaces.property_record import RuralProperty
-from app.configs.models import model
+from app.configs.config import config
 
 
 def get_instructions(run_context: RunContext):
     session_state = run_context.session_state
-
-    print(session_state, flush=True)
 
     candidate_properties = [RuralProperty.model_validate(prop) for prop in session_state.get("candidate_properties", [])]
 
@@ -90,17 +89,15 @@ def get_instructions(run_context: RunContext):
 
 property_manager_agent = Agent(
     name="Gestor de Propriedades Rurais",
-    role=(
-        "Resposável pelo CRUD (Create, Read, Update e Delete) de propriedades do usuário no sistema:\n"
-        "   - Localizar e cadastrar propriedades rurais.\n"
-        "   - Editar e atualizar os metadados das propriedades.\n"
-        "   - Excluir registros de propriedades quando solicitado."
-    ),
+    role="Especialista em Cadastro, Validação de CAR/SICAR e Gerenciamento Estrutural de Imóveis Rurais.",
     description=(
-        "Agente resposável pelo CRUD (Create, Read, Update e Delete) de propriedades do usuário no sistema:\n"
-        "   - Localizar e cadastrar propriedades rurais.\n"
-        "   - Editar e atualizar os metadados das propriedades.\n"
-        "   - Excluir registros de propriedades quando solicitado."
+        "Este agente é o responsável exclusivo por gerenciar o ciclo de vida e o cadastro das propriedades no sistema. "
+        "Deve ser acionado obrigatoriamente quando o usuário desejar:\n"
+        "- Registrar novas propriedades através de códigos CAR/SICAR, coordenadas geográficas ou URLs de mapas.\n"
+        "- Confirmar, rejeitar ou selecionar uma propriedade específica a partir de uma lista de opções geradas pelo sistema.\n"
+        "- Alterar ou definir o nome personalizado de uma fazenda/propriedade.\n"
+        "- Remover propriedades registradas ou limpar o histórico de imóveis cadastrados.\n\n"
+        "Acione este agente para qualquer comando que envolva as palavras-chave 'cadastrar', 'deletar', 'mudar nome', 'inserir CAR', 'confirmar fazenda' ou 'escolher opção'.\n"
     ),
     tools=[
         remove_property,
@@ -116,5 +113,6 @@ property_manager_agent = Agent(
     markdown=True,
     use_instruction_tags=False,
     instructions=get_instructions,
-    model=model
+    model=config.model,
+    debug_mode=config.DEBUG_MODE
 )
