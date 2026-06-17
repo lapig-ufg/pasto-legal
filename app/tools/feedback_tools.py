@@ -4,6 +4,7 @@ from agno.tools import tool
 from agno.run import RunContext
 from agno.agent import Agent
 from agno.models.google import Gemini
+from agno.utils.log import log_debug
 
 from app.database.session import SessionLocal, engine
 from app.database.models import FrustrationFeedback, AnalysisFeedback
@@ -28,26 +29,26 @@ def _mask_pii(text: str) -> str:
 
 def _get_sanitized_history(run_context: RunContext) -> str:
     """ Função auxiliar: Filtra as últimas 3 interações limpas e passa pelo sanitizador semântico """
-    if not run_context or not run_context.messages:
+    if not run_context.messages:
         return ""
         
-    filtered_history = []
+    history = []
     user_msg_count = 0
 
     # 1. Filtro de Histórico Real (Ignora lixo e para na 3ª msg do user)
     for msg in reversed(run_context.messages):
+        if user_msg_count == 3:
+            break
+
         role = msg.get("role") if isinstance(msg, dict) else getattr(msg, "role", "")
         content = msg.get("content") if isinstance(msg, dict) else getattr(msg, "content", "")
 
         if role in ["user", "assistant"]:
-            filtered_history.insert(0, f"{role.upper()}: {content}")
-            
+            history.append(f"{role.upper()}: {content}")
             if role == "user":
                 user_msg_count += 1
-                if user_msg_count == 3:
-                    break
 
-    history_text = "\n".join(filtered_history)
+    history_text = "\n".join(history[::-1])
 
     # 2. Agente Sanitizador In-Line (Camada 1 - IA)
     if not history_text:
@@ -64,16 +65,15 @@ def _get_sanitized_history(run_context: RunContext) -> str:
     
     try:
         sanitizer_response = sanitizer_agent.run(history_text)
-        sanitized_text = sanitizer_response.content if sanitizer_response and sanitizer_response.content else history_text
+        sanitized_history = sanitizer_response.content if sanitizer_response and sanitizer_response.content else history_text
     except Exception:
-        sanitized_text = history_text
+        sanitized_history = history_text
         
     # 3. Fallback Determinístico (Camada 2 - Regex)
-    return _mask_pii(sanitized_text)
+    return _mask_pii(sanitized_history)
 
 @tool
 def record_frustration_feedback(
-    original_question: str, 
     reason_frustration: str, 
     desired_answer: str,
     run_context: RunContext = None
@@ -92,21 +92,23 @@ def record_frustration_feedback(
     
     try:
         # Puxa o histórico já limpo e anonimizado pela nossa esteira
-        final_safe_context = _get_sanitized_history(run_context)
+        sanitized_history = _get_sanitized_history(run_context)
         
         novo_feedback = FrustrationFeedback(
             timestamp=datetime.now().isoformat(),
-            original_question=_mask_pii(original_question),
+            original_question="",
             reason_frustration=_mask_pii(reason_frustration),
             desired_answer=_mask_pii(desired_answer),
-            context=final_safe_context
+            context=sanitized_history
         )
         
         db.add(novo_feedback)
         db.commit()
+        log_debug("Feedback registrado com sucesso.")
         return "Feedback registrado com sucesso no sistema. Muito obrigado por ajudar a melhorar o Pasto Legal!"
     except Exception as e:
         db.rollback()
+        log_debug("Erro ao registrar feedback.")
         return f"Erro ao registrar feedback: {str(e)}"
     finally:
         db.close()

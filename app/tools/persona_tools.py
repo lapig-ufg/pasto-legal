@@ -30,13 +30,13 @@ def update_persona(
     session_state = run_context.session_state or {}
     user_persona = session_state.get("user_persona", {})
 
-    if not name is None:
+    if name is not None:
         user_persona['name'] = name.title()
 
-    if not city is None:
+    if city is not None:
         user_persona['city'] = city.title()
 
-    if not role is None:
+    if role is not None:
         user_persona['role'] = role.capitalize()
 
     session_state['user_persona'] = user_persona

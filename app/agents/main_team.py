@@ -44,8 +44,10 @@ def get_instructions(run_context: RunContext) -> str:
     # TODO: Implementar uma linha de instruções para usuários novos aceitarem os termos e condições.
     if session_state.get("candidate_properties", None):
         instructions = textwrap.dedent("""\
+            <instructions>
             - Sua única tarefa é chamar o `gestor-de-propriedades-rurais` usando a ferramenta `delegate_task_to_member`.
             - Depois, siga as instruções exatamente como forem passadas.
+            <instructions>
         """).strip()
     else:
         registered_properties = [RuralProperty.model_validate(record) for record in session_state.get("registered_properties", [])]
@@ -126,9 +128,11 @@ pasto_legal_team = Team(
     db=db,
     enable_user_memories=True,
     memory_manager=memory_manager,
+    search_past_sessions=True,
+    num_past_sessions_to_search=10,
+    num_past_session_runs_in_search=3,
     add_history_to_context=True,
-    num_history_runs=3,
-    add_session_summary_to_context=True,
+    num_history_runs=1,
     members=[
         property_analyst_agent,
         property_manager_agent,
