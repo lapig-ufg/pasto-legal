@@ -9,7 +9,6 @@ interfaces = [Whatsapp(team=pasto_legal_team)]
 pasto_legal_os = AgentOS(
     teams=[pasto_legal_team],
     interfaces=interfaces,
-    a2a_interface=True
 )
 
 app = pasto_legal_os.get_app()
