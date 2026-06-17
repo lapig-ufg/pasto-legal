@@ -2,7 +2,6 @@ from agno.os import AgentOS
 
 from app.interfaces.whatsapp import Whatsapp
 from app.agents.main_team import pasto_legal_team
-from agno.os.interfaces.a2a import A2A
 
 interfaces = [Whatsapp(team=pasto_legal_team)]
 
