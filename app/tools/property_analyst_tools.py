@@ -1,3 +1,5 @@
+import datetime
+
 from io import BytesIO
 
 from agno.tools import tool
@@ -8,7 +10,8 @@ from agno.media import Image
 from app.hooks.tool_hooks import validate_selected_property_hook
 from app.utils.scripts.gee_scripts import (
     retrieve_feature_images,
-    retrieve_feature_biomass_image,
+    retrieve_mapbiomas_biomass_image,
+    retrieve_t2g_biomass_image,
     retrieve_feature_soil_texture_image,
     query_pasture_statistics,
     query_topographic_stats,
@@ -51,13 +54,12 @@ def generate_property_image(run_context: RunContext, car_codes: list[str]) -> To
 
 
 @tool(tool_hooks=[validate_selected_property_hook])
-def generate_biomass_image(run_context: RunContext, car_codes: list[str], year: int = 2024) -> ToolResult:
+def generate_biomass_image(run_context: RunContext, car_codes: list[str]) -> ToolResult:
     """
     Gera um mapa temático da biomassa (matéria seca) sobre os limites da propriedade rural.
 
     params:
         car_codes (list[str]): Lista de códigos CAR da propriedade.
-        year (int): O ano para a consulta dos dados (2000-2024). O ano mais recente é 2024.
 
     Return:
         ToolResult: Mapa renderizado em formato PNG.
@@ -65,17 +67,32 @@ def generate_biomass_image(run_context: RunContext, car_codes: list[str], year: 
     try:
         registered_properties = run_context.session_state['registered_properties']
         selected_property = next((prop for prop in registered_properties if prop["car_code"] == ', '.join(car_codes)), None)
-        selected_property = RuralProperty.model_validate(selected_property)
+        selected_property = RuralProperty.model_validate(selected_property)   
 
-        img = retrieve_feature_biomass_image(coords=selected_property.get_coords(), year=year)
+        today = datetime.date.today()
+
+        img = retrieve_t2g_biomass_image(selected_property.get_coords(), today.month, today.year)
+
+        if img is not None:
+            buffer = BytesIO()
+            img.save(buffer, format="PNG")
+
+            return ToolResult(
+                content=(f"Legenda: Azul claro (Alta concentração) a Roxo escuro (Baixa concentração). Data: mês {today.month}, ano {today.year}"),
+                images=[Image(content=buffer.getvalue())]
+            )
+
+        img = retrieve_mapbiomas_biomass_image(selected_property.get_coords(), year=2024)
 
         buffer = BytesIO()
         img.save(buffer, format="PNG")
-                
+
         return ToolResult(
-            content=f"Legenda: Azul claro (Alta concentração) a Roxo escuro (Baixa concentração).",
+            content=(f"Legenda: Azul claro (Alta concentração) a Roxo escuro (Baixa concentração). Data: ano 2024"),
             images=[Image(content=buffer.getvalue())]
         )
+                
+
 
     except Exception as e:
         return ToolResult(content=str(e))

@@ -196,7 +196,7 @@ def retrieve_feature_images(coords: List[List[List[List[float]]]]) -> List[PIL.I
         )
 
 
-def retrieve_feature_biomass_image(coords: List[List[List[List[float]]]], year: int = None) -> PIL.Image:
+def retrieve_mapbiomas_biomass_image(coords: List[List[List[List[float]]]], year: int = None) -> PIL.Image:
     """
     Gera uma imagem de satélite com a camada de biomassa de pastagem sobreposta,
     baseada na geometria da propriedade rural fornecida.
@@ -297,6 +297,93 @@ def retrieve_feature_biomass_image(coords: List[List[List[List[float]]]], year: 
             "Peça ao usuário que tente novamente mais tarde."
         )
     
+
+def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int, year: int) -> PIL.Image.Image | None:
+    UGPP_SCALE_FACTOR = 0.1
+
+    # Maximum light use efficiency (LUEmax) 
+    # Aappropriate for the dominant Urochloa brizantha cultivated pastures in Brazil (MapBiomas Brazil)
+    GRASS_LUEMAX_FACTOR = 0.50 #gC/m²/day/MJ
+
+    # Conversion of carbon to dry biomass
+    IPCC_FACTOR = 2.7
+
+    # Conversion Factor gC/m² to Ton/hec
+    CONVERSION_FACTOR = 0.01
+
+    DRY_BIOMASS_FACTOR = GRASS_LUEMAX_FACTOR * IPCC_FACTOR * CONVERSION_FACTOR
+
+    TILES = [
+        '36NXG', '36MVB', '36MWV', '36KUF', '35KRS', '32PRQ', '23KLQ', '21MXN',
+        '18PVQ', '36MTE', '32PLU', '21HXC', '20HKH', '19NBG', '21HWE', '21HUV',
+        '22LDJ', '23KLB','23KMA','23KMB','23KMV','23KNA','23KNB','23KNV','23KPA',
+        '23KPB','23KQA','23KQB','23KRB','23LMC','23LMD','23LNC','23LND','23LNE',
+        '23LPC','23LPD','23LPE','23LQC','23LQD','23LRC','23LRD','24LTH','24LTJ'
+        ]
+
+    roi = ee.Geometry.MultiPolygon(coords)
+
+    today_date = ee.Date.fromYMD(year, month, 1)
+    start_date = today_date.advance(-2, 'month')
+    end_date = start_date.advance(1, 'month')
+
+    n_days = ee.Number(end_date.difference(start_date, 'day'))
+
+    ugpp = ee.ImageCollection("projects/wri-lcl-time2graze/assets/ugpp_10m_v1")
+    ugpp_col = ugpp.filter(ee.Filter.inList('tile', TILES)).filterBounds(roi)
+
+    if ugpp_col.size().eq(0).getInfo():
+        return None
+
+    grassland_asset = ee.ImageCollection("projects/global-pasture-watch/assets/ggc-30m/v1-1/grassland_c");
+    grassland_mask = grassland_asset.filterBounds(roi).filterDate('2024-01-01','2024-12-31').first().gte(1)
+
+    grassland_image: ee.Image = ugpp_col.filterDate(start_date, end_date).mean() \
+        .multiply(ee.Image(n_days)).multiply(ee.Image(UGPP_SCALE_FACTOR)).multiply(DRY_BIOMASS_FACTOR) \
+        .updateMask(grassland_mask).clip(roi)
+    
+    stats = grassland_image.reduceRegion(
+            reducer=ee.Reducer.minMax(),
+            geometry=roi,
+            scale=10,
+            maxPixels=1e13
+        ).getInfo()
+
+    min_key = next((k for k in stats if k.endswith('_min')), None)
+    max_key = next((k for k in stats if k.endswith('_max')), None)
+
+    if not min_key or stats[min_key] is None:
+        raise ValueError("Não foi possível calcular a biomassa. A área pode não conter pastagem mapeada.")
+
+    min_bio_val = stats[min_key]
+    max_bio_val = stats[max_key]    
+    
+    palette = ['#000033','#9400D3','#FF00FF','#00FFFF','#FFFFFF']
+    bioprop = grassland_image.visualize(**{"min": min_bio_val, "max": max_bio_val, "palette": palette})        
+    
+    base_image = _get_base_image(roi=roi, year=year)
+
+    outline = _draw_feature_boundaries(roi=roi)
+
+    final_image = base_image.blend(bioprop.clip(roi))
+    final_image = final_image.blend(outline).clip(roi.buffer(_FEATURE_BUFFER).bounds());
+    
+    url = final_image.getThumbURL({"dimensions":_IMAGE_DIMENSION, "format": "png"})
+    
+    resposta = requests.get(url, timeout=60)
+    resposta.raise_for_status()
+
+    img = PIL.Image.open(BytesIO(resposta.content))
+
+    img = add_legend(
+        img, 
+        title=f"Biomassa\npasto ({str(year)})", 
+        vmin=round(min_bio_val),
+        vmax=round(max_bio_val),
+        palette=palette
+    )
+
+    return img
 
 def retrieve_feature_soil_texture_image(coords: List[List[List[List[float]]]]):
     try:
