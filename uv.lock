@@ -29,7 +29,7 @@ wheels = [
 
 [[package]]
 name = "agno"
-version = "2.5.14"
+version = "2.6.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "docstring-parser" },
@@ -46,9 +46,9 @@ dependencies = [
     { name = "typer" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3f/d9/26236de973e2b7f7e76897bf8c8f2b0f6a1d2f8c5fc43a1e7ae76a4a9078/agno-2.5.14.tar.gz", hash = "sha256:fd33ebf9b1683e3cd5e994a8b1e81d1d6a894f78b145099089f7180727d4a676", size = 1838839, upload-time = "2026-04-02T20:29:28.11Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fa/b7/17c737b7a482b204eeb287e2c1616ed4abea93d71501810c37f269d002fb/agno-2.6.6.tar.gz", hash = "sha256:c8767ff7528a4f8b7aa8c0543592c3b9cc3c2e3f5a2852555a1c493408df3acf", size = 2025094, upload-time = "2026-05-14T07:35:01.598Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/26/58/96dc4df9b3e6ab4b2dda22eeb9a87b8cbf0dbe9247a96b6c01c2d3243bee/agno-2.5.14-py3-none-any.whl", hash = "sha256:5fde4f7635218def4ee202ad544589c1e3670048a907df7210ecffdb8aff33cd", size = 2187863, upload-time = "2026-04-02T20:29:25.788Z" },
+    { url = "https://files.pythonhosted.org/packages/fa/d1/1a9078840c00cd2b6a2968dd11cc107c72290424ff7dbd4baf9a87617ac3/agno-2.6.6-py3-none-any.whl", hash = "sha256:ba8795e020d2a036af312734c1a796b5064466d4c45ab6d64ea51ec5ec2b2cd7", size = 2405077, upload-time = "2026-05-14T07:34:59.063Z" },
 ]
 
 [[package]]
@@ -2343,7 +2343,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "a2a-sdk", specifier = ">=1.1.0" },
-    { name = "agno", specifier = "==2.5.14" },
+    { name = "agno", specifier = "==2.6.6" },
     { name = "bs4", specifier = ">=0.0.2" },
     { name = "chromadb", specifier = ">=1.5.8" },
     { name = "duckdb", specifier = "==1.3.0" },

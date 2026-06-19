@@ -1,18 +1,3 @@
-"""The normal-response branch — routes the user's message by intent/state.
-
-  1. System/guide/Q&A question     -> question_answer_agent
-  2. Technical question, property -> pasto_legal_team
-     already registered
-  3. Technical question, no        -> Loop(property_manager_agent) until
-     property registered              set_property_name sets a flag, then
-                                      property_analyst_agent preliminary
-                                      analysis (human-reviewed). On failure
-                                      a property-cancellation message is
-                                      produced instead.
-
-This module exports the assembled `normal_response` Condition used by the
-main workflow.
-"""
 from typing import Any, Dict, List
 
 from pydantic import BaseModel
@@ -118,8 +103,8 @@ def property_canceled(step_input: StepInput, session_state: Dict[str, Any]) -> S
 # ---------------------------------------------------------------------------
 # Normal-response branch assembly
 # ---------------------------------------------------------------------------
-normal_response = Condition(
-    name="normal_response",
+run_steps = Condition(
+    name="run_steps",
     evaluator=is_system_question,
     steps=[Step(name="answer_system", agent=question_answer_agent)],
     else_steps=[

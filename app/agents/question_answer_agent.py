@@ -14,7 +14,7 @@ files = [
     ]
 
 knowledge_text = ""
-knowledge_path = Path("/app/docs/knowledge")
+knowledge_path = Path.cwd() / "docs/knowledge"
 for file_name in files:
     try:
         file_path = knowledge_path / file_name

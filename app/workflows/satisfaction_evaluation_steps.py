@@ -1,22 +1,85 @@
-"""Satisfaction grading and the grade-driven branch (the "evaluation_branch").
-
-The user's message is graded on a 1-5 scale (1 = completely frustrated,
-3 = neutral, 5 = amazed). The grade drives a 3-way branch (nested
-Conditions, since Agno's Condition is two-way only) into tailored handler
-messages and DB saves. This module exports the assembled `evaluation_branch`
-Steps used by the main workflow.
-"""
 from typing import Any, Dict
+from datetime import datetime
 
 from pydantic import BaseModel
 
 from agno.agent import Agent
-from agno.workflow import Step, Condition, Steps
+from agno.run import RunContext
+from agno.workflow import Step, Steps, Router
 from agno.workflow.types import StepInput, StepOutput
 from agno.utils.log import log_error, log_debug
 
 from app.configs.config import config
-from app.workflows.feedback import save_frustration, save_amazed
+from app.database.session import engine, SessionLocal
+from app.database.models import FrustrationFeedback, PositiveFeedback
+from app.tools.feedback_tools import _mask_pii
+
+
+def save_frustration(
+    step_input: StepInput,
+    session_state: Dict[str, Any],
+    run_context: RunContext = None,
+) -> StepOutput:
+    """Persist a frustrated interaction to the FrustrationFeedback table."""
+    grade = session_state.get("satisfaction_grade", 3)
+    user_msg = step_input.get_input_as_string() or ""
+    normal_response = _get_normal_response(step_input)
+    handler_msg = session_state.get("handler_message", "")
+
+    FrustrationFeedback.metadata.create_all(bind=engine)
+    session = SessionLocal()
+    try:
+        novo_feedback = FrustrationFeedback(
+            timestamp=datetime.now().isoformat(),
+            original_question=_mask_pii(user_msg),
+            reason_frustration=f"auto low satisfaction grade={grade}",
+            desired_answer=_mask_pii(normal_response),
+            context=_mask_pii(handler_msg),
+        )
+        session.add(novo_feedback)
+        session.commit()
+        log_debug("Frustration feedback saved by workflow.")
+    except Exception as e:
+        session.rollback()
+        log_error(f"Erro ao registrar frustration feedback: {e}")
+    finally:
+        session.close()
+
+    return StepOutput(content="frustration_saved")
+
+
+def save_amazed(
+    step_input: StepInput,
+    session_state: Dict[str, Any],
+    run_context: RunContext = None,
+) -> StepOutput:
+    """Persist an amazed interaction to the PositiveFeedback table for future fine-tuning."""
+    grade = session_state.get("satisfaction_grade", 3)
+    user_msg = step_input.get_input_as_string() or ""
+    normal_response = _get_normal_response(step_input)
+    handler_msg = session_state.get("handler_message", "")
+
+    PositiveFeedback.metadata.create_all(bind=engine)
+    session = SessionLocal()
+    try:
+        novo_feedback = PositiveFeedback(
+            timestamp=datetime.now().isoformat(),
+            user_message=_mask_pii(user_msg),
+            assistant_response=_mask_pii(normal_response),
+            handler_message=_mask_pii(handler_msg),
+            grade=grade,
+            context=_mask_pii(normal_response),
+        )
+        session.add(novo_feedback)
+        session.commit()
+        log_debug("Positive feedback saved by workflow.")
+    except Exception as e:
+        session.rollback()
+        log_error(f"Erro ao registrar positive feedback: {e}")
+    finally:
+        session.close()
+
+    return StepOutput(content="amazed_saved")
 
 
 # ---------------------------------------------------------------------------
@@ -56,28 +119,6 @@ frustration_handler_agent = Agent(
     debug_mode=config.DEBUG_MODE,
 )
 
-neutral_handler_agent = Agent(
-    name="Neutral Handler",
-    model=config.model,
-    instructions=(
-        "O usuário está neutro em relação à resposta anterior. Escreva uma mensagem curta "
-        "em português, agradecendo o retorno e oferecendo ajuda adicional. Não use bullet points."
-    ),
-    use_instruction_tags=False,
-    debug_mode=config.DEBUG_MODE,
-)
-
-amazed_handler_agent = Agent(
-    name="Amazed Handler",
-    model=config.model,
-    instructions=(
-        "O usuário está encantado com a resposta anterior. Escreva uma mensagem curta e "
-        "entusiasmada em português, celebrando o bom resultado. Não use bullet points."
-    ),
-    use_instruction_tags=False,
-    debug_mode=config.DEBUG_MODE,
-)
-
 
 def _run_handler(agent: Agent, user_msg: str) -> str:
     """Run a handler agent and return its content (empty string on failure)."""
@@ -92,7 +133,7 @@ def _run_handler(agent: Agent, user_msg: str) -> str:
 # ---------------------------------------------------------------------------
 # Step executors
 # ---------------------------------------------------------------------------
-def grade_satisfaction(step_input: StepInput, session_state: Dict[str, Any]) -> StepOutput:
+def satisfaction_evaluation(step_input: StepInput, session_state: Dict[str, Any]) -> StepOutput:
     """Grade the user's message on a 1-5 scale and store it in session_state."""
     user_msg = step_input.get_input_as_string() or ""
 
@@ -105,7 +146,7 @@ def grade_satisfaction(step_input: StepInput, session_state: Dict[str, Any]) -> 
         log_error(f"Grader agent failed: {e}")
 
     grade = max(1, min(5, grade))
-    session_state["satisfaction_grade"] = grade
+    session_state["satisfaction_level"] = grade
     log_debug(f"Satisfaction grade: {grade}")
     return StepOutput(content=grade)
 
@@ -132,44 +173,48 @@ def handle_amazed(step_input: StepInput, session_state: Dict[str, Any]) -> StepO
 # Branching — Agno's Condition is two-way only, so a 3-way branch is built
 # with nested Conditions on the grade stored in session_state.
 # ---------------------------------------------------------------------------
-def is_frustrated(step_input: StepInput, session_state: Dict[str, Any]) -> bool:
-    return session_state.get("satisfaction_grade", 3) < 3
+def satisfaction_selector(step_input: StepInput, session_state: Dict[str, Any]):
+    satisfaction_level = session_state.get("satisfaction_level", 3)
+
+    if satisfaction_level == 3:
+        return ["neutral_handler"]
+    elif satisfaction_level > 3:
+        return ["amazed_steps"]
+    elif satisfaction_level < 3:
+        return ["frustration_steps"]
 
 
-def is_amazed(step_input: StepInput, session_state: Dict[str, Any]) -> bool:
-    return session_state.get("satisfaction_grade", 3) > 3
-
-
-branch_on_grade = Condition(
-    name="branch_on_grade",
-    evaluator=is_frustrated,
-    steps=[
-        Step(name="handle_frustration", executor=handle_frustration),
-        Step(name="save_frustration", executor=save_frustration),
-    ],
-    else_steps=[
-        Condition(
-            name="amazed_or_neutral",
-            evaluator=is_amazed,
+branch_satisfaction_level = Router(
+    name="branch_satisfaction_level",
+    selector=satisfaction_selector,
+    choices=[
+        Steps(
+            name="frustration_steps",
+            steps=[
+                Step(name="handle_frustration", executor=handle_frustration),
+                Step(name="save_frustration", executor=save_frustration)
+            ]
+        ),
+        Steps(
+            name="amazed_steps",
             steps=[
                 Step(name="amazed_handler", executor=handle_amazed),
                 Step(name="save_amazed", executor=save_amazed),
-            ],
-            else_steps=[
-                Step(name="neutral_handler", executor=handle_neutral),
-            ],
-        )
+            ]
+        ),
+        Step(name="neutral_handler", executor=handle_neutral)
     ],
+    allow_multiple_selections=False
 )
 
 
 # ---------------------------------------------------------------------------
 # Evaluation branch — grade the message, then branch on the grade.
 # ---------------------------------------------------------------------------
-evaluation_branch = Steps(
-    name="evaluation_branch",
+satisfaction_evaluation_steps = Steps(
+    name="satisfaction_evaluation_branch",
     steps=[
-        Step(name="grade_satisfaction", executor=grade_satisfaction),
-        branch_on_grade,
+        Step(name="satisfaction_evaluation", executor=satisfaction_evaluation),
+        branch_satisfaction_level,
     ],
 )
