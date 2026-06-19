@@ -328,6 +328,9 @@ def set_property_name(run_context: RunContext, car_codes: List[str], name: str):
     registered_properties.remove(selected_property)
     registered_properties.append(new_selected_property.model_dump())
     run_context.session_state["registered_properties"] = registered_properties
+    # Flag that the property name was successfully set, so the registration
+    # Loop in the workflow can exit (see app/workflows/main_workflow.py).
+    run_context.session_state["property_name_set"] = True
 
     return ToolResult(
         content=(
