@@ -7,7 +7,7 @@ from agno.models.google import Gemini
 from agno.utils.log import log_debug
 
 from app.database.session import SessionLocal, engine
-from app.database.models import FrustrationFeedback, AnalysisFeedback
+from app.database.models import NegativeFeedback, AnalysisFeedback
 
 def _mask_pii(text: str) -> str:
     """ Fallback Determinístico: Mascara dados sensíveis usando Regex """
@@ -87,14 +87,14 @@ def record_frustration_feedback(
     4. O assistente pede para o usuário explicar como seria a resposta correta.
     5. O usuário fornece a resposta.
     """
-    FrustrationFeedback.metadata.create_all(bind=engine)
+    NegativeFeedback.metadata.create_all(bind=engine)
     db = SessionLocal()
     
     try:
         # Puxa o histórico já limpo e anonimizado pela nossa esteira
         sanitized_history = _get_sanitized_history(run_context)
         
-        novo_feedback = FrustrationFeedback(
+        novo_feedback = NegativeFeedback(
             timestamp=datetime.now().isoformat(),
             original_question="",
             reason_frustration=_mask_pii(reason_frustration),

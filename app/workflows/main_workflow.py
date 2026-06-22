@@ -1,12 +1,11 @@
 from typing import Any, Dict
 
-
-from agno.workflow import Workflow, Step, Parallel
+from agno.workflow import Workflow, Step, Parallel, Condition, Router
 from agno.workflow.types import StepInput, StepOutput
 
 from app.database.agno_db import db
-from app.workflows.satisfaction_evaluation_steps import satisfaction_evaluation_steps
-from app.workflows.run_steps import run_steps
+from app.workflows.satisfaction_steps import satisfaction_evaluation_steps
+from app.workflows.main_steps import run_steps
 
 
 def _get_run_response(step_input: StepInput) -> str:
@@ -39,19 +38,49 @@ def _merge_response(step_input: StepInput, session_state: Dict[str, Any]) -> Ste
 
     return StepOutput(content=content)
 
+# --------------------- Greetings ---------------------------------
+
+def greetings_evaluator(step_input: StepInput, session_state: Dict[str, Any]):
+    is_greeted = session_state.get("is_greeted", False)
+
+    if is_greeted:
+        return True
+    else:
+        session_state["is_greeted"] = True
+        return False
+
+
+def greetings_executor(step_input: StepInput):
+    return StepOutput(content="Olá, seja bem-vindo ao Pato Legal. Como posso te ajudar hoje?")
+
+
+def steps_selector(step_input: StepInput, session_state: Dict[str, Any]):
+    path = session_state.get("path", None)
+
+    if path is None:
+        path = 
+
 
 pasto_legal_workflow = Workflow(
     name="Pasto Legal Workflow",
     db=db,
     steps=[
-        Parallel(
-            satisfaction_evaluation_steps,
-            run_steps,
-            name="grade_and_respond",
-        ),
-        Step(name="merge_response", executor=_merge_response),
+        Condition(
+            name="First Time in Here?",
+            evaluator=greetings_evaluator,
+            steps=[Step(name="Greetings", executor=greetings_executor)],
+            else_steps=[
+                Router(
+                    name="Main Paths",
+                    selector=steps_selector,
+                    choices=[
+                        main_steps
+                    ],
+                )
+            ]
+        )
     ],
 )
 
-if __file__=="__main__":
-    Workflow.print_response("Olá, tudo bem?")
+if __name__=="__main__":
+    pasto_legal_workflow.print_response("Olá, tudo bem?")
