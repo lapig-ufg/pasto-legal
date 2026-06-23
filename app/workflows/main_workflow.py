@@ -10,10 +10,9 @@ from app.agents import (
     property_analyst_agent,
 )
 from app.database.agno_db import db
-from app.workflows.satisfaction_steps import satisfaction_evaluation_steps
-from app.workflows.main_steps import main_steps
+from app.workflows.feedback_workflow import feedback_workflow
+from app.workflows.run_workflow import run_workflow
 from app.workflows.steps_names import MainSteps
-
 
 
 def _get_run_response(step_input: StepInput) -> str:
@@ -63,12 +62,11 @@ def greetings_executor(step_input: StepInput):
 
 
 def steps_selector(step_input: StepInput, session_state: Dict[str, Any]):
-    return session_state.get("path", MainSteps.MAIN_PARALLEL.value)
+    return session_state.get("path", "Run Workflow")
 
 
 pasto_legal_workflow = Workflow(
     name="Pasto Legal Workflow",
-    db=db,
     steps=[
         Condition(
             name="First Time in Here?",
@@ -79,14 +77,17 @@ pasto_legal_workflow = Workflow(
                     name="Main Paths",
                     selector=steps_selector,
                     choices=[
-                        main_steps,
-                        Step(name="Property Registration Loop", agent=property_manager_agent)
+                        Step(name="Run Workflow", workflow=run_workflow),
+                        Step(name="Registration Agent", agent=property_manager_agent)
                     ],
                 )
             ]
         )
     ],
+    db=db,
 )
 
+
 if __name__=="__main__":
-    pasto_legal_workflow.print_response("Olá, tudo bem?")
+    response = pasto_legal_workflow.run("Olá, tudo bem?")
+    print(response.content)

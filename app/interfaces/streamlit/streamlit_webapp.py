@@ -9,6 +9,7 @@ from typing import List
 from agno.media import Image, Audio
 
 from app.agents.main_team import pasto_legal_team
+from app.workflows.main_workflow import pasto_legal_workflow
 
 st.set_page_config(page_title="Pasto Legal", page_icon="🐂")
 
@@ -213,7 +214,7 @@ if user_query:
 
             # TODO: Implementar files.
             with st.spinner("Analisando dados e gerando resposta..."):
-                response = pasto_legal_team.run(**run_kwargs)
+                response = pasto_legal_workflow.run(**run_kwargs)
             
             if hasattr(response, 'content'):
                 full_response = response.content

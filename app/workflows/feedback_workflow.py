@@ -1,20 +1,18 @@
-import textwrap
-
 from typing import Any, Dict
 from datetime import datetime
 
-from agno.agent import Agent
 from agno.run import RunContext
-from agno.workflow import Step, Steps, Router, Condition, Parallel
-from agno.workflow.types import StepInput, StepOutput, HumanReview
+from agno.workflow import Workflow, Step, Steps, Router, Condition, Parallel
+from agno.workflow.types import StepInput, StepOutput
 from agno.utils.log import log_error, log_debug
 
-from app.agents.feedback_agent import satisfaction_evaluation_agent, merge_negative_agent
+from app.agents.feedback_agent import satisfaction_evaluation_agent, remediation_agent
 from app.agents.persona_agent import persona_manager_agent
 from app.configs.config import config
 from app.database.session import engine, SessionLocal
 from app.database.models import NegativeFeedback, PositiveFeedback
 from app.tools.feedback_tools import _mask_pii
+from app.utils.interfaces.user_mood import UserMood, Effectiveness
 
 
 DEFAULT_SATISFACTION_LEVEL = 3
@@ -91,83 +89,73 @@ def save_positive_feedback(
 def satisfaction_evaluation(step_input: StepInput, session_state: Dict[str, Any]) -> StepOutput:
     """Grade the user's message on a 1-5 scale and store it in session_state."""
     user_msg = step_input.get_input_as_string() or ""
+    user_mood = session_state.get("user_mood", {})
+    satisfaction = user_mood.get("satisfaction", {})
 
     try:
-        response = satisfaction_evaluation_agent.run(user_msg)
+        response = satisfaction_evaluation_agent.run(user_msg, session_state={"user_mood": user_mood})
         if response and response.content:
-            satisfaction_level = int(getattr(response.content, "level", DEFAULT_SATISFACTION_LEVEL))
+            effectiveness: Effectiveness = response.content
     except Exception as e:
         log_error(f"Satisfaction Evaluation Agent agent failed: {e}")
 
-    satisfaction_level = max(1, min(5, satisfaction_level))
-    session_state["satisfaction_level"] = satisfaction_level
+    if satisfaction.get("level", 3) >= 3:
+        session_state["satisfaction"] = effectiveness
+    else:
+        session_state["remediation"] = effectiveness
 
-    log_debug(f"Satisfaction grade: {satisfaction_level}")
-    return StepOutput(content=satisfaction_level)
+    log_debug(f"Satisfaction level: {effectiveness}")
+    return StepOutput(content=f"The user satisfaction was evaluated as {effectiveness["level"]} ({effectiveness["level_message"]}).")
 
 
 # ---------------------------------------------------------------------------
 # Branching — Agno's Condition is two-way only, so a 3-way branch is built
 # with nested Conditions on the grade stored in session_state.
 # ---------------------------------------------------------------------------
-def satisfaction_selector(step_input: StepInput, session_state: Dict[str, Any]):
-    satisfaction_level = session_state.get("satisfaction_level", 3)
+def satisfaction_level_selector(step_input: StepInput, session_state: Dict[str, Any]):
+    user_mood = session_state.get("user_mood", {})
+    if not user_mood:
+        return ["Neutral"]
+
+    satisfaction_level = user_mood.get("satisfaction", {}).get("level", 3)
 
     if satisfaction_level == 5:
-        return ["Positive Steps"]
+        return ["Positive Feedback"]
     elif satisfaction_level == 1:
-        return ["Ngative Steps"]
-    else:
-        return ["Default"]
+        effectiveness = user_mood.get("remediation", {}).get("effectiveness", {})
+
+        if not effectiveness or effectiveness.get("level", 2) <= 2:
+            return ["Negative Feedback"]
+
+    return ["Neutral"]
 
 
 def negative_satisfaction_evaluator(step_input: StepInput, session_state: Dict[str, Any]):
-    return session_state.get("satisfaction_level", DEFAULT_SATISFACTION_LEVEL) == 1
-
-# ---------------------------------------------------------------------------
-# 
-# ---------------------------------------------------------------------------
-feedback_agent = Agent(
-    name="Negative Feedback Handler",  # Corrigido o typo :)
-    model=config.model,
-    instructions=textwrap.dedent("""
-        # Perfil e Objetivo
-        Você é um assistente de suporte altamente empático, profissional e focado em resolução de problemas. 
-        O usuário ficou frustrado com a resposta anterior do sistema. Sua missão é reatar a confiança dele, apresentando uma nova solução de forma polida e clara.
-
-        # Instruções de Formatação (Output esperado)
-        Sua resposta final deve seguir estritamente esta estrutura de três partes:
-
-        1. **Introdução (Pedido de Desculpas Embaçado):** Escreva uma mensagem breve e sincera reconhecendo que a resposta anterior não atendeu às expectativas. Evite ser excessivamente robótico ou dramático; seja profissional e direto.
-
-        2. **O Novo Conteúdo:** Insira integralmente e sem alterações a nova resposta gerada pelo sistema (que você receberá como input).
-
-        3. **Footer (Mensagem de Validação):** Termine com uma pergunta cordial, verificando se esta nova resposta está mais próxima do que ele esperava ou se ele precisa de mais algum ajuste.
-
-        # Regras Importantes
-        - Mantenha o tom de voz acolhedor, prestativo e neutro.
-        - Não invente informações além da nova resposta fornecida pelo sistema.
-        - Separe visualmente a introdução, o conteúdo e o footer usando a seguinte tag: [PAUSA].
-    """),
-    use_instruction_tags=False,
-    debug_mode=config.DEBUG_MODE,
-)
+    user_mood = session_state.get("user_mood", {})
+    if not user_mood:
+        return False
+    
+    satisfaction = user_mood.get("satisfaction", {})
+    if not satisfaction:
+        return False
+    
+    return satisfaction.get("level") <= 2
 
 # ---------------------------------------------------------------------------
 # Evaluation branch — grade the message, then branch on the grade.
 # ---------------------------------------------------------------------------
-satisfaction_evaluation_steps = Steps(
-    name="Satisfaction Evaluation Steps",
+feedback_workflow = Workflow(
+    name="Feedback Workflow",
     steps=[
         Step(name="Satisfaction Evaluation", executor=satisfaction_evaluation),
         Parallel(
             Router(
-                name="Satisfaction Evaluation Router",
-                selector=satisfaction_selector,
+                name="Satisfaction Level Router",
+                selector=satisfaction_level_selector,
                 choices=[
-                    Step(name="Positive Steps", executor=save_positive_feedback),
-                    Step(name="Negative Steps", executor=save_negative_feedback),
-                    Step(name="Default", executor=lambda x: None)
+                    Step(name="Positive Feedback", executor=save_positive_feedback),
+                    Step(name="Negative Feedback", executor=save_negative_feedback),
+                    Step(name="Neutral", executor=lambda step_input: None)
                 ]
             ),
             Step(name="Managing Persona", agent=persona_manager_agent),
@@ -176,7 +164,9 @@ satisfaction_evaluation_steps = Steps(
     ]
 )
 
-negative_satisfaction_merge_step = Condition(
+
+remediation_step = Condition(
     evaluator=negative_satisfaction_evaluator,
-    steps=[Step(name="Meging Negative Feedback", agent=merge_negative_agent)],
+    steps=[Step(name="Merging Remediation Feedback", agent=remediation_agent)],
+    else_steps=[Step(name="Neutral", executor=lambda step_input: step_input.get_last_step_content())]
 )

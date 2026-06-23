@@ -3,17 +3,16 @@ import textwrap
 from pydantic import BaseModel
 
 from agno.agent import Agent
+from agno.run import RunContext
 
 from app.configs.config import config
+from app.utils.interfaces.user_mood import UserMood, Effectiveness
 
-
-class UserSatisfaction(BaseModel):
-    level: int
-    message: str
-
-
-merge_negative_agent = Agent(
-    name="Merge Negative Feedback Agent",
+#============================================================
+#
+#============================================================
+remediation_agent = Agent(
+    name="Remediation Agent",
     model=config.model,
     instructions=textwrap.dedent("""
         # Perfil e Objetivo
@@ -47,55 +46,65 @@ merge_negative_agent = Agent(
 )
 
 
-satisfaction_evaluation_agent = Agent(
-    name="Satisfaction Evaluation Agent",
-    model=config.model,
-    output_schema=UserSatisfaction,
-    instructions=textwrap.dedent("""
+#============================================================
+#
+#============================================================
+def get_satisfaction_instructions(run_context: RunContext) -> str:
+    session_state = run_context.session_state or {}
+    user_mood_dict = session_state.get("user_mood")
+    
+    previous_satisfaction = user_mood_dict.get("satisfaction", {})
+    was_frustrated = previous_satisfaction.get("level", 3) <= 2
+
+    base_instructions = textwrap.dedent("""
         # Perfil e Objetivo
-        Você é um analista de dados especialista em Experiência do Usuário (UX) e Processamento de Linguagem Natural. 
-        Sua missão é avaliar minuciosamente o nível de satisfação do usuário com base na última mensagem enviada por ele. 
+        Você é um analista de dados especialista em Experiência do Usuário (UX) e Processamento de Linguagem Natural.
+        Sua missão é avaliar minuciosamente o nível de satisfação do usuário com base na última interação.
         Essa classificação será utilizada para categorizar dados para fine-tuning e modelagem de personas futuras.
 
         # Escala de Avaliação (1 a 5)
-        Avalie a mensagem do usuário e atribua estritamente um dos seguintes níveis:
-
-        - **1 (Completamente Frustrado):** O usuário demonstra clara insatisfação, irritação ou aponta erros graves na resposta do sistema. O tom é visivelmente negativo e exige intervenção/melhoria imediata do modelo.
-        - **2 (Insatisfeito, mas tolerante):** O usuário indica que a resposta não foi ideal ou não respondeu exatamente ao que ele queria, mas mantém um tom polido ou aceita continuar ("não gostou, mas tudo bem").
-        - **3 (Neutro):** A mensagem não demonstra emoção positiva nem negativa. São perguntas diretas, retornos puramente informativos, confirmações simples ou interações factuais sem teor emocional.
-        - **4 (Satisfeito/Positivo):** O usuário valida a resposta, agradece de forma genuína ou demonstra que o sistema resolveu o problema dele ("Gostei da resposta", "Obrigado, funcionou").
-        - **5 (Encantado/Muito Positivo):** O usuário demonstra entusiasmo acima da média, elogia fortemente a inteligência do sistema ou expressa o desejo de receber mais respostas exatamente com aquele padrão ou tom.
+        Avalie a mensagem do usuário e atribua estritamente um dos seguintes níveis ao campo 'level':
+        - **1 (Completamente Frustrado):** Clara insatisfação, irritação ou aponta erros graves na resposta. O tom é visivelmente negativo.
+        - **2 (Insatisfeito, mas tolerante):** A resposta não foi ideal, mas o usuário mantém um tom polido ou aceita continuar ("não gostou, mas tudo bem").
+        - **3 (Neutro):** Sem emoção positiva ou negativa. Perguntas diretas, confirmações simples ou interações factuais.
+        - **4 (Satisfeito/Positivo):** Valida a resposta, agradece de forma genuína ou demonstra que o sistema resolveu o problema.
+        - **5 (Encantado/Muito Positivo):** Entusiasmo acima da média, elogia fortemente a inteligência do sistema ou o padrão da resposta.
 
         # Regras Importantes
-        - Analise o tom, a escolha das palavras e a pontuação (ex: exclamações, emojis) para capturar nuances sutis entre os níveis.
-        - Seja objetivo: não tente adivinhar o contexto além da mensagem fornecida. Foque no sentimento expressado pelo usuário na entrada atual.
-        - A responsta dever estar no formato JSON {"level": int, "text": str}, onde 'text' é texto é a descrição (label) do nível de satisfação escolhido.
-    """),
-    debug_mode=config.DEBUG_MODE,
-)
+        - Analise o tom, a escolha das palavras e a pontuação (ex: exclamações, emojis) para capturar nuances sutis.
+        - Seja objetivo: foque no sentimento expressado pelo usuário na entrada atual.
+    """).strip()
+
+    if not was_frustrated:
+        dynamic_context = textwrap.dedent("""
+            # Cenário Atual: Avaliação Inicial
+            Esta é uma interação padrão. Avalie a reação do usuário em relação à última resposta fornecida pelo assistente principal.
+            
+            # Formato de Saída
+            Você deve preencher o objeto de saída focando no campo principal de satisfação.
+        """)
+    else:
+        dynamic_context = textwrap.dedent(f"""
+            # Cenário Atual: Avaliação de Remediação/Recuperação
+            ATENÇÃO: Na interação anterior, o usuário ficou insatisfeito (Nível anterior: {previous_satisfaction.get('level')}).
+            O sistema gerou uma NOVA resposta revisada para tentar contornar o problema.
+            
+            Sua missão agora é avaliar se esta NOVA resposta conseguiu remediar a situação:
+            - Se o novo nível for **>= 3**, significa que a remediação foi bem-sucedida e o usuário aceitou a nova abordagem.
+            - Se o novo nível continuar **<= 2**, significa que a nova tentativa falhou em acalmar ou resolver o problema do usuário.
+            
+            # Formato de Saída
+            Certifique-se de preencher os dados também dentro do bloco de 'remediation' no esquema de saída para documentar a eficácia da correção.
+        """)
+
+    # Combina as duas partes de forma limpa
+    return f"{base_instructions}\n\n{textwrap.dedent(dynamic_context).strip()}"
 
 
-feedback_agent = Agent(
-    name="Negative Feedback Handler",
+satisfaction_evaluation_agent = Agent(
+    name="Satisfaction Evaluation Agent",
     model=config.model,
-    instructions=textwrap.dedent("""
-        # Perfil e Objetivo
-        Você é um assistente de suporte altamente empático, profissional e focado em resolução de problemas. 
-        O usuário ficou frustrado com a resposta anterior do sistema. Sua missão é reatar a confiança dele, apresentando uma nova solução de forma polida e clara.
-
-        # Instruções de Formatação (Output esperado)
-        Sua resposta final deve seguir estritamente esta estrutura de três partes:
-
-        1. **Introdução (Pedido de Desculpas Embaçado):** Escreva uma mensagem breve e sincera reconhecendo que a resposta anterior não atendeu às expectativas. Evite ser excessivamente robótico ou dramático; seja profissional e direto.
-
-        2. **O Novo Conteúdo:** Insira integralmente e sem alterações a nova resposta gerada pelo sistema (que você receberá como input).
-
-        3. **Footer (Mensagem de Validação):** Termine com uma pergunta cordial, verificando se esta nova resposta está mais próxima do que ele esperava ou se ele precisa de mais algum ajuste.
-
-        # Regras Importantes
-        - Mantenha o tom de voz acolhedor, prestativo e neutro.
-        - Não invente informações além da nova resposta fornecida pelo sistema.
-        - Separe visualmente a introdução, o conteúdo e o footer usando a seguinte tag: [PAUSA].
-    """),
+    output_schema=UserMood, 
+    instructions=get_satisfaction_instructions,
     debug_mode=config.DEBUG_MODE,
 )
