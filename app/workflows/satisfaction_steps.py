@@ -3,20 +3,18 @@ import textwrap
 from typing import Any, Dict
 from datetime import datetime
 
-from pydantic import BaseModel
-
 from agno.agent import Agent
 from agno.run import RunContext
 from agno.workflow import Step, Steps, Router, Condition, Parallel
 from agno.workflow.types import StepInput, StepOutput, HumanReview
 from agno.utils.log import log_error, log_debug
 
-from app.agents.feedback_agent import satisfaction_evaluation_agent
+from app.agents.feedback_agent import satisfaction_evaluation_agent, merge_negative_agent
+from app.agents.persona_agent import persona_manager_agent
 from app.configs.config import config
 from app.database.session import engine, SessionLocal
 from app.database.models import NegativeFeedback, PositiveFeedback
 from app.tools.feedback_tools import _mask_pii
-from app.agents.persona_agent import persona_manager_agent
 
 
 DEFAULT_SATISFACTION_LEVEL = 3
@@ -51,7 +49,7 @@ def save_negative_feedback(
     #finally:
     #    session.close()
 
-    return StepOutput(content="negative_saved")
+    return StepOutput(content="Negative Feedback Saved")
 
 
 def save_positive_feedback(
@@ -85,7 +83,7 @@ def save_positive_feedback(
     #finally:
     #    session.close()
 
-    return StepOutput(content="positive_saved")
+    return StepOutput(content="Positive Feedback Saved")
 
 # ---------------------------------------------------------------------------
 # Step executors
@@ -108,34 +106,23 @@ def satisfaction_evaluation(step_input: StepInput, session_state: Dict[str, Any]
     return StepOutput(content=satisfaction_level)
 
 
-def handle_negative(step_input: StepInput, session_state: Dict[str, Any]) -> StepOutput:
-    user_msg = step_input.get_input_as_string() or ""
-    session_state["handler_message"] = _run_handler(negative_handler_agent, user_msg)
-    return StepOutput(content=session_state["handler_message"])
-
-
-def handle_positive(step_input: StepInput, session_state: Dict[str, Any]) -> StepOutput:
-    user_msg = step_input.get_input_as_string() or ""
-    return StepOutput(content=session_state["handler_message"])
-
-
 # ---------------------------------------------------------------------------
 # Branching — Agno's Condition is two-way only, so a 3-way branch is built
 # with nested Conditions on the grade stored in session_state.
 # ---------------------------------------------------------------------------
-def satisfaction_evaluator(step_input: StepInput, session_state: Dict[str, Any]):
+def satisfaction_selector(step_input: StepInput, session_state: Dict[str, Any]):
     satisfaction_level = session_state.get("satisfaction_level", 3)
 
-    if satisfaction_level == 3:
-        return ["neutral_handler"]
-    elif satisfaction_level == 5:
-        return ["positive_steps"]
+    if satisfaction_level == 5:
+        return ["Positive Steps"]
     elif satisfaction_level == 1:
-        return ["negative_steps"]
+        return ["Ngative Steps"]
+    else:
+        return ["Default"]
 
 
-def generate_feedback_message(step_input: StepInput, session_state: Dict[str, Any]):
-    pass
+def negative_satisfaction_evaluator(step_input: StepInput, session_state: Dict[str, Any]):
+    return session_state.get("satisfaction_level", DEFAULT_SATISFACTION_LEVEL) == 1
 
 # ---------------------------------------------------------------------------
 # 
@@ -173,21 +160,23 @@ satisfaction_evaluation_steps = Steps(
     name="Satisfaction Evaluation Steps",
     steps=[
         Step(name="Satisfaction Evaluation", executor=satisfaction_evaluation),
-        Condition(
-            name="",
-            evaluator=satisfaction_evaluator,
-            steps=[
-                Parallel(
-                    Step(name="", executor=save_positive_feedback),
-                    Step(name="", agent=persona_manager_agent),
-                    name=""
-                )
-            ]
+        Parallel(
+            Router(
+                name="Satisfaction Evaluation Router",
+                selector=satisfaction_selector,
+                choices=[
+                    Step(name="Positive Steps", executor=save_positive_feedback),
+                    Step(name="Negative Steps", executor=save_negative_feedback),
+                    Step(name="Default", executor=lambda x: None)
+                ]
+            ),
+            Step(name="Managing Persona", agent=persona_manager_agent),
+            name="Evaluation Parallel"
         )
     ]
 )
 
 negative_satisfaction_merge_step = Condition(
-
-    steps=[],
+    evaluator=negative_satisfaction_evaluator,
+    steps=[Step(name="Meging Negative Feedback", agent=merge_negative_agent)],
 )

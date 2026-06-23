@@ -3,9 +3,17 @@ from typing import Any, Dict
 from agno.workflow import Workflow, Step, Parallel, Condition, Router
 from agno.workflow.types import StepInput, StepOutput
 
+from app.agents import (
+    pasto_legal_team,
+    question_answer_agent,
+    property_manager_agent,
+    property_analyst_agent,
+)
 from app.database.agno_db import db
 from app.workflows.satisfaction_steps import satisfaction_evaluation_steps
-from app.workflows.main_steps import run_steps
+from app.workflows.main_steps import main_steps
+from app.workflows.steps_names import MainSteps
+
 
 
 def _get_run_response(step_input: StepInput) -> str:
@@ -55,10 +63,7 @@ def greetings_executor(step_input: StepInput):
 
 
 def steps_selector(step_input: StepInput, session_state: Dict[str, Any]):
-    path = session_state.get("path", None)
-
-    if path is None:
-        path = 
+    return session_state.get("path", MainSteps.MAIN_PARALLEL.value)
 
 
 pasto_legal_workflow = Workflow(
@@ -74,7 +79,8 @@ pasto_legal_workflow = Workflow(
                     name="Main Paths",
                     selector=steps_selector,
                     choices=[
-                        main_steps
+                        main_steps,
+                        Step(name="Property Registration Loop", agent=property_manager_agent)
                     ],
                 )
             ]

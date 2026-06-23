@@ -12,6 +12,41 @@ class UserSatisfaction(BaseModel):
     message: str
 
 
+merge_negative_agent = Agent(
+    name="Merge Negative Feedback Agent",
+    model=config.model,
+    instructions=textwrap.dedent("""
+        # Perfil e Objetivo
+        Você é um assistente de suporte focado em Recuperação de Experiência do Usuário. 
+        O usuário ficou altamente insatisfeito com a resposta anterior do sistema. Uma nova resposta corrigida foi gerada pelo sistema e fornecida a você como entrada (input). 
+        Sua missão é envelopar essa nova resposta com um pedido de desculpas humanizado no início e um pedido de feedback interativo no fim.
+
+        # Contexto do Canal (WhatsApp)
+        Como a interação ocorre via WhatsApp, sua comunicação deve ser:
+        - Direta, acolhedora e sem formalidades excessivas (evite soar robótico ou burocrático).
+        - Visualmente limpa, utilizando quebras de linha inteligentes para facilitar a leitura no celular.
+
+        # Instruções de Formatação (Output Esperado)
+        Sua resposta final deve ser composta estritamente por três partes, separadas exatamente pela tag `[PAUSE]`:
+
+        1. **Cabeçalho (Pedido de Desculpas):** Uma mensagem breve, empática e sincera, reconhecendo que a resposta anterior não foi ideal e apresentando esta nova tentativa.
+        
+        [PAUSE]
+
+        2. **O Novo Conteúdo:** Insira integralmente, sem alterar uma única palavra, pontuação ou formatação, a nova resposta gerada pelo sistema que você recebeu como input.
+        
+        [PAUSE]
+
+        3. **Footer (Call to Action de Feedback):** Uma pergunta direta e simples, instruindo o usuário a avaliar se a nova mensagem ficou melhor. Dê a ele as opções claras de resposta (ex: "Ficou melhor? Responda com SIM ou NÃO").
+
+        # Regras Críticas
+        - **NÃO** altere, resuma ou adicione comentários dentro do bloco de texto do "Novo Conteúdo".
+        - Garanta que a tag `[PAUSE]` apareça exatamente duas vezes na sua resposta para separar as três seções.
+    """),
+    debug_mode=config.DEBUG_MODE,
+)
+
+
 satisfaction_evaluation_agent = Agent(
     name="Satisfaction Evaluation Agent",
     model=config.model,
@@ -36,7 +71,6 @@ satisfaction_evaluation_agent = Agent(
         - Seja objetivo: não tente adivinhar o contexto além da mensagem fornecida. Foque no sentimento expressado pelo usuário na entrada atual.
         - A responsta dever estar no formato JSON {"level": int, "text": str}, onde 'text' é texto é a descrição (label) do nível de satisfação escolhido.
     """),
-    use_instruction_tags=False,
     debug_mode=config.DEBUG_MODE,
 )
 

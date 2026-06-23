@@ -15,6 +15,7 @@ from app.agents import (
 )
 from app.configs.config import config
 from app.workflows.steps_names import MainSteps
+from app.workflows.satisfaction_steps import satisfaction_evaluation_steps
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +76,6 @@ def property_canceled(step_input: StepInput, session_state: Dict[str, Any]) -> S
 # ---------------------------------------------------------------------------
 main_steps = Parallel(
     Step(name=MainSteps.MAIN_PARALLEL_STEP_1.value, team=pasto_legal_team),
-    Step(name="", )
+    satisfaction_evaluation_steps,
     name=MainSteps.MAIN_PARALLEL.value,
 )

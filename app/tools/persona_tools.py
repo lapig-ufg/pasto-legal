@@ -2,6 +2,7 @@ from typing import Literal
 
 from agno.tools import tool
 from agno.run import RunContext
+from agno.tools.function import ToolResult
 
 # TODO: Salvar na tabela UserProfiles do banco de dados.
 @tool
