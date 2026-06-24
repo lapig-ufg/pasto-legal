@@ -89,22 +89,21 @@ def save_positive_feedback(
 def satisfaction_evaluation(step_input: StepInput, session_state: Dict[str, Any]) -> StepOutput:
     """Grade the user's message on a 1-5 scale and store it in session_state."""
     user_msg = step_input.get_input_as_string() or ""
-    user_mood = session_state.get("user_mood", {})
-    satisfaction = user_mood.get("satisfaction", {})
+    user_mood = session_state.get("user_mood", None)
 
     try:
         response = satisfaction_evaluation_agent.run(user_msg, session_state={"user_mood": user_mood})
         if response and response.content:
-            effectiveness: Effectiveness = response.content
+            effectiveness = response.content
     except Exception as e:
         log_error(f"Satisfaction Evaluation Agent agent failed: {e}")
 
-    if satisfaction.get("level", 3) >= 3:
-        session_state["satisfaction"] = effectiveness
+    if user_mood is None:
+        session_state["user_mood"] = {}
+        session_state["user_mood"]["satisfaction"] = effectiveness
     else:
-        session_state["remediation"] = effectiveness
+        session_state["user_mood"]["remediation"] = effectiveness
 
-    log_debug(f"Satisfaction level: {effectiveness}")
     return StepOutput(content=f"The user satisfaction was evaluated as {effectiveness["level"]} ({effectiveness["level_message"]}).")
 
 
@@ -141,32 +140,80 @@ def negative_satisfaction_evaluator(step_input: StepInput, session_state: Dict[s
     
     return satisfaction.get("level") <= 2
 
+
+def clear_user_mood(step_input: StepInput, session_state: Dict[str, Any]):
+    session_state["user_mood"] = None
+
 # ---------------------------------------------------------------------------
 # Evaluation branch — grade the message, then branch on the grade.
 # ---------------------------------------------------------------------------
 feedback_workflow = Workflow(
     name="Feedback Workflow",
     steps=[
-        Step(name="Satisfaction Evaluation", executor=satisfaction_evaluation),
+        Step(
+            name="Satisfaction Evaluation",
+            executor=satisfaction_evaluation
+        ),
         Parallel(
             Router(
                 name="Satisfaction Level Router",
                 selector=satisfaction_level_selector,
                 choices=[
-                    Step(name="Positive Feedback", executor=save_positive_feedback),
-                    Step(name="Negative Feedback", executor=save_negative_feedback),
-                    Step(name="Neutral", executor=lambda step_input: None)
+                    Steps(
+                        name="Positive Feedback",
+                        steps=[
+                            Steps(
+                                name="Save Positive Feedback",
+                                executor=save_positive_feedback
+                            ),
+                            Step(
+                                name="Clear User Mood",
+                                executor=clear_user_mood
+                            )
+                        ]
+                    ),
+                    Steps(
+                        name="Negative Feedback",
+                        steps=[
+                            Steps(
+                                name="Save Negative Feedback",
+                                executor=save_negative_feedback
+                            ),
+                            Step(
+                                name="Clear User Mood",
+                                executor=clear_user_mood
+                            )
+                        ]
+                    ),
+                    Step(
+                        name="Neutral",
+                        executor=lambda step_input: None
+                    )
                 ]
             ),
-            Step(name="Managing Persona", agent=persona_manager_agent),
+            Step(
+                name="Managing Persona",
+                agent=persona_manager_agent
+            ),
             name="Evaluation Parallel"
         )
     ]
 )
 
 
-remediation_step = Condition(
+merge_output_step = Condition(
+    name="Merge Output Step",
     evaluator=negative_satisfaction_evaluator,
-    steps=[Step(name="Merging Remediation Feedback", agent=remediation_agent)],
-    else_steps=[Step(name="Neutral", executor=lambda step_input: step_input.get_last_step_content())]
+    steps=[
+        Step(
+            name="Merge Remediation",
+            agent=remediation_agent
+        )
+    ],
+    else_steps=[
+        Step(
+            name="Foward",
+            executor=lambda step_input: step_input.get_last_step_content()
+        )
+    ]
 )

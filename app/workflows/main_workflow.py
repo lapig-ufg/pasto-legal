@@ -10,42 +10,8 @@ from app.agents import (
     property_analyst_agent,
 )
 from app.database.agno_db import db
-from app.workflows.feedback_workflow import feedback_workflow
 from app.workflows.run_workflow import run_workflow
-from app.workflows.steps_names import MainSteps
 
-
-def _get_run_response(step_input: StepInput) -> str:
-    """Pull the normal agent execution output from the parallel branch."""
-    content = step_input.get_step_content("run_steps")
-    if isinstance(content, dict):
-        # Parallel aggregates as {step_name: content}; grab the value if so.
-        content = next(iter(content.values())) if content else ""
-    return content or ""
-
-
-def _merge_response(step_input: StepInput, session_state: Dict[str, Any]) -> StepOutput:
-    """Merge the evaluation branch with the normal agent response.
-
-    If the user was frustrated (grade < 3), prepend an apology and offer a
-    better response. Otherwise, proceed with the normal agent response.
-    """
-    satisfaction_level = session_state.get("satisfaction_level", 3)
-    run_steps_response = _get_run_response(step_input)
-    handler_msg = session_state.get("handler_message", "")
-
-    if satisfaction_level < 3:
-        content = (
-            f"{handler_msg}\n\n"
-            f"{run_steps_response}\n\n"
-            "Poderia me dizer se essa resposta foi melhor?"
-        )
-    else:
-        content = run_steps_response
-
-    return StepOutput(content=content)
-
-# --------------------- Greetings ---------------------------------
 
 def greetings_evaluator(step_input: StepInput, session_state: Dict[str, Any]):
     is_greeted = session_state.get("is_greeted", False)
@@ -71,14 +37,25 @@ pasto_legal_workflow = Workflow(
         Condition(
             name="First Time in Here?",
             evaluator=greetings_evaluator,
-            steps=[Step(name="Greetings", executor=greetings_executor)],
+            steps=[
+                Step(
+                    name="Greetings",
+                    executor=greetings_executor
+                )
+            ],
             else_steps=[
                 Router(
                     name="Main Paths",
                     selector=steps_selector,
                     choices=[
-                        Step(name="Run Workflow", workflow=run_workflow),
-                        Step(name="Registration Agent", agent=property_manager_agent)
+                        Step(
+                            name="Run Workflow",
+                            workflow=run_workflow
+                        ),
+                        Step(
+                            name="Registration Agent",
+                            agent=property_manager_agent
+                        )
                     ],
                 )
             ]

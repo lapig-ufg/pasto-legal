@@ -52,9 +52,6 @@ remediation_agent = Agent(
 def get_satisfaction_instructions(run_context: RunContext) -> str:
     session_state = run_context.session_state or {}
     user_mood_dict = session_state.get("user_mood")
-    
-    previous_satisfaction = user_mood_dict.get("satisfaction", {})
-    was_frustrated = previous_satisfaction.get("level", 3) <= 2
 
     base_instructions = textwrap.dedent("""
         # Perfil e Objetivo
@@ -75,7 +72,7 @@ def get_satisfaction_instructions(run_context: RunContext) -> str:
         - Seja objetivo: foque no sentimento expressado pelo usuário na entrada atual.
     """).strip()
 
-    if not was_frustrated:
+    if user_mood_dict is None:
         dynamic_context = textwrap.dedent("""
             # Cenário Atual: Avaliação Inicial
             Esta é uma interação padrão. Avalie a reação do usuário em relação à última resposta fornecida pelo assistente principal.
@@ -86,7 +83,7 @@ def get_satisfaction_instructions(run_context: RunContext) -> str:
     else:
         dynamic_context = textwrap.dedent(f"""
             # Cenário Atual: Avaliação de Remediação/Recuperação
-            ATENÇÃO: Na interação anterior, o usuário ficou insatisfeito (Nível anterior: {previous_satisfaction.get('level')}).
+            ATENÇÃO: Na interação anterior, o usuário ficou insatisfeito.
             O sistema gerou uma NOVA resposta revisada para tentar contornar o problema.
             
             Sua missão agora é avaliar se esta NOVA resposta conseguiu remediar a situação:
@@ -97,7 +94,6 @@ def get_satisfaction_instructions(run_context: RunContext) -> str:
             Certifique-se de preencher os dados também dentro do bloco de 'remediation' no esquema de saída para documentar a eficácia da correção.
         """)
 
-    # Combina as duas partes de forma limpa
     return f"{base_instructions}\n\n{textwrap.dedent(dynamic_context).strip()}"
 
 

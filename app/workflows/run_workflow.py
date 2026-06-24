@@ -15,7 +15,7 @@ from app.agents import (
 )
 from app.configs.config import config
 from app.workflows.steps_names import MainSteps
-from app.workflows.feedback_workflow import feedback_workflow, remediation_step
+from app.workflows.feedback_workflow import feedback_workflow, merge_output_step
 
 
 # ---------------------------------------------------------------------------
@@ -77,10 +77,16 @@ def property_canceled(step_input: StepInput, session_state: Dict[str, Any]) -> S
 run_workflow = Workflow(
     steps=[
         Parallel(
-            feedback_workflow,
-            Step(name=MainSteps.MAIN_PARALLEL_STEP_1.value, team=pasto_legal_team),
+            Step(
+                name="Feedback Workflow",
+                workflow=feedback_workflow
+            ),
+            Step(
+                name=MainSteps.MAIN_PARALLEL_STEP_1.value,
+                team=pasto_legal_team
+            ),
             name=MainSteps.MAIN_PARALLEL.value,
         ),
-        remediation_step
+        merge_output_step
     ]
 )
