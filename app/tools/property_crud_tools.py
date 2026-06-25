@@ -296,12 +296,13 @@ def confirm_car_selection(run_context: RunContext):
 
 
 @tool(stop_after_tool_call=True)
-def reject_car_selection(run_context: RunContext):
+def cancel_car_selection(run_context: RunContext):
     """
     Cancela a seleção ou rejeita os resultados encontrados.
     
     Use esta ferramenta se o usuário disser que a propriedade mostrada na imagem NÃO é a correta ou quiser cancelar a seleção.
     """
+    run_context.session_state["workflow_path"] = ""
     run_context.session_state['candidate_properties'] = None
 
     return ToolResult(content=("Peça desculpas por não ter encontrado a propriedade correta.\n"))

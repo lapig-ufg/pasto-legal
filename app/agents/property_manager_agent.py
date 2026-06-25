@@ -13,7 +13,7 @@ from app.tools.property_crud_tools import (
     register_feature_by_coordinate,
     select_car_from_list,
     confirm_car_selection,
-    reject_car_selection
+    cancel_car_selection
     )
 from app.utils.interfaces.property_record import RuralProperty
 from app.configs.config import config
@@ -89,16 +89,6 @@ def get_instructions(run_context: RunContext):
 
 property_manager_agent = Agent(
     name="Gestor de Propriedades Rurais",
-    role="Especialista em Cadastro, Validação de CAR/SICAR e Gerenciamento Estrutural de Imóveis Rurais.",
-    description=(
-        "Este agente é o responsável exclusivo por gerenciar o ciclo de vida e o cadastro das propriedades no sistema. "
-        "Deve ser acionado obrigatoriamente quando o usuário desejar:\n"
-        "- Registrar novas propriedades através de códigos CAR/SICAR, coordenadas geográficas ou URLs de mapas.\n"
-        "- Confirmar, rejeitar ou selecionar uma propriedade específica a partir de uma lista de opções geradas pelo sistema.\n"
-        "- Alterar ou definir o nome personalizado de uma fazenda/propriedade.\n"
-        "- Remover propriedades registradas ou limpar o histórico de imóveis cadastrados.\n\n"
-        "Acione este agente para qualquer comando que envolva as palavras-chave 'cadastrar', 'deletar', 'mudar nome', 'inserir CAR', 'confirmar fazenda' ou 'escolher opção'.\n"
-    ),
     tools=[
         remove_property,
         remove_registered_properties,
@@ -108,7 +98,7 @@ property_manager_agent = Agent(
         register_feature_by_coordinate,
         confirm_car_selection,
         select_car_from_list,
-        reject_car_selection
+        cancel_car_selection
         ],
     markdown=True,
     use_instruction_tags=False,

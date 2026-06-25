@@ -1,3 +1,4 @@
+import re
 from typing import Any, Dict
 
 from agno.workflow import Workflow, Step, Parallel, Condition, Router
@@ -26,9 +27,38 @@ def greetings_evaluator(step_input: StepInput, session_state: Dict[str, Any]):
 def greetings_executor(step_input: StepInput):
     return StepOutput(content="Olá, seja bem-vindo ao Pato Legal. Como posso te ajudar hoje?")
 
+#====================================
+#
+#====================================
+def evaluator(step_input: StepInput, session_state: Dict[str, Any]) -> bool:
+    is_register_path = session_state.get("workflow_path", {}).get("register_path", False)
+    if is_register_path:
+        return True
 
-def steps_selector(step_input: StepInput, session_state: Dict[str, Any]):
-    return session_state.get("path", "Run Workflow")
+    user_msg = step_input.get_input_as_string()
+    if not user_msg:
+        return False
+
+    sicar_pattern = r"\b([A-Z]{2})-?(\d{7})-([A-Z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\b"
+    has_sicar = re.search(sicar_pattern, user_msg, flags=re.IGNORECASE)
+
+    decimal_coords_pattern = r"[-+]?\d{1,3}\.\d+.*\s*[-+]?\d{1,3}\.\d+"
+    has_decimal_coords = re.search(decimal_coords_pattern, user_msg)
+    
+    dms_coords_pattern = r"\d{1,3}°\s*\d{1,2}'\s*\d{1,2}(\.\d+)?\"?\s*[NnSsEeWwOo]"
+    has_dms_coords = re.search(dms_coords_pattern, user_msg)
+    
+    google_maps_pattern = r"(https?://)?(www\.)?(google\.com/maps|maps\.app\.goo\.gl|maps\.google\.com)"
+    has_maps = re.search(google_maps_pattern, user_msg, flags=re.IGNORECASE)
+
+    if has_sicar or has_decimal_coords or has_dms_coords or has_maps:
+        workflow_path = session_state.get("workflow_path", {})
+        workflow_path["register_path"] = True
+        session_state["workflow_path"] = workflow_path
+        
+        return True
+    else:
+        return False
 
 
 pasto_legal_workflow = Workflow(
@@ -44,27 +74,24 @@ pasto_legal_workflow = Workflow(
                 )
             ],
             else_steps=[
-                Router(
-                    name="Main Paths",
-                    selector=steps_selector,
-                    choices=[
-                        Step(
-                            name="Run Workflow",
-                            workflow=run_workflow
-                        ),
+                Condition(
+                    name="Run Or Registry?",
+                    evaluator=evaluator,
+                    steps=[
                         Step(
                             name="Registration Agent",
                             agent=property_manager_agent
+                        )
+                    ],
+                    else_steps=[
+                        Step(
+                            name="Run Workflow",
+                            workflow=run_workflow
                         )
                     ],
                 )
             ]
         )
     ],
-    db=db,
+    db=db
 )
-
-
-if __name__=="__main__":
-    response = pasto_legal_workflow.run("Olá, tudo bem?")
-    print(response.content)
