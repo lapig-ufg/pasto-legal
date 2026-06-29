@@ -6,7 +6,7 @@ from agno.agent import Agent
 from agno.run import RunContext
 
 from app.configs.config import config
-from app.utils.interfaces.user_mood import UserMood, Effectiveness
+from app.utils.interfaces.user_mood import Effectiveness
 
 #============================================================
 #
@@ -100,7 +100,7 @@ def get_satisfaction_instructions(run_context: RunContext) -> str:
 satisfaction_evaluation_agent = Agent(
     name="Satisfaction Evaluation Agent",
     model=config.model,
-    output_schema=UserMood, 
+    output_schema=Effectiveness, 
     instructions=get_satisfaction_instructions,
     debug_mode=config.DEBUG_MODE,
 )

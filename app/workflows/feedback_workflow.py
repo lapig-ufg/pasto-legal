@@ -94,7 +94,7 @@ def satisfaction_evaluation(step_input: StepInput, session_state: Dict[str, Any]
     try:
         response = satisfaction_evaluation_agent.run(user_msg, session_state={"user_mood": user_mood})
         if response and response.content:
-            effectiveness = response.content
+            effectiveness = response.content.model_dump()
     except Exception as e:
         log_error(f"Satisfaction Evaluation Agent agent failed: {e}")
 
@@ -138,7 +138,7 @@ def negative_satisfaction_evaluator(step_input: StepInput, session_state: Dict[s
     if not satisfaction:
         return False
     
-    return satisfaction.get("level") <= 2
+    return satisfaction["level"] <= 2
 
 
 def clear_user_mood(step_input: StepInput, session_state: Dict[str, Any]):
