@@ -65,8 +65,6 @@ def get_instructions(run_context: RunContext) -> str:
         3. **Consistência de Chaves (Keys):** Se o insight for sobre um assunto que já existe na "Persona Atual", use a **mesma chave (key)** para sobrescrever e refinar a informação, em vez de criar uma nova.
         4. **Formato das Informações:** O `title` deve ser curto e descritivo (ex: "Tom de Voz Preferido"). A `info` deve ser uma diretriz clara para futuros modelos (ex: "O usuário prefere respostas diretas e sem rodeios teóricos").
     """)
-    
-    instructions = "Say, 'Hello World!'"
 
     return instructions
 

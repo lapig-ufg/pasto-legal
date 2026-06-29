@@ -1,12 +1,12 @@
 from agno.os import AgentOS
 
 from app.interfaces.whatsapp import Whatsapp
-from app.agents.main_team import pasto_legal_team
+from app.workflows import main_workflow
 
-interfaces = [Whatsapp(team=pasto_legal_team)]
+interfaces = [Whatsapp(workflow=main_workflow)]
 
 pasto_legal_os = AgentOS(
-    teams=[pasto_legal_team],
+    workflows=[main_workflow],
     interfaces=interfaces,
 )
 

@@ -35,8 +35,8 @@ def generate_property_image(run_context: RunContext, car_codes: list[str]) -> To
         ToolResult: Imagem PNG da visão aérea com delimitação geográfica.
     """
     try:
-        registered_properties = run_context.session_state['registered_properties']
-        selected_property = next((prop for prop in registered_properties if prop["car_code"] == ','.join(car_codes)), None)
+        all_properties = run_context.session_state['all_properties']
+        selected_property = next((prop for prop in all_properties if prop["car_code"] == ','.join(car_codes)), None)
         selected_property = RuralProperty.model_validate(selected_property)
 
         img = retrieve_feature_images(coords=selected_property.get_coords())[0]
@@ -65,8 +65,8 @@ def generate_biomass_image(run_context: RunContext, car_codes: list[str]) -> Too
         ToolResult: Mapa renderizado em formato PNG.
     """
     try:
-        registered_properties = run_context.session_state['registered_properties']
-        selected_property = next((prop for prop in registered_properties if prop["car_code"] == ', '.join(car_codes)), None)
+        all_properties = run_context.session_state['all_properties']
+        selected_property = next((prop for prop in all_properties if prop["car_code"] == ', '.join(car_codes)), None)
         selected_property = RuralProperty.model_validate(selected_property)   
 
         today = datetime.date.today()
@@ -110,8 +110,8 @@ def generate_soil_texture_image(run_context: RunContext, car_codes: list[str]) -
         ToolResult: Mapa renderizado em formato PNG.
     """
     try:
-        registered_properties = run_context.session_state['registered_properties']
-        selected_property = next((prop for prop in registered_properties if prop["car_code"] == ', '.join(car_codes)), None)
+        all_properties = run_context.session_state['all_properties']
+        selected_property = next((prop for prop in all_properties if prop["car_code"] == ', '.join(car_codes)), None)
         selected_property = RuralProperty.model_validate(selected_property)
 
         img = retrieve_feature_soil_texture_image(coords=selected_property.get_coords())
@@ -155,8 +155,8 @@ def get_pasture_stats(run_context: RunContext, car_codes: list[str], year: int =
         #    if pasture_stats.year == year:
         #        return ToolResult(content=str(pasture_stats))
             
-        registered_properties = run_context.session_state["registered_properties"]
-        selected_property = next((prop for prop in registered_properties if prop["car_code"] == ', '.join(car_codes)))
+        all_properties = run_context.session_state["all_properties"]
+        selected_property = next((prop for prop in all_properties if prop["car_code"] == ', '.join(car_codes)))
         selected_property = RuralProperty.model_validate(selected_property)
 
         new_pasture_stats: PastureStats = query_pasture_statistics(coords=selected_property.get_coords(), year=year)
@@ -194,8 +194,8 @@ def get_topographic_stats(run_context: RunContext, car_codes: list[str]):
         #    if pasture_stats.year == year:
         #        return ToolResult(content=str(pasture_stats))
             
-        registered_properties = run_context.session_state["registered_properties"]
-        selected_property = next((prop for prop in registered_properties if prop["car_code"] == ', '.join(car_codes)))
+        all_properties = run_context.session_state["all_properties"]
+        selected_property = next((prop for prop in all_properties if prop["car_code"] == ', '.join(car_codes)))
         selected_property = RuralProperty.model_validate(selected_property)
 
         new_topographic_stats: TopographicStats = query_topographic_stats(coords=selected_property.get_coords())

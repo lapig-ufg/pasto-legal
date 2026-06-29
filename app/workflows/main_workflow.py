@@ -1,19 +1,21 @@
-import re
 from typing import Any, Dict
 
-from agno.workflow import Workflow, Step, Parallel, Condition, Router
+from agno.workflow import Workflow, Step, Steps, Parallel, Condition, Router
 from agno.workflow.types import StepInput, StepOutput
 
 from app.agents import (
-    pasto_legal_team,
     question_answer_agent,
     property_manager_agent,
     property_analyst_agent,
+    router_agent
 )
 from app.database.agno_db import db
-from app.workflows.run_workflow import run_workflow
+from app.workflows.feedback_workflow import feedback_workflow, merge_output_step
 
 
+#====================================
+#
+#====================================
 def greetings_evaluator(step_input: StepInput, session_state: Dict[str, Any]):
     is_greeted = session_state.get("is_greeted", False)
 
@@ -30,66 +32,72 @@ def greetings_executor(step_input: StepInput):
 #====================================
 #
 #====================================
-def evaluator(step_input: StepInput, session_state: Dict[str, Any]) -> bool:
-    is_register_path = session_state.get("workflow_path", {}).get("register_path", False)
-    if is_register_path:
-        return True
+def agent_router_selector(step_input: StepInput, session_state: Dict[str, Any]) -> str:
+    """
+    Selector do roteador que executa o Router Agent e direciona o fluxo 
+    para o agente especialista correto com base na intenção do usuário.
+    """
+    workflow_route = session_state.get("workflow_route", None)
+    if workflow_route:
+        return workflow_route
 
-    user_msg = step_input.get_input_as_string()
-    if not user_msg:
-        return False
-
-    sicar_pattern = r"\b([A-Z]{2})-?(\d{7})-([A-Z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\b"
-    has_sicar = re.search(sicar_pattern, user_msg, flags=re.IGNORECASE)
-
-    decimal_coords_pattern = r"[-+]?\d{1,3}\.\d+.*\s*[-+]?\d{1,3}\.\d+"
-    has_decimal_coords = re.search(decimal_coords_pattern, user_msg)
-    
-    dms_coords_pattern = r"\d{1,3}°\s*\d{1,2}'\s*\d{1,2}(\.\d+)?\"?\s*[NnSsEeWwOo]"
-    has_dms_coords = re.search(dms_coords_pattern, user_msg)
-    
-    google_maps_pattern = r"(https?://)?(www\.)?(google\.com/maps|maps\.app\.goo\.gl|maps\.google\.com)"
-    has_maps = re.search(google_maps_pattern, user_msg, flags=re.IGNORECASE)
-
-    if has_sicar or has_decimal_coords or has_dms_coords or has_maps:
-        workflow_path = session_state.get("workflow_path", {})
-        workflow_path["register_path"] = True
-        session_state["workflow_path"] = workflow_path
+    try:
+        user_msg = step_input.get_input_as_string()
         
-        return True
-    else:
-        return False
+        response = router_agent.run(user_msg)
+        
+        route_data = response.content
+        
+        if route_data and hasattr(route_data, "route"):
+            return route_data.route
+            
+        if isinstance(route_data, dict) and "route" in route_data:
+            return route_data["route"]
+    except Exception as e:
+        return 'default'
+        
+    return 'default'
 
 
 pasto_legal_workflow = Workflow(
     name="Pasto Legal Workflow",
     steps=[
         Condition(
-            name="First Time in Here?",
+            name="Greetings Condition",
             evaluator=greetings_evaluator,
             steps=[
                 Step(
-                    name="Greetings",
+                    name="Greetings Step",
                     executor=greetings_executor
                 )
             ],
             else_steps=[
-                Condition(
-                    name="Run Or Registry?",
-                    evaluator=evaluator,
-                    steps=[
-                        Step(
-                            name="Registration Agent",
-                            agent=property_manager_agent
-                        )
-                    ],
-                    else_steps=[
-                        Step(
-                            name="Run Workflow",
-                            workflow=run_workflow
-                        )
-                    ],
-                )
+                Parallel(
+                    feedback_workflow,
+                    Router(
+                        name="Agent Router",
+                        selector=agent_router_selector,
+                        choices=[
+                            Step(
+                                name="default",
+                                executor=lambda x: None
+                            ),
+                            Step(
+                                name="property_analyst_agent",
+                                agent=property_analyst_agent
+                            ),
+                            Step(
+                                name="property_manager_agent",
+                                agent=property_manager_agent
+                            ),
+                            Step(
+                                name="question_answer_agent",
+                                agent=question_answer_agent
+                            )
+                        ]
+                    )
+                ),
+                merge_output_step
             ]
         )
     ],

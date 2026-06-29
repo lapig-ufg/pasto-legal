@@ -162,7 +162,7 @@ feedback_workflow = Workflow(
                     Steps(
                         name="Positive Feedback",
                         steps=[
-                            Steps(
+                            Step(
                                 name="Save Positive Feedback",
                                 executor=save_positive_feedback
                             ),
@@ -175,7 +175,7 @@ feedback_workflow = Workflow(
                     Steps(
                         name="Negative Feedback",
                         steps=[
-                            Steps(
+                            Step(
                                 name="Save Negative Feedback",
                                 executor=save_negative_feedback
                             ),

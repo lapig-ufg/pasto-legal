@@ -28,9 +28,9 @@ def get_instructions(run_context: RunContext):
     # Captura a persona definida na sessão
     user_persona = session_state.get("user_persona", "Desconhecido")
 
-    registered_properties = [RuralProperty.model_validate(record) for record in session_state.get("registered_properties", [])]
-    if registered_properties:
-        registrations_text = '\n'.join([str(record) for record in registered_properties])
+    all_properties = [RuralProperty.model_validate(record) for record in session_state.get("all_properties", [])]
+    if all_properties:
+        registrations_text = '\n'.join([str(record) for record in all_properties])
     else:
         registrations_text = "Vazio"
 

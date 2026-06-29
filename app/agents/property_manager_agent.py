@@ -1,105 +1,141 @@
 import textwrap
-
 from agno.run import RunContext
 from agno.agent import Agent
-from agno.utils.log import log_debug
 
 from app.tools.property_crud_tools import (
     remove_property,
-    remove_registered_properties,
+    remove_all_properties,
     set_property_name,
-    register_feature_by_url,
-    register_feature_by_car,
-    register_feature_by_coordinate,
+    start_registration_by_url,
+    start_registration_by_car,
+    start_registration_by_coordinate,
     select_car_from_list,
     confirm_car_selection,
-    cancel_car_selection
-    )
+    cancel_registration
+)
 from app.utils.interfaces.property_record import RuralProperty
 from app.configs.config import config
 
 
-def get_instructions(run_context: RunContext):
+def get_instructions(run_context: RunContext) -> str:
     session_state = run_context.session_state
+    registration_state = session_state.get("registration_state", None)
 
-    candidate_properties = [RuralProperty.model_validate(prop) for prop in session_state.get("candidate_properties", [])]
-
-    if candidate_properties:
+    # ==========================================
+    # ESTADO: PENDING (Confirmação ou Seleção)
+    # ==========================================
+    if registration_state == "pending":
+        candidate_properties = [RuralProperty.model_validate(prop) for prop in session_state.get("candidate_properties", [])]
+        
+        # Cenário A: Apenas 1 propriedade encontrada para confirmação
         if len(candidate_properties) == 1:
             candidate_text = str(candidate_properties[0])
 
             instructions = textwrap.dedent(f"""
-                - Você atua como um agente especialista subordinado dentro de um time de agentes.
-                - Sua função exclusiva é receber, interpretar e executar com precisão as tarefas delegadas a você pelo agente Orquestrador.
-                - Ao concluir sua tarefa, seja o mais claro, objetivo e estruturado possível ao reportar ao agente Orquestrador.
-                - Foi pedido ao usuário para confirmar ou rejeitar a seguinte propriedade:
-                                           
+                # Perfil e Objetivo
+                Você é o Gestor de Propriedades Rurais do sistema Pasto Legal. Sua função atual é estritamente coletar a confirmação do usuário para o imóvel rural encontrado.
+
+                # Propriedade em Análise
+                O sistema localizou a seguinte propriedade para o usuário:
                 > {candidate_text}
 
-                - Atue exclusivamente na etapa de confirmação desta propriedade.
-                - Acione a ferramenta confirm_car_selection ou reject_car_selection com base na resposta.
-                - Ignore assuntos paralelos. Se o usuário fugir do tema, redirecione-o educadamente para a seleção do imóvel rural.
-                - Se o usuário estiver confuso, instrua-o a confirmar ou rejeitar CAR ou a cancelar a operação.
-                - Use markdown no formato do WhatsApp.
+                # Diretrizes de Execução
+                - **Ação Positiva:** Se o usuário confirmar que esta é a propriedade correta (ex: "sim", "essa mesma", "pode salvar"), acione imediatamente a ferramenta `confirm_car_selection`.
+                - **Ação Negativa:** Se o usuário rejeitar a propriedade (ex: "não é essa", "está errado"), acione a ferramenta `cancel_car_selection`.
+                - **Foco Absoluto:** Ignore assuntos paralelos. Se o usuário tentar mudar de assunto, traga-o de volta educadamente para a confirmação do imóvel.
+                - **Comunicação (WhatsApp):** Seja direto e use o markdown do WhatsApp (use `*texto*` para negrito).
             """).strip()
+        
+        # Cenário B: Múltiplas propriedades encontradas (Usuário precisa escolher)
         else:
             options_text = []
             for i, prop in enumerate(candidate_properties):
-                options_text.append(f"> Opção {i + 1} - {prop.describe()}")
-            result_text = "\n".join(options_text)
+                options_text.append(f"*Opção {i + 1}* - {prop.describe()}")
+            candidate_text = "\n".join(options_text)
 
             instructions = textwrap.dedent(f"""
-                - Foi pedido ao usuário para escolher entre as seguintes propriedades:
-                                           
-                {result_text}
-                                           
-                - Atue exclusivamente na etapa de seleção da propriedade.
-                - Acione a ferramenta select_car_from_list ou reject_car_selection com base na resposta.
-                - Ignore assuntos paralelos. Se o usuário fugir do tema, redirecione-o educadamente para a seleção do imóvel rural.
-                - Se o usuário estiver confuso, instrua-o a digitar o número da opção desejada ou a cancelar a operação.
-                - Use markdown no formato do WhatsApp.
+                # Perfil e Objetivo
+                Você é o Gestor de Propriedades Rurais do sistema Pasto Legal. Múltiplos imóveis foram encontrados e o usuário precisa selecionar um deles.
+
+                # Opções Disponíveis
+                {candidate_text}
+
+                # Diretrizes de Execução
+                - **Ação de Seleção:** Se o usuário escolher uma das opções (pelo número, nome ou índice), invoque a ferramenta `select_car_from_list` passando o parâmetro correspondente.
+                - **Ação de Cancelamento:** Se o usuário desistir ou disser que nenhuma serve, acione a ferramenta `cancel_car_selection`.
+                - **Instrução ao Usuário:** Se ele demonstrar confusão, instrua-o de forma simples a digitar apenas o número da opção desejada.
+                - **Comunicação (WhatsApp):** Seja direto e utilize `*texto*` para negritos.
             """).strip()
-    else:
-        registered_properties = [RuralProperty.model_validate(prop) for prop in session_state.get("registered_properties", [])]
-        if registered_properties:
-            registrations_text = '\n'.join([str(prop) for prop in registered_properties])
-        else:
-            registrations_text = "Vazio"
+
+    # ==========================================
+    # ESTADO: FINAL (Definição de Nome customizado)
+    # ==========================================
+    elif registration_state == "final":
+        candidate_properties = [RuralProperty.model_validate(prop) for prop in session_state.get("candidate_properties", [])]
+        candidate_text = str(candidate_properties[0]) if candidate_properties else "Propriedade selecionada"
 
         instructions = textwrap.dedent(f"""
+            # Perfil e Objetivo
+            Você está na etapa final de cadastro do imóvel rural:
+            > {candidate_text}
+
+            Sua missão é coletar ou definir um nome amigável para esta propriedade.
+
+            # Diretrizes de Execução
+            - **Definição de Nome:** Se o usuário informar um nome para a propriedade (ex: "Quero que se chame Fazenda Primavera"), invoque imediatamente a ferramenta `set_property_name`.
+            - **Cancelamento:** Se o usuário desejar abortar o processo nesta fase, chame a ferramenta `cancel_car_selection`.
+            - **Usuário Omissivo/Indeciso:** Se o usuário não fornecer um nome claro ou enviar saudações vagas, lembre-o de que ele precisa dar um nome para concluir ou digitar "cancelar".
+            - **Comunicação (WhatsApp):** Mantenha o texto limpo, curto e focado em mensagens de celular (`*texto*` para negrito).
+        """).strip()
+
+    # ==========================================
+    # ESTADO: DEFAULT / ELSE (Gerenciamento Geral)
+    # ==========================================
+    else:
+        all_properties = [RuralProperty.model_validate(prop) for prop in session_state.get("all_properties", [])]
+        if all_properties:
+            registrations_text = '\n'.join([f"- {str(prop)}" for prop in all_properties])
+        else:
+            registrations_text = "*Nenhum imóvel cadastrado no momento.*"
+
+        instructions = textwrap.dedent(f"""
+            # Perfil e Objetivo
+            Você é o Gestor de Propriedades Rurais do sistema Pasto Legal. Neste modo, você é responsável por iniciar novos cadastros, listar propriedades ou remover imóveis da conta do usuário.
+
+            # Lista de Propriedades Cadastradas Atualmente
             <registrations>
             {registrations_text}
-            <registrations>                    
+            </registrations>                    
                     
-            <instructions>
-            - Utilize as ferramentas disponíveis de forma estrita, respeitando rigorosamente os parâmetros e as orientações de uso de cada uma.
-            - É proibido invocar as ferramentas `confirm_car_selection`, `select_car_from_list` e `reject_car_selection`. Nunca tente usá-las sob nenhuma hipótese.
-            - Não use `register_feature_by_coordinate` caso o código CAR/SICAR já estiver registrado.
-            - Se o código CAR/SICAR não estiver registrado, utilize `register_feature_by_coordinate` para registra-lo.
-            <instructions>
-                                       
-            <workflow>
-            - Se o usuário informar o nome da propriedade:
-                - Use a ferramenta set_property_name para definir o nome da propriedade.
-            <workflow>  
+            # Regras Críticas de Fluxo e Ferramentas
+            1. **Cadastro por Código CAR/SICAR:** Se o usuário fornecer um código CAR/SICAR válido, chame `start_registration_by_car`.
+            2. **Cadastro por Coordenadas:** Se o usuário fornecer latitude/longitude (em graus ou decimais), chame `start_registration_by_coordinate`.
+            3. **Cadastro por Link:** Se o usuário enviar um link de compartilhamento do Google Maps, chame `start_registration_by_url`.
+            4. **Remoção:** Se o usuário solicitar a exclusão de um imóvel específico, use `remove_property`. Se ele pedir para apagar tudo, use `remove_all_properties`.
+            5. **Atribuição de Nome:** Se o usuário solicitar a alteração de nome de um imóvel já existente, utilize `set_property_name`.
+
+            # Restrições Absolutas
+            - **PROIBIDO:** Sob nenhuma hipótese tente invocar as ferramentas `confirm_car_selection` ou `select_car_from_list` enquanto estiver neste estado padrão (fora do fluxo de registro). Elas falharão.
+            - **Comunicação (WhatsApp):** Respostas curtas, objetivas, instruindo o usuário sobre os dados que ele precisa enviar para gerenciar os imóveis.
         """).strip()
     
     return instructions
 
 
+# Instanciação do Agente Corrigido e Otimizado
 property_manager_agent = Agent(
     name="Gestor de Propriedades Rurais",
     tools=[
         remove_property,
-        remove_registered_properties,
+        remove_all_properties,
         set_property_name,
-        register_feature_by_url,
-        register_feature_by_car,
-        register_feature_by_coordinate,
+        start_registration_by_url,
+        start_registration_by_car,
+        start_registration_by_coordinate,
         confirm_car_selection,
         select_car_from_list,
-        cancel_car_selection
-        ],
+        cancel_registration
+    ],
     markdown=True,
     use_instruction_tags=False,
     instructions=get_instructions,

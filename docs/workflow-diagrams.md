@@ -72,7 +72,7 @@ flowchart TD
     In([Mensagem]) --> C0{"normal_response<br/>is_system_question?<br/>(question_classifier_agent)"}
 
     C0 -->|Sim: guia/FAQ/sistema| QA["answer_system<br/>question_answer_agent"]
-    C0 -->|Não: técnica/EMBRAPA| C1{"check_registered_property?<br/>registered_properties em session_state"}
+    C0 -->|Não: técnica/EMBRAPA| C1{"check_registered_property?<br/>all_properties em session_state"}
 
     C1 -->|Sim| Team["team_response<br/>pasto_legal_team"]
     C1 -->|Não| RA["register_and_analyze"]
@@ -214,7 +214,7 @@ Quais chaves o Workflow lê/escreve no `session_state` compartilhado. Esse dicio
 ```mermaid
 flowchart LR
     subgraph Reads["Lidos"]
-        R1["registered_properties<br/>(has_registered_property)"]
+        R1["all_properties<br/>(has_registered_property)"]
         R2["property_name_set<br/>(property_name_set,<br/>check_registration_done)"]
     end
 

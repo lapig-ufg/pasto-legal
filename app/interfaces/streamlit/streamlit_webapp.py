@@ -8,7 +8,6 @@ import streamlit as st
 from typing import List
 from agno.media import Image, Audio
 
-from app.agents.main_team import pasto_legal_team
 from app.workflows.main_workflow import pasto_legal_workflow
 
 st.set_page_config(page_title="Pasto Legal", page_icon="🐂")
