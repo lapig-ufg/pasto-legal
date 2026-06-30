@@ -501,7 +501,7 @@ def get_biomass(roi: ee.Geometry, year: int, month: int) -> 'BiomassStats':
             maxPixels=1e13
         )
 
-        biomass_value = stats.getInfo().get(f'tonC_hec', 0)
+        biomass_value = stats.getInfo().get(f'tonC_hec', 0) * 0.01
 
         month_dict = { 1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho", 7: "Julho", 8: "Agosto", 9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro" }
 
