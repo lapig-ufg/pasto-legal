@@ -123,7 +123,7 @@ def get_instructions(run_context: RunContext) -> str:
 
 
 # Instanciação do Agente Corrigido e Otimizado
-property_manager_agent = Agent(
+manager_agent = Agent(
     name="Gestor de Propriedades Rurais",
     tools=[
         remove_property,

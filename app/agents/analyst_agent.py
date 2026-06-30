@@ -13,6 +13,7 @@ from app.tools.property_analyst_tools import (
     get_topographic_stats
     )
 from app.utils.interfaces.property_record import RuralProperty
+from app.utils.interfaces.user_persona import UserPersona
 from app.configs.config import config
 
 
@@ -25,8 +26,16 @@ except SkillValidationError as e:
 def get_instructions(run_context: RunContext):
     session_state = run_context.session_state or {}
     
-    # Captura a persona definida na sessão
-    user_persona = session_state.get("user_persona", "Desconhecido")
+    user_persona = session_state.get("user_persona", None)
+    if user_persona is None:
+        user_persona_text = "Perfil geral: Produtor rural ou parceiro do Pasto Legal. Adote um tom acolhedor e respeitoso do campo."
+    else:
+        try:
+            if isinstance(user_persona, dict):
+                user_persona = UserPersona.model_validate(user_persona)
+            user_persona_text = str(user_persona)
+        except Exception:
+            user_persona_text = str(user_persona)
 
     all_properties = [RuralProperty.model_validate(record) for record in session_state.get("all_properties", [])]
     if all_properties:
@@ -34,31 +43,16 @@ def get_instructions(run_context: RunContext):
     else:
         registrations_text = "Vazio"
 
-    # Lógica Dinâmica da Persona para o Especialista
-    persona_instructions = ""
-    if user_persona == "Produtor":
-        persona_instructions = textwrap.dedent("""
-            - PERFIL DE RESPOSTA (PRODUTOR): Seja o mais conciso possível, explicando os resultados de forma SIMPLES e ACESSÍVEL para o produtor rural.
-            - TRADUÇÃO DE MÉTRICAS: Converta métricas abstratas para a realidade prática (exemplo: prefira falar sobre "capacidade de suporte/lotação animal" no lugar de "índice de biomassa bruta").
-            - FOCO: Direcione os resultados geoprocessados para a viabilidade econômica e instruções diretas de manejo na propriedade.
-        """).strip()
-    elif user_persona == "Técnico":
-        persona_instructions = textwrap.dedent("""
-            - PERFIL DE RESPOSTA (TÉCNICO): Opere no limite da profundidade analítica de um agrônomo/geoprocessador sênior.
-            - DADOS BRUTOS: Entregue os dados espaciais brutos (ex: índices exatos de NDVI, biomassa, vigor e hectares precisos).
-            - JARGÕES: Use terminologia técnica e metodologias agronômicas livremente (como a "metodologia Lapig para cálculo de Unidade Animal").
-            - FOCO: O texto deve servir como um relatório técnico para suporte à decisão estratégica do consultor.
-        """).strip()
-    else:
-         persona_instructions = "- PERFIL DE RESPOSTA (GERAL): Seja conciso e use conhecimentos da Embrapa para explicar os resultados de forma simples."
-
     instructions = textwrap.dedent(f"""\
+        <user-persona>
+        {user_persona_text}
+        </user-persona>
+
         <registrations>
         {registrations_text}
         <registrations>                    
                 
         <instructions>
-        {persona_instructions}
         - Sempre informe o ano de referência das análise. Use 2024 como ano de referência para os dados mais atualizados.
         - Seja o mais conciso possível, explicando os resultados de forma simples.
         - Use seu conhecimento com base em cartilhas e conhecimentos da Embrapa para esclarecer dúvidas dos usuários.
@@ -80,17 +74,8 @@ def get_instructions(run_context: RunContext):
     return instructions
 
 
-property_analyst_agent = Agent(
+analyst_agent = Agent(
     name="Agente Extensionista Agrônomo",
-    role="Especialista em Geointeligência Agrícola e Consultoria de Manejo Rural.",
-    description=(
-        "Este agente é o especialista técnico do time para análise de dados espaciais e agronômicos de propriedades rurais. "
-        "Deve ser acionado quando a demanda exigir:\n"
-        "- ANÁLISES TÉCNICAS: Cálculos de biomassa, índices de vigor (NDVI/LAPIG), topografia ou características do solo.\n"
-        "- SUPORTE GEOESPACIAL: Extração de dados geográficos, consulta ao Google Earth Engine ou geração de mapas temáticos.\n"
-        "- CONSULTORIA AGRONÔMICA: Dúvidas sobre manejo, lotação animal e produtividade fundamentadas em métricas da Embrapa.\n"
-        "- RELATÓRIOS: Quando o usuário solicitar diagnósticos de campo, estatísticas da propriedade ou relatórios de monitoramento.\n\n"
-    ),
     debug_mode=config.DEBUG_MODE,
     tools=[
         CalculatorTools(exclude_tools=["is_prime", "factorial"]),

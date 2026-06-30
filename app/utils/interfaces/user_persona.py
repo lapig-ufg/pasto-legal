@@ -21,9 +21,7 @@ class UserPersona(BaseModel):
         )
 
         return textwrap.dedent(f"""
-            <user-persona>
             - Nome: {self.name}
             - Profissão: {self.role}
             - Regionalidade: {self.regionality}{preferences_text}
-            </user-persona>
         """).strip()

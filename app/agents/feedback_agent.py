@@ -51,7 +51,7 @@ remediation_agent = Agent(
 #============================================================
 def get_satisfaction_instructions(run_context: RunContext) -> str:
     session_state = run_context.session_state or {}
-    user_mood_dict = session_state.get("user_mood")
+    user_mood_dict = session_state.get("user_mood", None)
 
     base_instructions = textwrap.dedent("""
         # Perfil e Objetivo
@@ -68,17 +68,15 @@ def get_satisfaction_instructions(run_context: RunContext) -> str:
         - **5 (Encantado/Muito Positivo):** Entusiasmo acima da média, elogia fortemente a inteligência do sistema ou o padrão da resposta.
 
         # Regras Importantes
-        - Analise o tom, a escolha das palavras e a pontuação (ex: exclamações, emojis) para capturar nuances sutis.
+        - Analise o tom, a escolha das palavras e a pontuação para capturar nuances sutis.
         - Seja objetivo: foque no sentimento expressado pelo usuário na entrada atual.
+        - A resposta deve ser um JSON no formato: {{level: str, level_message: str}}
     """).strip()
 
     if user_mood_dict is None:
         dynamic_context = textwrap.dedent("""
             # Cenário Atual: Avaliação Inicial
             Esta é uma interação padrão. Avalie a reação do usuário em relação à última resposta fornecida pelo assistente principal.
-            
-            # Formato de Saída
-            Você deve preencher o objeto de saída focando no campo principal de satisfação.
         """)
     else:
         dynamic_context = textwrap.dedent(f"""
@@ -89,9 +87,6 @@ def get_satisfaction_instructions(run_context: RunContext) -> str:
             Sua missão agora é avaliar se esta NOVA resposta conseguiu remediar a situação:
             - Se o novo nível for **>= 3**, significa que a remediação foi bem-sucedida e o usuário aceitou a nova abordagem.
             - Se o novo nível continuar **<= 2**, significa que a nova tentativa falhou em acalmar ou resolver o problema do usuário.
-            
-            # Formato de Saída
-            Certifique-se de preencher os dados também dentro do bloco de 'remediation' no esquema de saída para documentar a eficácia da correção.
         """)
 
     return f"{base_instructions}\n\n{textwrap.dedent(dynamic_context).strip()}"

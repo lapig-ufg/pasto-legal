@@ -9,7 +9,7 @@ from app.configs.config import config
 
 
 class RouterOutput(BaseModel):
-    route: Literal['property_analyst_agent', 'property_manager_agent', 'question_answer_agent'] = Field(
+    route: Literal['property_analyst_agent', 'property_manager_agent', 'question_answer_agent', 'small_talk_agent'] = Field(
         ..., 
         description="A rota do agente especialista que deve tratar a requisição do usuário."
     )
@@ -44,6 +44,10 @@ def get_instructions(run_context: RunContext) -> str:
         Acione esta rota para dúvidas de uso geral, institucionais ou operacionais sobre a plataforma. Não envolve análises de dados e nem cadastros.
         - **Casos de Uso:** Como usar o sistema, de onde vêm os dados da plataforma, qual a disponibilidade das atualizações, quem criou o Pasto Legal, ou problemas de navegação nas telas.
 
+        ### 4. `small_talk_agent` (Conversas Informais, Saudações e Cortesia)
+        Acione esta rota para interações puramente sociais, gentis ou casuais, onde não há uma intenção técnica ou comando claro para o sistema.
+        - **Casos de Uso:** Saudações simples ("Olá", "Bom dia", "Oi"), agradecimentos ("Obrigado!", "Valeu"), despedidas ("Tchau", "Até logo"), elogios ("Você é ótimo", "Muito bom o sistema") ou conversas casuais ("Tudo bem?", "Como você está?").
+        
         ---
 
         # Regras Críticas de Execução

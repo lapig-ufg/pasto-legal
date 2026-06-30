@@ -1,13 +1,14 @@
 from typing import Any, Dict
 
-from agno.workflow import Workflow, Step, Steps, Parallel, Condition, Router
+from agno.workflow import Workflow, Step, Parallel, Condition, Router
 from agno.workflow.types import StepInput, StepOutput
 
 from app.agents import (
     question_answer_agent,
-    property_manager_agent,
-    property_analyst_agent,
-    router_agent
+    manager_agent,
+    analyst_agent,
+    router_agent,
+    small_talk_agent
 )
 from app.database.agno_db import db
 from app.workflows.feedback_workflow import feedback_workflow, merge_output_step
@@ -84,15 +85,19 @@ pasto_legal_workflow = Workflow(
                             ),
                             Step(
                                 name="property_analyst_agent",
-                                agent=property_analyst_agent
+                                agent=analyst_agent
                             ),
                             Step(
                                 name="property_manager_agent",
-                                agent=property_manager_agent
+                                agent=manager_agent
                             ),
                             Step(
                                 name="question_answer_agent",
                                 agent=question_answer_agent
+                            ),
+                            Step(
+                                name="small_talk_agent",
+                                agent=small_talk_agent
                             )
                         ]
                     )
