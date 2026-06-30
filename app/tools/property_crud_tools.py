@@ -22,9 +22,9 @@ from app.utils.interfaces.property_record import RuralProperty
 
 # TODO: Se o usuário informar uma URL de coordenadas de uma propriedade que já existe no sistema, validar se a propriedade existe por meio do CAR. Se existir então retornar menssagem que já existe.
 @tool(stop_after_tool_call=True)
-def register_feature_by_coordinate(run_context: RunContext, latitude: float, longitude: float):
+def start_registration_by_coordinate(run_context: RunContext, latitude: float, longitude: float):
     """
-    Registra uma nova propriedade rural baseando-se nas coordenadas fornecidas.
+    Inicia o registro de uma nova propriedade rural baseando-se nas coordenadas fornecidas.
 
     Use esta ferramenta quando o usuário fornecer coordenadas geográficas (latitude/longitude).
     
@@ -86,9 +86,9 @@ def register_feature_by_coordinate(run_context: RunContext, latitude: float, lon
 
 
 @tool(stop_after_tool_call=True)
-def register_feature_by_car(run_context: RunContext, car_codes: List[str]):
+def start_registration_by_car(run_context: RunContext, car_codes: List[str]):
     """
-    Registra uma nova propriedade rural baseando-se nas coordenadas fornecidas.
+    Inicia o registro de uma nova propriedade rural baseando-se nas coordenadas fornecidas.
     
     Use esta ferramenta quando o usuário fornecer um valor de CAR ainda não registrado no sistema.
     
@@ -152,9 +152,9 @@ def register_feature_by_car(run_context: RunContext, car_codes: List[str]):
 
 
 @tool(stop_after_tool_call=True,)
-def register_feature_by_url(run_context: RunContext, url: str) -> ToolResult:
+def start_registration_by_url(run_context: RunContext, url: str) -> ToolResult:
     """
-    Registra uma nova propriedade rural baseando-se na URL de compartilhamento do Google Maps.
+    Inicia o registro de uma nova propriedade rural baseando-se na URL de compartilhamento do Google Maps.
 
     Use esta ferramenta quando o usuário fornecer uma URL de compartilhamento do Google Maps.
     
