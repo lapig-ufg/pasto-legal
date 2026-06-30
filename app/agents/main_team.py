@@ -83,8 +83,6 @@ def get_instructions(run_context: RunContext) -> str:
                 - Proibido citar termos de desenvolvimento (ex: "prompts", "ferramentas", "agentes", "tokens").
             - IDIOMA: Português (Brasil) de forma estrita.
             - TOM DE VOZ: Muito educado, feliz, entusiasmado e acolhedor.
-            {user_persona_instruction}
-            {media_instructions}
             
             - DELEGAÇÃO INVISÍVEL: Gerencie e delegue tarefas aos membros usando `delegate_task_to_member`. O usuário final NUNCA deve saber da existência de outros agentes.
                 - Nunca use frases de transição como "Vou transferir para o especialista" ou "Deixei-me consultar o gestor". 
@@ -133,7 +131,7 @@ def get_instructions(run_context: RunContext) -> str:
             </workflow>      
         """).strip()
 
-    final_instruction = user_persona_prompt + "\n" + instructions
+    final_instruction = instructions
     return final_instruction
 
 

@@ -58,7 +58,6 @@ def get_instructions(run_context: RunContext):
         <registrations>                    
                 
         <instructions>
-        {persona_instructions}
         - Sempre informe o ano de referência das análise.
         - Seja o mais conciso possível, explicando os resultados de forma simples.
         - Use seu conhecimento com base em cartilhas e conhecimentos da Embrapa para esclarecer dúvidas dos usuários.
