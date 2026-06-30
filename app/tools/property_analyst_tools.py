@@ -129,9 +129,9 @@ def generate_soil_texture_image(run_context: RunContext, car_codes: list[str]) -
 
 
 @tool(tool_hooks=[validate_selected_property_hook])
-def get_pasture_stats(run_context: RunContext, car_codes: list[str], year: int = 2024):
+def get_pasture_stats(run_context: RunContext, car_codes: list[str]):
     """
-    Recupera estatísticas de bimoassa, vigor vegetativo, idade da pastagem e classificação de uso do solo.
+    Recupera estatísticas de bimoassa, vigor vegetativo, idade da pastagem e classificação de uso do solo mais recentes.
    
     Use esta ferramenta quando o usuário perguntar sobre:
     - Saúde ou qualidade da pastagem (degradação, vigor).
@@ -141,7 +141,6 @@ def get_pasture_stats(run_context: RunContext, car_codes: list[str], year: int =
 
     params:
         car_codes (list[str]): Lista de códigos CAR da propriedade.
-        year (str): O ano para a consulta dos dados (2000-2024). O ano mais recente é 2024.
 
     Return:
         Dicionário contendo a área de biomassa, vigor da pastagem, idade e uso e cobertura do solo.
@@ -159,7 +158,7 @@ def get_pasture_stats(run_context: RunContext, car_codes: list[str], year: int =
         selected_property = next((prop for prop in registered_properties if prop["car_code"] == ', '.join(car_codes)))
         selected_property = RuralProperty.model_validate(selected_property)
 
-        new_pasture_stats: PastureStats = query_pasture_statistics(coords=selected_property.get_coords(), year=year)
+        new_pasture_stats: PastureStats = query_pasture_statistics(coords=selected_property.get_coords(), year=2026, month=5)
 
         #new_property_stats.list_pasture_stats.append(new_pasture_stats)
 

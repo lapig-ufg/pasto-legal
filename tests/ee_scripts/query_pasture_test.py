@@ -4,10 +4,10 @@ from pydantic import ValidationError
 # Substitua 'app.tools.pasture' pelo caminho real de importação no seu projeto
 from app.utils.scripts.gee_scripts import (
     Value, 
-    BiomassData, 
-    AgeData, 
-    VigorData, 
-    LULCClassData, 
+    BiomassStats, 
+    AgeStats, 
+    VigorStats, 
+    LULCStats, 
     PropertyStats
 )
 
@@ -25,7 +25,7 @@ def test_value_model_validation_error():
 
 def test_biomass_data_model():
     """Testa o modelo de Biomassa (que contém um Value aninhado)."""
-    biomass = BiomassData(amount=Value(value=2000.0, unity="toneladas"))
+    biomass = BiomassStats(amount=Value(value=2000.0, unity="toneladas"))
     assert biomass.amount.value == 2000.0
     assert biomass.amount.unity == "toneladas"
 
@@ -33,20 +33,20 @@ def test_pasture_stats_result_composition():
     """Testa se o modelo principal compila todos os dados e listas corretamente."""
     
     # Mockando os dados que viriam do Earth Engine / refatoração
-    biomass = BiomassData(amount=Value(value=550.2, unity="toneladas"))
+    biomass = BiomassStats(amount=Value(value=550.2, unity="toneladas"))
     
     age_list = [
-        AgeData(age="1 a 10 anos", amount=Value(value=100.0, unity="hectares")),
-        AgeData(age="10 a 20 anos", amount=Value(value=50.0, unity="hectares"))
+        AgeStats(age="1 a 10 anos", amount=Value(value=100.0, unity="hectares")),
+        AgeStats(age="10 a 20 anos", amount=Value(value=50.0, unity="hectares"))
     ]
     
     vigor_list = [
-        VigorData(vigor="Alto", amount=Value(value=120.0, unity="hectares")),
-        VigorData(vigor="Baixo", amount=Value(value=30.0, unity="hectares"))
+        VigorStats(vigor="Alto", amount=Value(value=120.0, unity="hectares")),
+        VigorStats(vigor="Baixo", amount=Value(value=30.0, unity="hectares"))
     ]
     
     lulc_list = [
-        LULCClassData(lulc_class="Pastagem", amount=Value(value=150.0, unity="hectares"))
+        LULCStats(lulc_class="Pastagem", amount=Value(value=150.0, unity="hectares"))
     ]
 
     # Instanciando o modelo consolidado

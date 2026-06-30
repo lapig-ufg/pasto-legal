@@ -15,7 +15,7 @@ from app.utils.scripts.sicar_scripts import (
     fetch_coordinates_by_url,
     clean_car_code
     )
-from app.utils.scripts.image_scripts import get_mosaic
+from app.utils.scripts.image_scripts import create_vertical_mosaic
 from app.utils.scripts.gee_scripts import retrieve_feature_images
 from app.utils.interfaces.property_record import RuralProperty
 
@@ -69,7 +69,7 @@ def register_feature_by_coordinate(run_context: RunContext, latitude: float, lon
             )
     
     else:
-        mosaic = get_mosaic(imgs)
+        mosaic = create_vertical_mosaic(imgs)
 
         buffer = BytesIO()
         mosaic.save(buffer, format="PNG")
@@ -126,7 +126,7 @@ def register_feature_by_car(run_context: RunContext, car_codes: List[str]):
 
     imgs = retrieve_feature_images(_property.get_coords())
 
-    mosaic = get_mosaic(imgs)
+    mosaic = create_vertical_mosaic(imgs)
 
     buffer = BytesIO()
     mosaic.save(buffer, format="PNG")
@@ -214,7 +214,7 @@ def register_feature_by_url(run_context: RunContext, url: str) -> ToolResult:
             )
     
     else:
-        mosaic = get_mosaic(imgs)
+        mosaic = create_vertical_mosaic(imgs)
 
         buffer = BytesIO()
         mosaic.save(buffer, format="PNG")
