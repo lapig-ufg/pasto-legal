@@ -18,6 +18,7 @@ from app.utils.scripts.sicar_scripts import (
 from app.utils.scripts.image_scripts import get_mosaic
 from app.utils.scripts.gee_scripts import retrieve_feature_images
 from app.utils.interfaces.property_record import RuralProperty
+from app.utils.interfaces.workflow_state import WorkflowState, WorkflowRouteEnum
 
 
 def _clear_session_state(run_context: RunContext):
@@ -332,11 +333,13 @@ def set_property_name(run_context: RunContext, car_codes: List[str], name: str):
 
         _clear_session_state(run_context)
 
+        workflow_state = WorkflowState.model_validate(run_context.session_state["workflow_state"])        
+        workflow_state.route = WorkflowRouteEnum.ANALYST
+        workflow_state.active_router_loop = True
+        run_context.session_state["workflow_state"] = workflow_state.model_dump()
+
         return ToolResult(
-            content=(
-                f"O nome da propriedade foi alterado com sucesso.\n"
-                "Seja proativo, use a tool `delegate_task_to_member` e peça ao agente `Agente Extensionista Agrônomo` para fazer um diagnóstico inicial."
-            )
+            content=f"Faça um diagnóstico inicial para a propriedade de código CAR: {selected_property["car_code"]}."
         )
 
     all_properties: List[dict] = run_context.session_state.get('all_properties', [])

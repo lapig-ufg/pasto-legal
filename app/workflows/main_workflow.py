@@ -1,6 +1,7 @@
-from typing import Any, Dict
+from typing import Any, Dict, List
 
-from agno.workflow import Workflow, Step, Parallel, Condition, Router
+from agno.utils.log import log_debug
+from agno.workflow import Workflow, Step, Parallel, Condition, Router, Loop
 from agno.workflow.types import StepInput, StepOutput
 
 from app.agents import (
@@ -11,19 +12,22 @@ from app.agents import (
     small_talk_agent
 )
 from app.database.agno_db import db
+from app.utils.interfaces.workflow_state import WorkflowState, WorkflowRouteEnum
 from app.workflows.feedback_workflow import feedback_workflow, merge_output_step
 
 
 #====================================
 #
 #====================================
-def greetings_evaluator(step_input: StepInput, session_state: Dict[str, Any]):
-    is_greeted = session_state.get("is_greeted", False)
+def is_greetings_evaluator(step_input: StepInput, session_state: Dict[str, Any]):
+    workflow_state_dict = session_state.get("workflow_state", None)
 
-    if not is_greeted:
-        session_state["is_greeted"] = True
+    if workflow_state_dict is None:
+        session_state["workflow_state"] = WorkflowState().model_dump()
+        return True
 
-    return is_greeted
+    return False
+
 
 def greetings_executor(step_input: StepInput):
     return StepOutput(content="Olá, seja bem-vindo ao Pato Legal. Como posso te ajudar hoje?")
@@ -31,14 +35,15 @@ def greetings_executor(step_input: StepInput):
 #====================================
 #
 #====================================
-def agent_router_selector(step_input: StepInput, session_state: Dict[str, Any]) -> str:
+def workflow_route_selector(step_input: StepInput, session_state: Dict[str, Any]) -> str:
     """
     Selector do roteador que executa o Router Agent e direciona o fluxo 
     para o agente especialista correto com base na intenção do usuário.
     """
-    workflow_route = session_state.get("workflow_route", None)
-    if workflow_route:
-        return workflow_route
+    workflow_state = WorkflowState.model_validate(session_state.get("workflow_state"))
+
+    if not workflow_state.route is WorkflowRouteEnum.AUTO:
+        return workflow_state.route.value
 
     try:
         user_msg = step_input.get_input_as_string()
@@ -58,49 +63,62 @@ def agent_router_selector(step_input: StepInput, session_state: Dict[str, Any]) 
     return 'default'
 
 
+def end_condition(step_outputs: List[StepOutput]) -> bool:
+    print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", flush=True)
+    
+    return True
+
+
 pasto_legal_workflow = Workflow(
     name="Pasto Legal Workflow",
     steps=[
         Condition(
             name="Greetings Condition",
-            evaluator=greetings_evaluator,
+            evaluator=is_greetings_evaluator,
             steps=[
+                Step(
+                    name="Greetings Step",
+                    executor=greetings_executor
+                ) 
+            ],
+            else_steps=[
                 Parallel(
                     feedback_workflow,
-                    Router(
-                        name="Agent Router",
-                        selector=agent_router_selector,
-                        choices=[
-                            Step(
-                                name="default",
-                                executor=lambda x: None
-                            ),
-                            Step(
-                                name="property_analyst_agent",
-                                agent=analyst_agent
-                            ),
-                            Step(
-                                name="property_manager_agent",
-                                agent=manager_agent
-                            ),
-                            Step(
-                                name="question_answer_agent",
-                                agent=question_answer_agent
-                            ),
-                            Step(
-                                name="small_talk_agent",
-                                agent=small_talk_agent
+                    Loop(
+                        name="Agents Loop",
+                        end_condition=end_condition,
+                        forward_iteration_output=True,
+                        steps=[
+                            Router(
+                                name="Agent Router",
+                                selector=workflow_route_selector,
+                                choices=[
+                                    Step(
+                                        name="default",
+                                        executor=lambda x: None
+                                    ),
+                                    Step(
+                                        name=WorkflowRouteEnum.ANALYST.value,
+                                        agent=analyst_agent
+                                    ),
+                                    Step(
+                                        name=WorkflowRouteEnum.MANAGER.value,
+                                        agent=manager_agent
+                                    ),
+                                    Step(
+                                        name=WorkflowRouteEnum.QUESTION_ANSWER.value,
+                                        agent=question_answer_agent
+                                    ),
+                                    Step(
+                                        name=WorkflowRouteEnum.SMALL_TALK.value,
+                                        agent=small_talk_agent
+                                    )
+                                ]
                             )
                         ]
                     )
                 ),
                 merge_output_step
-            ],
-            else_steps=[
-                Step(
-                    name="Greetings Step",
-                    executor=greetings_executor
-                )
             ]
         )
     ],
