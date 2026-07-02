@@ -20,12 +20,10 @@ from app.workflows.feedback_workflow import feedback_workflow, merge_output_step
 def greetings_evaluator(step_input: StepInput, session_state: Dict[str, Any]):
     is_greeted = session_state.get("is_greeted", False)
 
-    if is_greeted:
-        return True
-    else:
+    if not is_greeted:
         session_state["is_greeted"] = True
-        return False
 
+    return is_greeted
 
 def greetings_executor(step_input: StepInput):
     return StepOutput(content="Olá, seja bem-vindo ao Pato Legal. Como posso te ajudar hoje?")
@@ -67,12 +65,6 @@ pasto_legal_workflow = Workflow(
             name="Greetings Condition",
             evaluator=greetings_evaluator,
             steps=[
-                Step(
-                    name="Greetings Step",
-                    executor=greetings_executor
-                )
-            ],
-            else_steps=[
                 Parallel(
                     feedback_workflow,
                     Router(
@@ -103,6 +95,12 @@ pasto_legal_workflow = Workflow(
                     )
                 ),
                 merge_output_step
+            ],
+            else_steps=[
+                Step(
+                    name="Greetings Step",
+                    executor=greetings_executor
+                )
             ]
         )
     ],
