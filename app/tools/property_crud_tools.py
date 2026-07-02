@@ -264,15 +264,9 @@ def select_car_from_list(run_context: RunContext, selection: int):
         return ToolResult(content=f"Seleção inválida. Escolha um número válido entre 1 e {len(candidate_properties)}.")
     
     selected_property = candidate_properties[selection - 1]
+    run_context.session_state['candidate_properties'] = [selected_property]
 
-    run_context.session_state['selected_property'] = selected_property
-    run_context.session_state['candidate_properties'] = []
-
-    new_property = RuralProperty.model_validate(selected_property)
-    old_all_properties = run_context.session_state.get("all_properties", [])
-    old_all_properties.append(new_property.model_dump())  
-
-    run_context.session_state["all_properties"] = old_all_properties                             
+    run_context.session_state["registration_state"] = "final"                        
 
     return ToolResult(
         content=(
@@ -296,13 +290,7 @@ def confirm_car_selection(run_context: RunContext):
     run_context.session_state["registration_state"] = "final"
     
     selected_property = candidate_properties[0]
-
-    run_context.session_state['candidate_properties'] = []
-
-    new_property = RuralProperty.model_validate(selected_property)
-    old_all_properties = run_context.session_state.get("all_properties", [])
-    old_all_properties.append(new_property.model_dump())  
-    run_context.session_state["all_properties"] = old_all_properties         
+    run_context.session_state['candidate_properties'] = [selected_property]       
 
     return ToolResult(
         content=(
@@ -331,7 +319,27 @@ def set_property_name(run_context: RunContext, car_codes: List[str], name: str):
         car_codes(str): Códigos CAR da propriedade.
         name (str): Nome da propriedade.
     """
-    all_properties = run_context.session_state.get('all_properties', [])
+    candidate_properties = run_context.session_state.get('candidate_properties', None)
+
+    if not candidate_properties is None:
+        selected_property = candidate_properties[0]
+        selected_property["nickname"] = name
+
+        old_all_properties = run_context.session_state.get("all_properties", [])
+        old_all_properties.append(selected_property)  
+
+        run_context.session_state["all_properties"] = old_all_properties
+
+        _clear_session_state(run_context)
+
+        return ToolResult(
+            content=(
+                f"O nome da propriedade foi alterado com sucesso.\n"
+                "Seja proativo, use a tool `delegate_task_to_member` e peça ao agente `Agente Extensionista Agrônomo` para fazer um diagnóstico inicial."
+            )
+        )
+
+    all_properties: List[dict] = run_context.session_state.get('all_properties', [])
     selected_property = next((prop for prop in all_properties if prop["car_code"] == ', '.join(car_codes)), None)
     
     if selected_property is None:
@@ -339,11 +347,11 @@ def set_property_name(run_context: RunContext, car_codes: List[str], name: str):
     
     run_context.session_state["workflow_route"] = None
     
-    new_selected_property = RuralProperty.model_validate(selected_property)
-    new_selected_property.nickname = name
+    updated_selected_property = selected_property
+    updated_selected_property["nickname"] = name
 
     all_properties.remove(selected_property)
-    all_properties.append(new_selected_property.model_dump())
+    all_properties.append(updated_selected_property)
     run_context.session_state["all_properties"] = all_properties
 
     _clear_session_state(run_context)
