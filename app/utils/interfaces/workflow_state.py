@@ -15,11 +15,11 @@ class WorkflowState(BaseModel):
         default=WorkflowRouteEnum.AUTO,
         description="Route workflow should follow."
     )
-    active_router_loop: bool = Field(
+    is_loop_active: bool = Field(
         default=False,
         description="Should run router loop."
     ) 
-    active_feedback_eval: bool = Field(
-        default=True,
+    is_feedback_active: bool = Field(
+        default=False,
         description="Should run feedback evaluation."
     )

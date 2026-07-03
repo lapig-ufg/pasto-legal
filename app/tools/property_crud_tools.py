@@ -335,7 +335,7 @@ def set_property_name(run_context: RunContext, car_codes: List[str], name: str):
 
         workflow_state = WorkflowState.model_validate(run_context.session_state["workflow_state"])        
         workflow_state.route = WorkflowRouteEnum.ANALYST
-        workflow_state.active_router_loop = True
+        workflow_state.is_loop_active = True
         run_context.session_state["workflow_state"] = workflow_state.model_dump()
 
         return ToolResult(

@@ -201,11 +201,6 @@ feedback_workflow = Workflow(
 )
 
 
-def foward_executor(step_input: StepInput):
-    step_output = step_input.get_step_output(step_name="Agents Loop")
-    return step_output
-
-
 merge_output_step = Condition(
     name="Merge Output Step",
     evaluator=negative_satisfaction_evaluator,
@@ -218,7 +213,7 @@ merge_output_step = Condition(
     else_steps=[
         Step(
             name="Foward",
-            executor=foward_executor
+            executor=lambda step_input: step_input.get_step_output(step_name="Agents Loop")
         )
     ]
 )
