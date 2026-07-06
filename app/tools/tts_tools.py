@@ -14,16 +14,17 @@ load_dotenv()
 
 class AudioGenerator(Toolkit):
     def __init__(self):
-        super().__init__(name="audio_generator")
+        super().__init__(name="audio_generator", stop_after_tool_call_tools=["generate_speech"])
         
 
     def generate_speech(self, text: str, user_id: str = "default") -> ToolResult:
         """
         Generates audio speech from the given text using Google's Gemini model.
         
+        It must be called last; this will terminate the processing and send response to user.
+        
         Args:
             text (str): The text to be converted into speech.
-            user_id (str): The user ID (e.g., phone number) to organize audio files. Defaults to "default".
             
         Returns:
             ToolResult: The result containing the message and the audio media.
@@ -33,7 +34,7 @@ class AudioGenerator(Toolkit):
             print("Generating speech...", flush=True)
             print(text, flush=True)
             response = client.models.generate_content(
-                model='gemini-2.5-flash-preview-tts',
+                model='gemini-2.5-flash-tts',
                 contents="[Diga de forma simples e direta, use o sotaque e girias do contexto agro]: " + text,
                 config=types.GenerateContentConfig(
                     response_modalities=['AUDIO'],
@@ -82,7 +83,7 @@ class AudioGenerator(Toolkit):
                             is_pcm = True
                             ext = ".wav"
                             
-                        filename = f"speech_{uuid.uuid4()}{ext}"
+                        filename = f"speech_{uuid.uuid4()[:16]}{ext}"
                         file_path = storage_dir / filename
                         
                         if is_pcm:
@@ -139,7 +140,7 @@ class AudioGenerator(Toolkit):
                                 f.write(audio_bytes)
                             
                         result = ToolResult(
-                            content=f"path={str(file_path)}",
+                            content=text,
                             audios=[Audio(filepath=str(file_path))]
                         )
                         print(f"DEBUG ToolResult: {result}", flush=True)
