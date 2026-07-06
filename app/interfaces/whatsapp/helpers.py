@@ -62,6 +62,7 @@ class MessageContent:
 
 
 def extract_message_content(message: dict) -> Optional[MessageContent]:
+    log_info(message)
     msg_type = message.get("type")
 
     if msg_type == "text":
