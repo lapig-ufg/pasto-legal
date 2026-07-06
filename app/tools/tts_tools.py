@@ -7,9 +7,6 @@ from agno.tools import Toolkit
 from agno.tools.function import ToolResult
 from agno.media import Audio
 from google import genai
-from dotenv import load_dotenv
-
-load_dotenv()
 
 class AudioGenerator(Toolkit):
     def __init__(self):
@@ -33,11 +30,8 @@ class AudioGenerator(Toolkit):
             print("Generating speech with Gemini 3.1...", flush=True)
             print(text, flush=True)
             
-            # Recupera a voz do ambiente (Padrão alterado para 'Kore' que é suportado na v3.1)
-            voice_name = os.getenv("GEMINI_VOICE_NAME", "Kore")
-            
             # Estrutura o prompt definindo o 'Locutor' para casar com o speech_config
-            prompt = f"Diga de forma simples e direta, use o sotaque e girias do contexto agro: {text}"
+            prompt = f"Diga de forma simples e direta, use o sotaque muito leve e girias do contexto agro: {text}"
             
             # Nova chamada de TTS utilizando client.interactions.create
             interaction = client.interactions.create(
@@ -46,10 +40,12 @@ class AudioGenerator(Toolkit):
                 response_format={"type": "audio"},
                 generation_config={
                     "speech_config": [
-                        {"voice": voice_name}
+                        {"voice": "Kore"}
                     ]
                 }
             )
+
+            print("Gerou o áudio com sucesso!", flush=True)
             
             if interaction.output_audio and interaction.output_audio.data:
                 # O novo formato retorna o PCM codificado em base64 diretamente aqui
@@ -62,7 +58,7 @@ class AudioGenerator(Toolkit):
                 storage_dir = project_root / "tmp" / "audio" / user_id
                 storage_dir.mkdir(parents=True, exist_ok=True)
                 
-                filename = f"speech_{uuid.uuid4()[:16]}.wav"
+                filename = f"speech{uuid.uuid4().hex[:8]}.wav"
                 file_path = storage_dir / filename
                 
                 # Grava o arquivo WAV temporário a partir do PCM retornado
@@ -100,6 +96,13 @@ class AudioGenerator(Toolkit):
                     
                     # Atualiza o ponteiro do arquivo final para o OGG
                     file_path = ogg_path
+
+                    result = ToolResult(
+                        content=text,
+                        audios=[Audio(filepath=str(file_path), mime_type="audio/ogg")]
+                    )
+
+                    return result
                     
                 except ImportError:
                     print("pydub não instalado. Retornando arquivo em WAV.")
@@ -108,8 +111,9 @@ class AudioGenerator(Toolkit):
                 
                 result = ToolResult(
                     content=text,
-                    audios=[Audio(filepath=str(file_path))]
+                    audios=[Audio(filepath=str(file_path), mime_type="audio/ogg")]
                 )
+
                 print(f"DEBUG ToolResult: {result}", flush=True)
                 return result
                         
