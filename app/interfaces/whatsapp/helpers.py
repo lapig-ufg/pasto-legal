@@ -70,12 +70,12 @@ def extract_message_content(message: dict) -> Optional[MessageContent]:
         log_info(text)
         return MessageContent(text=text)
     
-    if msg_type == "interactive":
+    if msg_type == "location":
         latitude = message['location']['latitude']
         longitude = message['location']['longitude']
         log_info(f"Lat: {latitude} Long: {longitude}")
         return MessageContent(
-            text=f"Minhas coordenadas são Lat: {latitude} Long: {longitude}.",
+            text=f"Quero registrar minha propriedade nas coordenadas Lat: {latitude} Long: {longitude}.",
         )
 
     if msg_type == "image":
