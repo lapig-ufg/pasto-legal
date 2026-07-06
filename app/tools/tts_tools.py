@@ -37,7 +37,7 @@ class AudioGenerator(Toolkit):
             voice_name = os.getenv("GEMINI_VOICE_NAME", "Kore")
             
             # Estrutura o prompt definindo o 'Locutor' para casar com o speech_config
-            prompt = f"Locutor: [Diga de forma simples e direta, use o sotaque e girias do contexto agro]: {text}"
+            prompt = f"Diga de forma simples e direta, use o sotaque e girias do contexto agro: {text}"
             
             # Nova chamada de TTS utilizando client.interactions.create
             interaction = client.interactions.create(
@@ -46,7 +46,7 @@ class AudioGenerator(Toolkit):
                 response_format={"type": "audio"},
                 generation_config={
                     "speech_config": [
-                        {"speaker": "Locutor", "voice": voice_name}
+                        {"voice": voice_name}
                     ]
                 }
             )
