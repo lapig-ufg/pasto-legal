@@ -122,6 +122,8 @@ def _extract_last_step_output(step_input: StepInput, session_state: Dict[str, An
 pasto_legal_workflow = Workflow(
     name="Pasto Legal Workflow",
     db=db,
+    add_workflow_history_to_steps=True,
+    num_history_runs=1,
     steps=[
         Condition(
             name="Is First Interaction",

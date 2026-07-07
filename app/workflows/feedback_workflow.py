@@ -111,13 +111,22 @@ def evaluate_satisfaction(step_input: StepInput, session_state: Dict[str, Any]) 
     StepOutput if the agent fails.
     """
     user_msg = step_input.get_input_as_string() or ""
+    history_data = step_input.get_workflow_history(num_runs=1)
     user_mood = session_state.get("user_mood", None)
 
     effectiveness: Optional[Dict[str, Any]] = None
 
     try:
+        evaluator_msg = ""
+        if history_data:
+            last_user_msg, last_workflow_response = history_data[0]
+            evaluator_msg += "### Last Interaction ###\n"
+            evaluator_msg += f"Last user message: {last_user_msg}\n\n"
+            evaluator_msg += f"Last workflow response: {last_workflow_response}\n\n"
+        evaluator_msg += f"Current user message: {user_msg}\n"
+
         response = satisfaction_evaluation_agent.run(
-            user_msg, session_state={"user_mood": user_mood}
+            evaluator_msg, session_state={"user_mood": user_mood}
         )
         if response and response.content:
             effectiveness = response.content.model_dump()
