@@ -25,3 +25,29 @@ class UserPersona(BaseModel):
             - Profissão: {self.role}
             - Regionalidade: {self.regionality}{preferences_text}
         """).strip()
+
+
+class PersonaUpdate(BaseModel):
+    """Structured output from the persona manager agent.
+
+    Represents the changes the agent wants to apply to the user's persona.
+    Only non-None fields will be applied.
+    """
+
+    name: Optional[str] = Field(
+        default=None,
+        description="Updated name for the user, or None to keep current.",
+    )
+    role: Optional[str] = Field(
+        default=None,
+        description="Updated role ('Produtor' or 'Tecnico'), or None to keep current.",
+    )
+    regionality: Optional[str] = Field(
+        default=None,
+        description="Updated city/state/region, or None to keep current.",
+    )
+    preferences: List[Preferences] = Field(
+        default_factory=list,
+        description="List of preferences to add or update in the user persona. "
+        "Use an existing key to update, or a new key to create.",
+    )

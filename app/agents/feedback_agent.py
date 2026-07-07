@@ -62,7 +62,7 @@ def get_satisfaction_instructions(run_context: RunContext) -> str:
         # Escala de Avaliação (1 a 5)
         Avalie a mensagem do usuário e atribua estritamente um dos seguintes níveis ao campo 'level':
         - **1 (Completamente Frustrado):** Clara insatisfação, irritação ou aponta erros graves na resposta. O tom é visivelmente negativo.
-        - **2 (Insatisfeito, mas tolerante):** A resposta não foi ideal, mas o usuário mantém um tom polido ou aceita continuar ("não gostei, mas tudo bem").
+        - **2 (Insatisfeito, mas tolerante):** O usuário criticou a resposta, mas mantém um tom polido ou aceita continuar ("não gostei, mas tudo bem").
         - **3 (Neutro):** Sem emoção positiva ou negativa. Perguntas diretas, confirmações simples ou interações factuais.
         - **4 (Satisfeito/Positivo):** Valida a resposta, agradece de forma genuína ou demonstra que o sistema resolveu o problema.
         - **5 (Encantado/Muito Positivo):** Entusiasmo acima da média, elogia fortemente a inteligência do sistema ou o padrão da resposta.

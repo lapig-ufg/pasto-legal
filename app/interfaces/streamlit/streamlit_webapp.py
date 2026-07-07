@@ -284,11 +284,8 @@ if user_query:
                 import traceback
                 traceback.print_exc()
 
-            print(response.images, flush=True)
-
             if response and response.images:
                 for img in response.images:
-                    print("Tentou imprimir uma imagem", flush=True)
                     st.image(img.content, use_container_width=True)
 
             audio_to_display = []

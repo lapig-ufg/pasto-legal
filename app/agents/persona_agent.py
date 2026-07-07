@@ -12,7 +12,8 @@ from app.tools.persona_tools import (
     update_persona_preference,
     remove_persona_preference,
 )
-from app.utils.interfaces.user_persona import UserPersona
+from app.utils.interfaces.user_persona import PersonaUpdate, UserPersona
+
 
 def get_instructions(run_context: RunContext) -> str:
     session_state = run_context.session_state
@@ -49,21 +50,22 @@ def get_instructions(run_context: RunContext) -> str:
 
         # Novos Dados de Entrada para Análise
         Analise o comportamento do usuário com base nesta última interação e no nível de satisfação detectado:
-        
+
         - **Nível de Satisfação da Interação:** {user_satisfaction.level_message if user_satisfaction else 'Não informado'}
         - **Última Mensagem do Usuário:** "{session_state.messages.last_message if hasattr(session_state, 'messages') else ''}"
         {negative_prompt}
-        
+
         ---
 
         # Instruções e Diretrizes de Execução
-        Sua tarefa é avaliar se a nova interação traz insights suficientes para atualizar o perfil do usuário. Você deve utilizar a ferramenta `update_user_information` para aplicar as melhorias.
+        Sua tarefa é avaliar se a nova interação traz insights suficientes para atualizar o perfil do usuário. Você deve retornar um objeto PersonaUpdate com as alterações desejadas.
 
         1. **Limite de Modificações:** Você pode criar ou atualizar no **máximo 2 características/preferências** por iteração. Não polua o perfil.
         2. **Critério de Atualização:** - Se a satisfação foi **Nível 1**, identifique o que causou a quebra de expectativa e salve como uma restrição ou preferência clara (ex: "Evitar respostas longas", "Prefere termos técnicos").
            - Se a satisfação foi **Nível 5**, extraia o padrão de sucesso que encantou o usuário e salve como uma preferência forte.
         3. **Consistência de Chaves (Keys):** Se o insight for sobre um assunto que já existe na "Persona Atual", use a **mesma chave (key)** para sobrescrever e refinar a informação, em vez de criar uma nova.
-        4. **Formato das Informações:** O `title` deve ser curto e descritivo (ex: "Tom de Voz Preferido"). A `info` deve ser uma diretriz clara para futuros modelos (ex: "O usuário prefere respostas diretas e sem rodeios teóricos").
+        4. **Formato das Informações:** O `key` deve ser curto e descritivo (ex: "tom_voz"). A `description` deve ser uma diretriz clara para futuros modelos (ex: "O usuário prefere respostas diretas e sem rodeios teóricos").
+        5. **Campos opcionais:** Se não houver necessidade de atualizar nome, profissão ou regionalidade, deixe esses campos como null. Apenas preencha os campos que precisam ser alterados.
     """)
 
     return instructions
@@ -80,6 +82,7 @@ persona_manager_agent = Agent(
         create_persona_preference,
         update_persona_preference,
         remove_persona_preference,
-        ],
+    ],
+    output_schema=PersonaUpdate,
     debug_mode=config.DEBUG_MODE,
 )
