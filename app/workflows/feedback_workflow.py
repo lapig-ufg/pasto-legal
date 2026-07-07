@@ -1,27 +1,43 @@
-from typing import Any, Dict
-from datetime import datetime
+"""Feedback evaluation and response merging for the Pasto Legal workflow.
 
-from agno.run import RunContext
-from agno.workflow import Workflow, Step, Steps, Router, Condition, Parallel
+Runs the satisfaction evaluation agent, branches based on the result
+(positive / negative / neutral), persists feedback to the database, and
+merges the agent response with a remediation message when the user is
+frustrated.
+
+External interface:
+    feedback_workflow   -- the Workflow instance imported by main_workflow.
+    merge_output_step   -- the Condition step imported by main_workflow.
+"""
+
+# --- Imports ---
+
+from typing import Any, Dict, Optional
+
+from agno.utils.log import log_debug, log_error
+from agno.workflow import Condition, Parallel, Router, Step, Steps, Workflow
 from agno.workflow.types import StepInput, StepOutput
-from agno.utils.log import log_error, log_debug
 
-from app.agents.feedback_agent import satisfaction_evaluation_agent, remediation_agent
+from app.agents.feedback_agent import remediation_agent, satisfaction_evaluation_agent
 from app.agents.persona_agent import persona_manager_agent
-from app.configs.config import config
-from app.database.session import engine, SessionLocal
-from app.database.models import NegativeFeedback, PositiveFeedback
-from app.tools.feedback_tools import _mask_pii
-from app.utils.interfaces.user_mood import UserMood, Effectiveness
 
 
-DEFAULT_SATISFACTION_LEVEL = 3
+# --- Constants ---
+
+# Step name used by _forward_response to look up the Intent Router output.
+# This must match the Router name defined in main_workflow.py.
+INTENT_ROUTER_STEP_NAME = "Intent Router"
+
+# Default fallback satisfaction level when the evaluation agent fails.
+_DEFAULT_SATISFACTION = {"level": 3, "level_message": "Neutral (default)"}
 
 
-def save_negative_feedback(
+# --- Step Executors ---
+
+
+def persist_positive_feedback(
     step_input: StepInput,
     session_state: Dict[str, Any],
-    run_context: RunContext = None,
 ) -> StepOutput:
     """Persist a frustrated interaction to the NegativeFeedback table."""
     #user_msg = step_input.get_input_as_string() or ""
@@ -50,10 +66,9 @@ def save_negative_feedback(
     return StepOutput(content="Negative Feedback Saved")
 
 
-def save_positive_feedback(
+def persist_negative_feedback(
     step_input: StepInput,
     session_state: Dict[str, Any],
-    run_context: RunContext = None,
 ) -> StepOutput:
     """Persist an positive interaction to the PositiveFeedback table for future fine-tuning."""
     #grade = session_state.get("satisfaction_grade", 3)
@@ -83,20 +98,34 @@ def save_positive_feedback(
 
     return StepOutput(content="Positive Feedback Saved")
 
-# ---------------------------------------------------------------------------
-# Step executors
-# ---------------------------------------------------------------------------
-def satisfaction_evaluation(step_input: StepInput, session_state: Dict[str, Any]) -> StepOutput:
-    """Grade the user's message on a 1-5 scale and store it in session_state."""
+
+def evaluate_satisfaction(step_input: StepInput, session_state: Dict[str, Any]) -> StepOutput:
+    """Run the satisfaction evaluation agent on the user's message and
+    store the result in session_state['user_mood'].
+
+    On the first evaluation, stores the result under 'satisfaction'.
+    On subsequent evaluations (after remediation), stores under 'remediation'.
+
+    Returns a StepOutput describing the satisfaction level, or a fallback
+    StepOutput if the agent fails.
+    """
     user_msg = step_input.get_input_as_string() or ""
     user_mood = session_state.get("user_mood", None)
 
+    effectiveness: Optional[Dict[str, Any]] = None
+
     try:
-        response = satisfaction_evaluation_agent.run(user_msg, session_state={"user_mood": user_mood})
+        response = satisfaction_evaluation_agent.run(
+            user_msg, session_state={"user_mood": user_mood}
+        )
         if response and response.content:
             effectiveness = response.content.model_dump()
     except Exception as e:
-        log_error(f"Satisfaction Evaluation Agent agent failed: {e}")
+        log_error(f"evaluate_satisfaction: agent failed: {e}")
+
+    if effectiveness is None:
+        log_debug("evaluate_satisfaction: no effectiveness result, using default")
+        effectiveness = _DEFAULT_SATISFACTION.copy()
 
     if user_mood is None:
         session_state["user_mood"] = {}
@@ -104,121 +133,163 @@ def satisfaction_evaluation(step_input: StepInput, session_state: Dict[str, Any]
     else:
         session_state["user_mood"]["remediation"] = effectiveness
 
-    return StepOutput(content=f"The user satisfaction was evaluated as {effectiveness["level"]} ({effectiveness["level_message"]}).")
+    level = effectiveness.get("level", 3)
+    level_message = effectiveness.get("level_message", "unknown")
+    return StepOutput(
+        content=f"The user satisfaction was evaluated as {level} ({level_message})."
+    )
 
 
-# ---------------------------------------------------------------------------
-# Branching — Agno's Condition is two-way only, so a 3-way branch is built
-# with nested Conditions on the grade stored in session_state.
-# ---------------------------------------------------------------------------
-def satisfaction_level_selector(step_input: StepInput, session_state: Dict[str, Any]):
+def satisfaction_branch_selector(step_input: StepInput, session_state: Dict[str, Any]) -> list:
+    """Router selector that determines which feedback branch to follow
+    based on the user's satisfaction level.
+
+    Returns:
+        ["Persist Positive Feedback"] for satisfaction level 5,
+        ["Persist Negative Feedback"] for satisfaction level 1 with
+            ineffective remediation,
+        ["Neutral"] otherwise.
+    """
     user_mood = session_state.get("user_mood", {})
     if not user_mood:
         return ["Neutral"]
 
-    satisfaction_level = user_mood.get("satisfaction", {}).get("level", 3)
+    satisfaction = user_mood.get("satisfaction", {})
+    satisfaction_level = satisfaction.get("level", 3)
 
     if satisfaction_level == 5:
-        return ["Positive Feedback"]
+        return ["Persist Positive Feedback"]
     elif satisfaction_level == 1:
-        effectiveness = user_mood.get("remediation", {}).get("effectiveness", {})
-
+        remediation = user_mood.get("remediation", {})
+        effectiveness = (
+            remediation.get("effectiveness", {})
+            if isinstance(remediation, dict)
+            else {}
+        )
         if not effectiveness or effectiveness.get("level", 2) <= 2:
-            return ["Negative Feedback"]
+            return ["Persist Negative Feedback"]
 
     return ["Neutral"]
 
 
-def negative_satisfaction_evaluator(step_input: StepInput, session_state: Dict[str, Any]):
+def is_dissatisfied_evaluator(step_input: StepInput, session_state: Dict[str, Any]) -> bool:
+    """Condition evaluator that returns True when the user is dissatisfied
+    (satisfaction level <= 2), triggering the remediation agent.
+    """
     user_mood = session_state.get("user_mood", {})
     if not user_mood:
         return False
-    
+
     satisfaction = user_mood.get("satisfaction", {})
     if not satisfaction:
         return False
-    
-    return satisfaction["level"] <= 2
+
+    level = satisfaction.get("level", 3)
+    return level <= 2
 
 
-def clear_user_mood(step_input: StepInput, session_state: Dict[str, Any]):
+def clear_user_mood(step_input: StepInput, session_state: Dict[str, Any]) -> StepOutput:
+    """Reset user_mood in session_state to None after feedback processing."""
     session_state["user_mood"] = None
+    return StepOutput(content="User mood cleared")
 
-# ---------------------------------------------------------------------------
-# Evaluation branch — grade the message, then branch on the grade.
-# ---------------------------------------------------------------------------
+
+# --- Workflow Definition ---
+
 feedback_workflow = Workflow(
     name="Feedback Workflow",
     steps=[
         Step(
-            name="Satisfaction Evaluation",
-            executor=satisfaction_evaluation
+            name="Evaluate Satisfaction",
+            executor=evaluate_satisfaction,
         ),
         Parallel(
             Router(
-                name="Satisfaction Level Router",
-                selector=satisfaction_level_selector,
+                name="Satisfaction Branch Router",
+                selector=satisfaction_branch_selector,
                 choices=[
                     Steps(
-                        name="Positive Feedback",
+                        name="Persist Positive Feedback",
                         steps=[
                             Step(
-                                name="Save Positive Feedback",
-                                executor=save_positive_feedback
+                                name="Persist Positive Feedback",
+                                executor=persist_positive_feedback,
                             ),
                             Step(
                                 name="Clear User Mood",
-                                executor=clear_user_mood
-                            )
-                        ]
+                                executor=clear_user_mood,
+                            ),
+                        ],
                     ),
                     Steps(
-                        name="Negative Feedback",
+                        name="Persist Negative Feedback",
                         steps=[
                             Step(
-                                name="Save Negative Feedback",
-                                executor=save_negative_feedback
+                                name="Persist Negative Feedback",
+                                executor=persist_negative_feedback,
                             ),
                             Step(
                                 name="Clear User Mood",
-                                executor=clear_user_mood
-                            )
-                        ]
+                                executor=clear_user_mood,
+                            ),
+                        ],
                     ),
                     Step(
                         name="Neutral",
-                        executor=lambda step_input: None
-                    )
-                ]
+                        executor=lambda step_input: None,
+                    ),
+                ],
             ),
             Step(
-                name="Managing Persona",
-                agent=persona_manager_agent
+                name="Persona Management",
+                agent=persona_manager_agent,
             ),
-            name="Evaluation Parallel"
-        )
-    ]
+            name="Feedback and Persona Parallel",
+        ),
+    ],
 )
 
 
-def _foward_response(step_input: StepInput, session_state: Dict[str, Any]):
-    last_step_output = step_input.get_step_output(step_name="Agent Router")
-    return last_step_output.steps[-1]
+# --- Merge Condition ---
+
+
+def _forward_response(step_input: StepInput, session_state: Dict[str, Any]) -> StepOutput:
+    """Extract the response from the Intent Router step to forward it
+    as the final workflow output.
+
+    Looks up the step named INTENT_ROUTER_STEP_NAME in previous_step_outputs
+    and returns its deepest content. Falls back to the last step output if
+    the Intent Router step is not found.
+    """
+    router_output = step_input.get_step_output(step_name=INTENT_ROUTER_STEP_NAME)
+    if router_output is None:
+        log_debug(
+            f"_forward_response: {INTENT_ROUTER_STEP_NAME} step not found, "
+            "falling back to last step"
+        )
+        if not step_input.previous_step_outputs:
+            return StepOutput(content="")
+        last_output = list(step_input.previous_step_outputs.values())[-1]
+        return last_output if not last_output.steps else last_output.steps[-1]
+
+    if router_output.steps:
+        return router_output.steps[-1]
+    return router_output
 
 
 merge_output_step = Condition(
-    name="Merge Output Step",
-    evaluator=negative_satisfaction_evaluator,
+    name="Merge Dissatisfied Check",
+    evaluator=is_dissatisfied_evaluator,
     steps=[
         Step(
-            name="Remediation Response",
-            agent=remediation_agent
-        )
+            name="Remediation Agent",
+            agent=remediation_agent,
+        ),
     ],
     else_steps=[
         Step(
-            name="Foward Response",
-            executor=_foward_response
-        )
-    ]
+            name="Forward Response",
+            executor=_forward_response,
+        ),
+    ],
 )

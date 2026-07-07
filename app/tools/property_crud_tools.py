@@ -22,10 +22,20 @@ from app.utils.interfaces.workflow_state import WorkflowState, WorkflowRouteEnum
 
 
 def _clear_session_state(run_context: RunContext):
-    run_context.session_state["workflow_route"] = None
+    workflow_state = WorkflowState.model_validate(run_context.session_state["workflow_state"])        
+    workflow_state.route = WorkflowRouteEnum.AUTO
+    workflow_state.is_loop_active = True
+    run_context.session_state["workflow_state"] = workflow_state.model_dump()
+
     run_context.session_state["registration_state"] = None
 
     run_context.session_state['candidate_properties'] = None
+
+def _set_workflow_state(run_context):
+    workflow_state = WorkflowState.model_validate(run_context.session_state["workflow_state"])        
+    workflow_state.route = WorkflowRouteEnum.MANAGER
+    workflow_state.is_loop_active = True
+    run_context.session_state["workflow_state"] = workflow_state.model_dump()
 
 
 def start_registration_by_coordinate(run_context: RunContext, latitude: float, longitude: float):
@@ -49,8 +59,6 @@ def start_registration_by_coordinate(run_context: RunContext, latitude: float, l
             "Peça que tente novamente e verificar se as coordenadas estão corretas."
         )
     
-    run_context.session_state["workflow_route"] = "property_manager_agent"
-    
     registered_map = {prop["car_code"]: prop for prop in run_context.session_state.get("all_properties", [])}
     for prop in properties:
         car_code = prop.car_code
@@ -64,7 +72,8 @@ def start_registration_by_coordinate(run_context: RunContext, latitude: float, l
     run_context.session_state["candidate_properties"] = [prop.model_dump() for prop in properties]
 
     run_context.session_state["registration_state"] = "pending"
-    run_context.session_state["workflow_route"] = "property_manager_agent"
+
+    _set_workflow_state(run_context)
     
     if len(properties) == 1:
         img = imgs[0]
@@ -131,8 +140,6 @@ def start_registration_by_car(run_context: RunContext, car_codes: List[str]):
                 "Peça que tente novamente e verificar se as coordenadas estão corretas."
             )
         )
-    
-    run_context.session_state["workflow_route"] = "property_manager_agent"
 
     run_context.session_state["candidate_properties"] = [_property.model_dump()] 
 
@@ -146,7 +153,8 @@ def start_registration_by_car(run_context: RunContext, car_codes: List[str]):
     result_text = f"  > {_property.describe()}"
 
     run_context.session_state["registration_state"] = "pending"
-    run_context.session_state["workflow_route"] = "property_manager_agent"
+
+    _set_workflow_state(run_context)
     
     if len(properties) == 1:
         return ToolResult(
@@ -215,7 +223,8 @@ def start_registration_by_url(run_context: RunContext, url: str) -> ToolResult:
     run_context.session_state["candidate_properties"] = [prop.model_dump() for prop in properties] 
 
     run_context.session_state["registration_state"] = "pending"
-    run_context.session_state["workflow_route"] = "property_manager_agent"
+
+    _set_workflow_state(run_context)
     
     if len(properties) == 1:
         img = imgs[0]
@@ -333,11 +342,6 @@ def set_property_name(run_context: RunContext, car_codes: List[str], name: str):
 
         _clear_session_state(run_context)
 
-        workflow_state = WorkflowState.model_validate(run_context.session_state["workflow_state"])        
-        workflow_state.route = WorkflowRouteEnum.ANALYST
-        workflow_state.is_loop_active = True
-        run_context.session_state["workflow_state"] = workflow_state.model_dump()
-
         return ToolResult(
             content=f"Faça um diagnóstico inicial para a propriedade de código CAR: {selected_property["car_code"]}."
         )
@@ -347,8 +351,6 @@ def set_property_name(run_context: RunContext, car_codes: List[str], name: str):
     
     if selected_property is None:
         return ToolResult(content="Não foi possível registrar o nome da propriedade.")
-    
-    run_context.session_state["workflow_route"] = None
     
     updated_selected_property = selected_property
     updated_selected_property["nickname"] = name
