@@ -65,10 +65,9 @@ def workflow_route_selector(step_input: StepInput, session_state: Dict[str, Any]
 
 # --- Workflow Definition ---
 
-def final_response(step_input: StepInput, session_state: Dict[str, Any]):
+def _get_condition_response(step_input: StepInput, session_state: Dict[str, Any]):
     last_step_output: StepOutput = list(step_input.previous_step_outputs.values())[-1]
     last_response = last_step_output.steps[-1]
-    print(last_response, flush=True)
     return last_response
 
 
@@ -116,11 +115,16 @@ pasto_legal_workflow = Workflow(
                     ),
                     name="Parallel"
                 ),
-                merge_output_step
+                merge_output_step,
+                Step(
+                    name="Get Condition Response",
+                    executor=_get_condition_response
+                )
             ]
         ),
         Step(
-            executor=final_response
+            name="Get Condition Response",
+            executor=_get_condition_response
         )
     ]
 )
