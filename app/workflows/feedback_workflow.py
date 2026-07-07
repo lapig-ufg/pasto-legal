@@ -201,19 +201,24 @@ feedback_workflow = Workflow(
 )
 
 
+def _foward_response(step_input: StepInput, session_state: Dict[str, Any]):
+    last_step_output = step_input.get_step_output(step_name="Agent Router")
+    return last_step_output.steps[-1]
+
+
 merge_output_step = Condition(
     name="Merge Output Step",
     evaluator=negative_satisfaction_evaluator,
     steps=[
         Step(
-            name="Merge Remediation",
+            name="Remediation Response",
             agent=remediation_agent
         )
     ],
     else_steps=[
         Step(
-            name="Foward",
-            executor=lambda step_input: step_input.get_step_output(step_name="Agents Loop")
+            name="Foward Response",
+            executor=_foward_response
         )
     ]
 )

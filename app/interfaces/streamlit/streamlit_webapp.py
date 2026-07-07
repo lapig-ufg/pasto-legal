@@ -254,7 +254,7 @@ if user_query:
             if hasattr(response, 'content'):
                 full_response = response.content
             else:
-                full_response = str(response)
+                full_response = "Erro"#str(response)
 
             # Extract and store debug data
             try:
@@ -284,8 +284,11 @@ if user_query:
                 import traceback
                 traceback.print_exc()
 
+            print(response.images, flush=True)
+
             if response and response.images:
                 for img in response.images:
+                    print("Tentou imprimir uma imagem", flush=True)
                     st.image(img.content, use_container_width=True)
 
             audio_to_display = []
@@ -309,41 +312,41 @@ if user_query:
                 r'([a-zA-Z]:\\[^\s\(\)\[\]\'",]+?\.(?:ogg|mp3|wav))'
             ]
 
-            for pattern in audio_patterns:
-                matches = re.findall(pattern, full_response, re.IGNORECASE)
-
-                for path in matches:
-                    # Limpa possíveis aspas residuais ou espaços
-                    clean_path = path.strip().strip("'").strip('"')
-                    
-                    if os.path.exists(clean_path):
-                         # Evita duplicatas
-                         current_paths = [getattr(a, 'filepath', getattr(a, 'path', '')) for a in audio_to_display]
-                         # Handle dicts in current_paths (audio_to_display can have dicts now)
-                         current_path_strings = []
-                         for cp in audio_to_display:
-                             if isinstance(cp, dict):
-                                 current_path_strings.append(cp.get('filepath') or cp.get('path'))
-                             else:
-                                 current_path_strings.append(getattr(cp, 'filepath', getattr(cp, 'path', '')))
-
-                         if clean_path not in current_path_strings:
-                            audio_to_display.append({'filepath': clean_path})
-
-            if audio_to_display:
-                for audio_item in audio_to_display:
-                    if isinstance(audio_item, dict):
-                        path = audio_item.get('filepath') or audio_item.get('path')
-                        content = audio_item.get('content')
-                        if path: st.audio(path)
-                        elif content: st.audio(content)
-                    else:
-                        if hasattr(audio_item, 'filepath') and audio_item.filepath:
-                            st.audio(audio_item.filepath)
-                        elif hasattr(audio_item, 'path') and audio_item.path:
-                            st.audio(audio_item.path)
-                        elif hasattr(audio_item, 'content') and audio_item.content:
-                            st.audio(audio_item.content)
+            #for pattern in audio_patterns:
+            #    matches = re.findall(pattern, full_response, re.IGNORECASE)
+#
+            #    for path in matches:
+            #        # Limpa possíveis aspas residuais ou espaços
+            #        clean_path = path.strip().strip("'").strip('"')
+            #        
+            #        if os.path.exists(clean_path):
+            #             # Evita duplicatas
+            #             current_paths = [getattr(a, 'filepath', getattr(a, 'path', '')) for a in audio_to_display]
+            #             # Handle dicts in current_paths (audio_to_display can have dicts now)
+            #             current_path_strings = []
+            #             for cp in audio_to_display:
+            #                 if isinstance(cp, dict):
+            #                     current_path_strings.append(cp.get('filepath') or cp.get('path'))
+            #                 else:
+            #                     current_path_strings.append(getattr(cp, 'filepath', getattr(cp, 'path', '')))
+#
+            #             if clean_path not in current_path_strings:
+            #                audio_to_display.append({'filepath': clean_path})
+#
+            #if audio_to_display:
+            #    for audio_item in audio_to_display:
+            #        if isinstance(audio_item, dict):
+            #            path = audio_item.get('filepath') or audio_item.get('path')
+            #            content = audio_item.get('content')
+            #            if path: st.audio(path)
+            #            elif content: st.audio(content)
+            #        else:
+            #            if hasattr(audio_item, 'filepath') and audio_item.filepath:
+            #                st.audio(audio_item.filepath)
+            #            elif hasattr(audio_item, 'path') and audio_item.path:
+            #                st.audio(audio_item.path)
+            #            elif hasattr(audio_item, 'content') and audio_item.content:
+            #                st.audio(audio_item.content)
             # Exibe a resposta final
             message_placeholder.markdown(full_response)
 

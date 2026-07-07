@@ -61,53 +61,16 @@ def workflow_route_selector(step_input: StepInput, session_state: Dict[str, Any]
         return 'default'
         
     return 'default'
-
-
-def check_loop_end_condition(step_outputs: List[StepOutput]) -> bool:
-    """Checks the last step output to determine if the loop should terminate."""
-    if not step_outputs:
-        return True
-        
-    last_step_output = step_outputs[-1]
-    print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",)
-    print(last_step_output.content, flush=True)
-    return last_step_output.content.get("should_stop", True)
-
-
-def evaluate_loop_status(step_input: StepInput, session_state: Dict[str, Any]) -> Dict[str, Any]:
-    """Evaluates whether the router loop should continue based on the workflow state."""
-    last_step_output = step_input.get_step_output("Agent Router")
-    
-    raw_state = session_state.get("workflow_state", {})
-    workflow_state = WorkflowState.model_validate(raw_state)
-    
-    is_loop_active = workflow_state.is_loop_active
-    should_stop = not is_loop_active
-
-    return StepOutput(
-        content={
-            "should_stop": should_stop, 
-            "step_output": last_step_output
-        }
-    )
-
-
-def unpacker_executor(step_input: StepInput) -> Any:
-    """
-    Robust unpacker that handles three state contexts:
-    1. First loop entry: passes the raw initial text/content forward.
-    2. Loop iteration back: unpacks the dictionary from the previous Loop Evaluator Step.
-    3. Loop exit: unpacks the final result from the Agents Loop to feed the next pipeline steps.
-    """
-    last_step_output = [step_input.previous_step_outputs.values()][-1]
-
-    if last_step_output is None:
-        return step_input.input
-        
-    return step_input.input
     
 
 # --- Workflow Definition ---
+
+def final_response(step_input: StepInput, session_state: Dict[str, Any]):
+    last_step_output: StepOutput = list(step_input.previous_step_outputs.values())[-1]
+    last_response = last_step_output.steps[-1]
+    print(last_response, flush=True)
+    return last_response
+
 
 pasto_legal_workflow = Workflow(
     name="Pasto Legal Workflow",
@@ -125,59 +88,39 @@ pasto_legal_workflow = Workflow(
             else_steps=[
                 Parallel(
                     feedback_workflow,
-                    Steps(
-                        name="Agent Processing Pipeline",
-                        steps=[
-                            Loop(
-                                name="Agents Loop",
-                                end_condition=check_loop_end_condition,
-                                forward_iteration_output=True,
-                                steps=[
-                                    Step(
-                                        name="Loop Unpacker Step",
-                                        executor=unpacker_executor
-                                    ),
-                                    Router(
-                                        name="Agent Router",
-                                        selector=workflow_route_selector,
-                                        choices=[
-                                            Step(
-                                                name="default",
-                                                executor=lambda x: None
-                                            ),
-                                            Step(
-                                                name=WorkflowRouteEnum.ANALYST.value,
-                                                agent=analyst_agent
-                                            ),
-                                            Step(
-                                                name=WorkflowRouteEnum.MANAGER.value,
-                                                agent=manager_agent
-                                            ),
-                                            Step(
-                                                name=WorkflowRouteEnum.QUESTION_ANSWER.value,
-                                                agent=question_answer_agent
-                                            ),
-                                            Step(
-                                                name=WorkflowRouteEnum.SMALL_TALK.value,
-                                                agent=small_talk_agent
-                                            )
-                                        ]
-                                    ),
-                                    Step(
-                                        name="Loop Evaluator Step", 
-                                        executor=evaluate_loop_status
-                                    )
-                                ]
+                    Router(
+                        name="Agent Router",
+                        selector=workflow_route_selector,
+                        choices=[
+                            Step(
+                                name="default",
+                                executor=lambda x: None
                             ),
                             Step(
-                                name="Unpacker Step",
-                                executor=unpacker_executor
+                                name=WorkflowRouteEnum.ANALYST.value,
+                                agent=analyst_agent
+                            ),
+                            Step(
+                                name=WorkflowRouteEnum.MANAGER.value,
+                                agent=manager_agent
+                            ),
+                            Step(
+                                name=WorkflowRouteEnum.QUESTION_ANSWER.value,
+                                agent=question_answer_agent
+                            ),
+                            Step(
+                                name=WorkflowRouteEnum.SMALL_TALK.value,
+                                agent=small_talk_agent
                             )
                         ]
-                    )
+                    ),
+                    name="Parallel"
                 ),
                 merge_output_step
             ]
+        ),
+        Step(
+            executor=final_response
         )
     ]
 )
