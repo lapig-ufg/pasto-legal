@@ -112,7 +112,7 @@ def validate_car_selection(run_context: RunContext, function_call: Callable, arg
     """
     session_state = run_context.session_state
 
-    if session_state and not hasattr(session_state, "registered_properties"):
+    if session_state and not hasattr(session_state, "all_properties"):
         return textwrap.dedent("""
             [SISTEMA] Bloqueio de Execução: Nenhum CAR registrado no sistema.
             

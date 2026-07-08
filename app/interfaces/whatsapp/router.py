@@ -292,6 +292,7 @@ def attach_routes(
                         session_data={},
                         created_at=now,
                         updated_at=now,
+                        session_data={},
                         **{session_config.id_field: entity_id},
                     )
                     if session_config.is_async_db:

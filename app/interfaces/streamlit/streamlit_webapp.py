@@ -8,7 +8,10 @@ import streamlit as st
 from typing import List
 from agno.media import Image, Audio
 
-from app.agents.main_team import pasto_legal_team
+from app.configs.config import config
+from app.utils.debug_helpers import extract_workflow_debug_data, extract_session_state
+from app.utils.debug_panel import render_debug_panel
+from app.workflows.main_workflow import pasto_legal_workflow
 
 st.set_page_config(page_title="Pasto Legal", page_icon="🐂")
 
@@ -50,6 +53,14 @@ def logout():
     st.session_state["user_name"] = None
     st.session_state["messages"] = []
 
+    # Clear debug state
+    st.session_state.debug_log = []
+    st.session_state.debug_session_state = {}
+    st.session_state.debug_agent_routing = []
+    st.session_state.debug_tool_calls = []
+    st.session_state.debug_metrics = []
+    st.session_state.debug_messages = []
+
     st.rerun()
 
 # ==================== TELA DE LOGIN ====================
@@ -75,7 +86,7 @@ if not st.session_state["logged_in"]:
             )
             
             if st.button("Entrar"):
-                login_user(selected_obj['id'], selected_obj['name'])
+                login_user(selected_obj['id'], selected_obj['nickname'])
         else:
             st.info("Vazio")
 
@@ -113,10 +124,35 @@ with st.sidebar:
     if st.button("Sair / Trocar Usuário"):
         logout()
 
+    # Debug panel (only available in debug mode)
+    if config.DEBUG_MODE:
+        st.divider()
+        st.session_state.debug_mode_enabled = st.toggle(
+            "🐛 Debug Mode",
+            value=st.session_state.get("debug_mode_enabled", True),
+            key="debug_mode_toggle",
+        )
+        if st.session_state.debug_mode_enabled:
+            render_debug_panel()
+
 st.title(f"🐂 Olá, {st.session_state.get('user_name', '')}")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
+
+# Debug state initialization
+if "debug_log" not in st.session_state:
+    st.session_state.debug_log = []
+if "debug_session_state" not in st.session_state:
+    st.session_state.debug_session_state = {}
+if "debug_agent_routing" not in st.session_state:
+    st.session_state.debug_agent_routing = []
+if "debug_tool_calls" not in st.session_state:
+    st.session_state.debug_tool_calls = []
+if "debug_metrics" not in st.session_state:
+    st.session_state.debug_metrics = []
+if "debug_messages" not in st.session_state:
+    st.session_state.debug_messages = []
 
 # Exibe mensagens anteriores
 for message in st.session_state.messages:
@@ -213,12 +249,40 @@ if user_query:
 
             # TODO: Implementar files.
             with st.spinner("Analisando dados e gerando resposta..."):
-                response = pasto_legal_team.run(**run_kwargs)
+                response = pasto_legal_workflow.run(**run_kwargs)
             
             if hasattr(response, 'content'):
                 full_response = response.content
             else:
-                full_response = str(response)
+                full_response = "Erro"#str(response)
+
+            # Extract and store debug data
+            try:
+                debug_data = extract_workflow_debug_data(
+                    response=response,
+                    session_id=st.session_state.session_id,
+                    user_query=user_query,
+                )
+                st.session_state.debug_log.append(debug_data)
+                st.session_state.debug_agent_routing.extend(debug_data.get("agent_routing_trace", []))
+                st.session_state.debug_tool_calls.extend(debug_data.get("tool_calls_log", []))
+                st.session_state.debug_metrics.append(debug_data.get("metrics_summary", {}))
+                st.session_state.debug_messages.extend(debug_data.get("message_history", []))
+
+                # Get live session state from the workflow
+                try:
+                    live_state = pasto_legal_workflow.get_session_state(
+                        session_id=st.session_state.session_id
+                    )
+                    if live_state:
+                        st.session_state.debug_session_state = extract_session_state(live_state)
+                    else:
+                        st.session_state.debug_session_state = debug_data.get("session_state", {})
+                except Exception:
+                    st.session_state.debug_session_state = debug_data.get("session_state", {})
+            except Exception:
+                import traceback
+                traceback.print_exc()
 
             if response and response.images:
                 for img in response.images:
@@ -244,61 +308,42 @@ if user_query:
                 r'(?:path|filepath)\s*=\s*[\'"]?([a-zA-Z]:\\[^\s\(\)\[\]\'",]+?\.(?:ogg|mp3|wav))[\'"]?',
                 r'([a-zA-Z]:\\[^\s\(\)\[\]\'",]+?\.(?:ogg|mp3|wav))'
             ]
-            
-            # DEBUG: Visualizar o que está acontecendo
-            with st.expander("Debug: Regex de Áudio"):
-                st.write("Regex Patterns:", audio_patterns)
-                st.code(full_response, language='text')
 
-            for pattern in audio_patterns:
-                matches = re.findall(pattern, full_response, re.IGNORECASE)
-                if matches:
-                    with st.expander(f"Debug: Matches encontrados ({pattern})"):
-                        st.write(matches)
-
-                for path in matches:
-                    # Limpa possíveis aspas residuais ou espaços
-                    clean_path = path.strip().strip("'").strip('"')
-                    
-                    if os.path.exists(clean_path):
-                         # Evita duplicatas
-                         current_paths = [getattr(a, 'filepath', getattr(a, 'path', '')) for a in audio_to_display]
-                         # Handle dicts in current_paths (audio_to_display can have dicts now)
-                         current_path_strings = []
-                         for cp in audio_to_display:
-                             if isinstance(cp, dict):
-                                 current_path_strings.append(cp.get('filepath') or cp.get('path'))
-                             else:
-                                 current_path_strings.append(getattr(cp, 'filepath', getattr(cp, 'path', '')))
-
-                         if clean_path not in current_path_strings:
-                            audio_to_display.append({'filepath': clean_path})
-                    else:
-                         with st.expander("Debug: Arquivo não encontrado"):
-                             st.write(f"Path extraído mas não existe: {clean_path}")
-
-            if audio_to_display:
-                for audio_item in audio_to_display:
-                    if isinstance(audio_item, dict):
-                        path = audio_item.get('filepath') or audio_item.get('path')
-                        content = audio_item.get('content')
-                        if path: st.audio(path)
-                        elif content: st.audio(content)
-                    else:
-                        if hasattr(audio_item, 'filepath') and audio_item.filepath:
-                            st.audio(audio_item.filepath)
-                        elif hasattr(audio_item, 'path') and audio_item.path:
-                            st.audio(audio_item.path)
-                        elif hasattr(audio_item, 'content') and audio_item.content:
-                            st.audio(audio_item.content)
-            
-            # Debug: Mostra atributos da resposta se não houver áudio
-            if not response.audio:
-                with st.expander("Debug: Resposta do Agente"):
-                    st.write("Atributos:", dir(response))
-                    if hasattr(response, 'tools_output'):
-                        st.write("Tools Output:", response.tools_output)
-            
+            #for pattern in audio_patterns:
+            #    matches = re.findall(pattern, full_response, re.IGNORECASE)
+#
+            #    for path in matches:
+            #        # Limpa possíveis aspas residuais ou espaços
+            #        clean_path = path.strip().strip("'").strip('"')
+            #        
+            #        if os.path.exists(clean_path):
+            #             # Evita duplicatas
+            #             current_paths = [getattr(a, 'filepath', getattr(a, 'path', '')) for a in audio_to_display]
+            #             # Handle dicts in current_paths (audio_to_display can have dicts now)
+            #             current_path_strings = []
+            #             for cp in audio_to_display:
+            #                 if isinstance(cp, dict):
+            #                     current_path_strings.append(cp.get('filepath') or cp.get('path'))
+            #                 else:
+            #                     current_path_strings.append(getattr(cp, 'filepath', getattr(cp, 'path', '')))
+#
+            #             if clean_path not in current_path_strings:
+            #                audio_to_display.append({'filepath': clean_path})
+#
+            #if audio_to_display:
+            #    for audio_item in audio_to_display:
+            #        if isinstance(audio_item, dict):
+            #            path = audio_item.get('filepath') or audio_item.get('path')
+            #            content = audio_item.get('content')
+            #            if path: st.audio(path)
+            #            elif content: st.audio(content)
+            #        else:
+            #            if hasattr(audio_item, 'filepath') and audio_item.filepath:
+            #                st.audio(audio_item.filepath)
+            #            elif hasattr(audio_item, 'path') and audio_item.path:
+            #                st.audio(audio_item.path)
+            #            elif hasattr(audio_item, 'content') and audio_item.content:
+            #                st.audio(audio_item.content)
             # Exibe a resposta final
             message_placeholder.markdown(full_response)
 

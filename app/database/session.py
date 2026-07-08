@@ -5,7 +5,7 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 from app.configs.config import config
 
 if config.DATABASE_TYPE == 'sqlite':
-    tmp_path = Path("tmp")
+    tmp_path = Path.cwd() / Path("tmp")
     tmp_path.mkdir(exist_ok=True)
 
     db_url = f"sqlite:///{tmp_path}/agno.db"
