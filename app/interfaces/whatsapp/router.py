@@ -289,6 +289,7 @@ def attach_routes(
                     new_session = session_config.session_class(
                         session_id=new_session_id,
                         user_id=user_id,
+                        session_data={},
                         created_at=now,
                         updated_at=now,
                         **{session_config.id_field: entity_id},

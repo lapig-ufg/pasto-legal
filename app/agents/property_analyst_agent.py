@@ -58,8 +58,7 @@ def get_instructions(run_context: RunContext):
         <registrations>                    
                 
         <instructions>
-        {persona_instructions}
-        - Sempre informe o ano de referência das análise. Use 2024 como ano de referência para os dados mais atualizados.
+        - Sempre informe o ano de referência das análise.
         - Seja o mais conciso possível, explicando os resultados de forma simples.
         - Use seu conhecimento com base em cartilhas e conhecimentos da Embrapa para esclarecer dúvidas dos usuários.
         - Gere imagens apenas quando explicitamente pedido pelo usuário.

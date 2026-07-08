@@ -1,111 +1,64 @@
 import PIL
 
-from PIL import Image, ImageFont, ImageColor, ImageDraw
+from PIL import Image, ImageDraw, ImageFont, ImageColor
+from typing import Dict, List, Union
 
 
-def add_legend_descriptor(image_pil: Image, title: str, classes: dict):
+def append_continuous_colorbar(
+    image: Image.Image, 
+    title: str, 
+    vmin: Union[int, float], 
+    vmax: Union[int, float], 
+    palette: List[str],
+    font_path: str = "assets/fonts/DejaVuSans-Bold.ttf"
+) -> Image.Image:
     """
-    Cria uma nova imagem com a legenda posicionada externamente à direita.
+    Appends a continuous color gradient bar to the right side of an image.
+    Handles multi-line titles dynamically without overlapping text.
     """
-    width, height = image_pil.size
+    width, height = image.size
     
-    # 1. Configurações de estilo e dimensões da legenda
-    legend_width = 100  # Largura da área da legenda
-    margin = 5
-    item_height = 20
+    # 1. Dynamic sizing based on image dimensions
+    legend_width = max(150, int(width * 0.25)) 
+    margin = max(10, int(width * 0.02))
+    
+    base_font_size = max(12, int(height * 0.025))
+    title_font_size = int(base_font_size * 1.2)
+    
+    cb_width = max(15, int(legend_width * 0.15))
+    cb_height = int(height * 0.55) # Slightly reduced to guarantee room for multi-line text
     
     try:
-        font = ImageFont.truetype("assets/fonts/DejaVuSans-Bold.ttf", 8)
-        title_font = ImageFont.truetype("assets/fonts/DejaVuSans-Bold.ttf", 10)
-    except:
+        font = ImageFont.truetype(font_path, base_font_size)
+        title_font = ImageFont.truetype(font_path, title_font_size)
+    except IOError:
         font = ImageFont.load_default()
         title_font = ImageFont.load_default()
-
-    # 2. Criar uma nova imagem com largura extra para a legenda
-    # Nova largura = largura original + largura da legenda
+        
+    # 2. Create new expanded image canvas
     new_width = width + legend_width
     new_image = Image.new("RGB", (new_width, height), "white")
-    
-    # 3. Colar a imagem original na nova imagem (no lado esquerdo)
-    new_image.paste(image_pil, (0, 0))
+    new_image.paste(image, (0, 0))
     
     draw = ImageDraw.Draw(new_image)
     
-    # 4. Desenhar a legenda na área em branco (à direita)
+    # 3. Position elements on the right
     x_offset = width + margin
     y_offset = margin
     
-    # Desenhar Título
+    # Draw Title
     draw.text((x_offset, y_offset), title, fill="black", font=title_font)
-    y_offset += 20 # Espaço após o título
     
-    # Desenhar itens da legenda
-    for label, color in classes.items():
-        # Quadrado de cor
-        patch_size = 10
-        draw.rectangle(
-            [x_offset, y_offset, x_offset + patch_size, y_offset + patch_size],
-            fill=color, 
-            outline="black"
-        )
-        
-        # Texto da classe
-        draw.text((x_offset + patch_size + 4, y_offset), label, fill="black", font=font)
-        
-        y_offset += item_height
-        
-    return new_image
-
-
-def get_mosaic(imgs: list[PIL.Image]) -> Image:
-    first = imgs[0]
-
-    width, height = first.size
+    # FIX: Calculate exact height of the title block (handles single or multi-line)
+    title_bbox = draw.textbbox((x_offset, y_offset), title, font=title_font)
+    title_height = title_bbox[3] - title_bbox[1]
     
-    widthMosaic = width + 5
-    heightMosaic = (height * len(imgs)) + 10
-
-    font = ImageFont.truetype("assets/fonts/DejaVuSans-Bold.ttf", 16)
-
-    mosaic = Image.new("RGB", (widthMosaic, heightMosaic), "white")
+    # Push the colorbar down past the calculated title height + a safe margin
+    y_offset += title_height + margin
     
-    for index, img in enumerate(imgs, 1):
-        count = (index - 1) * (height + 2)
-
-        location = (2, count + 2)
-        localtiontext = (5, count + 5)
-
-        mosaic.paste(img, location)
-
-        label = ImageDraw.Draw(mosaic)
-        label.text(localtiontext, f'Area: {index}', font=font, fill=(255, 255, 255))
-
-    return mosaic
-
-#Adicionar a legenda no mapa
-def add_legend(img: Image, title: str, vmin: int, vmax: int, palette: list) -> Image:
-    """Desenha uma barra de cores contínua na imagem PIL com respiro após o título."""
-    draw = ImageDraw.Draw(img)
-    width, height = img.size
-    
-    cb_width, cb_height = 12, 25
-    
-    # 1. Aumentamos um pouco a altura do fundo (de 35 para 45) para acomodar o espaço extra
-    bg_box = [width - 70, height - cb_height - 45, width - 5, height - 5]
-    draw.rectangle(bg_box, fill="white", outline="gray")
-    
-    #Fonte de dados utilizadas
-    font = ImageFont.truetype("assets/fonts/DejaVuSans-Bold.ttf", 8)
-    
-    # Título 
-    draw.text((bg_box[0] + 5, bg_box[1] + 2), title, fill="black", font=font)
-
-    # Definição do espaço entre o título e o gradiente de cores
-    gradient_top_offset = 30 
-
-    # Criar o gradiente
+    # Draw continuous gradient colorbar
     for y in range(cb_height):
-        ratio = 1 - (y / (cb_height - 1))
+        ratio = 1 - (y / (cb_height - 1)) if cb_height > 1 else 0
         n = len(palette) - 1
         idx = max(0, min(int(ratio * n), n - 1))
         local_ratio = (ratio * n) - idx
@@ -115,15 +68,153 @@ def add_legend(img: Image, title: str, vmin: int, vmax: int, palette: list) -> I
         
         rgb = tuple(int(c1[i] + (c2[i] - c1[i]) * local_ratio) for i in range(3))
         
-        # Aplicando o novo offset no desenho da linha
-        draw.line([width - 60, bg_box[1] + gradient_top_offset + y, 
-                   width - 60 + cb_width, bg_box[1] + gradient_top_offset + y], fill=rgb)
+        draw.line(
+            [x_offset, y_offset + y, x_offset + cb_width, y_offset + y], 
+            fill=rgb
+        )
+        
+    # Draw a clean border around the gradient bar
+    draw.rectangle(
+        [x_offset, y_offset, x_offset + cb_width, y_offset + cb_height],
+        outline="black",
+        width=1
+    )
 
-    # Ajuste dos rótulos para acompanharem o novo posicionamento da barra
-    # Vmax alinhado ao topo da barra (gradient_top_offset)
-    draw.text((width - 40, bg_box[1] + gradient_top_offset), str(vmax), fill="black", font=font)
+    # 4. Draw labels (vmax at the top, vmin at the bottom)
+    text_x_offset = x_offset + cb_width + int(margin * 0.8)
     
-    # Vmin alinhado à base da barra (offset + altura da barra - ajuste de texto)
-    draw.text((width - 40, bg_box[1] + gradient_top_offset + cb_height - 8), str(vmin), fill="black", font=font)
+    # Get exact height of the value font to align vmin perfectly to the bottom line
+    vmin_bbox = draw.textbbox((text_x_offset, y_offset), str(vmin), font=font)
+    font_height = vmin_bbox[3] - vmin_bbox[1]
     
-    return img
+    # vmax aligned with the top of the colorbar
+    draw.text((text_x_offset, y_offset), str(vmax), fill="black", font=font)
+    
+    # vmin aligned precisely with the bottom edge of the colorbar
+    draw.text((text_x_offset, y_offset + cb_height - font_height), str(vmin), fill="black", font=font)
+    
+    return new_image
+
+
+def append_discrete_legend(
+    image: Image.Image, 
+    title: str, 
+    class_colors: Dict[str, str], 
+    font_path: str = "assets/fonts/DejaVuSans-Bold.ttf"
+) -> Image.Image:
+    """
+    Appends a discrete legend to the right side of an image.
+    Updated with the same multi-line title fix for consistency.
+    """
+    width, height = image.size
+    
+    legend_width = max(150, int(width * 0.25))
+    margin = max(10, int(width * 0.02))
+    
+    base_font_size = max(12, int(height * 0.025))
+    title_font_size = int(base_font_size * 1.2)
+    patch_size = int(base_font_size * 1.2)
+    item_height = int(base_font_size * 1.8)
+    
+    try:
+        font = ImageFont.truetype(font_path, base_font_size)
+        title_font = ImageFont.truetype(font_path, title_font_size)
+    except IOError:
+        font = ImageFont.load_default()
+        title_font = ImageFont.load_default()
+
+    new_width = width + legend_width
+    new_image = Image.new("RGB", (new_width, height), "white")
+    new_image.paste(image, (0, 0))
+    
+    draw = ImageDraw.Draw(new_image)
+    
+    x_offset = width + margin
+    y_offset = margin
+    
+    # Draw Title
+    draw.text((x_offset, y_offset), title, fill="black", font=title_font)
+    
+    # FIX: Calculate exact height of the title block dynamically
+    title_bbox = draw.textbbox((x_offset, y_offset), title, font=title_font)
+    title_height = title_bbox[3] - title_bbox[1]
+    y_offset += title_height + margin 
+    
+    # Draw legend items
+    for label, color in class_colors.items():
+        draw.rectangle(
+            [x_offset, y_offset, x_offset + patch_size, y_offset + patch_size],
+            fill=color, 
+            outline="black",
+            width=1
+        )
+        
+        text_x = x_offset + patch_size + int(margin * 0.8)
+        draw.text((text_x, y_offset), label, fill="black", font=font)
+        
+        y_offset += item_height
+        
+    return new_image
+
+
+def create_vertical_mosaic(
+    images: List[Image.Image], 
+    font_path: str = "assets/fonts/DejaVuSans-Bold.ttf"
+) -> Image.Image:
+    """
+    Combines a list of PIL Images into a single vertical mosaic.
+    
+    Dynamically calculates canvas dimensions to prevent clipping and adjusts 
+    font sizes and margins based on the input image sizes.
+    
+    Args:
+        images (List[PIL.Image.Image]): A list of images to be stacked vertically.
+        font_path (str): Path to a TrueType font for the labels.
+        
+    Returns:
+        PIL.Image.Image: A single vertically stacked mosaic image.
+        
+    Raises:
+        ValueError: If the input list is empty.
+    """
+    if not images:
+        raise ValueError("The image list cannot be empty.")
+
+    max_width = max(img.width for img in images)
+    margin = max(10, int(max_width * 0.015))
+    
+    total_height = sum(img.height for img in images) + (margin * (len(images) + 1))
+    total_width = max_width + (margin * 2)
+
+    mosaic = Image.new("RGB", (total_width, total_height), "white")
+    draw = ImageDraw.Draw(mosaic)
+    
+    current_y = margin
+    
+    for index, img in enumerate(images, 1):
+        current_x = margin + ((max_width - img.width) // 2)
+        
+        mosaic.paste(img, (current_x, current_y))
+        
+        font_size = max(14, int(img.height * 0.04))
+        try:
+            font = ImageFont.truetype(font_path, font_size)
+        except IOError:
+            font = ImageFont.load_default()
+            
+        label_text = f'Area: {index}'
+        text_x = current_x + max(5, int(margin * 0.5))
+        text_y = current_y + max(5, int(margin * 0.5))
+        
+        draw.text(
+            (text_x, text_y), 
+            label_text, 
+            font=font, 
+            fill=(255, 255, 255),
+            stroke_width=2,
+            stroke_fill=(0, 0, 0)
+        )
+        
+        current_y += img.height + margin
+
+    return mosaic

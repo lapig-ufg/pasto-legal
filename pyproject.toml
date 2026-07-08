@@ -15,7 +15,7 @@ dependencies = [
     "fastembed>=0.7.4",
     "geemap>=0.36.6",
     "geopandas>=1.1.2",
-    "google-genai==1.55.0",
+    "google-genai>=2.10.0",
     "httpx==0.28.1",
     "jinja2>=3.1.6",
     "lancedb>=0.26.0",

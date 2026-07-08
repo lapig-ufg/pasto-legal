@@ -8,9 +8,9 @@ from app.tools.property_crud_tools import (
     remove_property,
     remove_registered_properties,
     set_property_name,
-    register_feature_by_url,
-    register_feature_by_car,
-    register_feature_by_coordinate,
+    start_registration_by_url,
+    start_registration_by_car,
+    start_registration_by_coordinate,
     select_car_from_list,
     confirm_car_selection,
     reject_car_selection
@@ -74,8 +74,8 @@ def get_instructions(run_context: RunContext):
             <instructions>
             - Utilize as ferramentas disponíveis de forma estrita, respeitando rigorosamente os parâmetros e as orientações de uso de cada uma.
             - É proibido invocar as ferramentas `confirm_car_selection`, `select_car_from_list` e `reject_car_selection`. Nunca tente usá-las sob nenhuma hipótese.
-            - Não use `register_feature_by_coordinate` caso o código CAR/SICAR já estiver registrado.
-            - Se o código CAR/SICAR não estiver registrado, utilize `register_feature_by_coordinate` para registra-lo.
+            - Não use `start_registration_by_coordinate` caso o código CAR/SICAR já estiver registrado.
+            - Se o código CAR/SICAR não estiver registrado, utilize `start_registration_by_coordinate` para registra-lo.
             <instructions>
                                        
             <workflow>
@@ -103,9 +103,9 @@ property_manager_agent = Agent(
         remove_property,
         remove_registered_properties,
         set_property_name,
-        register_feature_by_url,
-        register_feature_by_car,
-        register_feature_by_coordinate,
+        start_registration_by_url,
+        start_registration_by_car,
+        start_registration_by_coordinate,
         confirm_car_selection,
         select_car_from_list,
         reject_car_selection
