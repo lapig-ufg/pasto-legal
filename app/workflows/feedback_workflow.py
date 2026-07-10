@@ -20,7 +20,9 @@ from agno.workflow.types import StepInput, StepOutput
 
 from app.agents.feedback_agent import remediation_agent, satisfaction_evaluation_agent
 from app.agents.persona_agent import persona_manager_agent
+from app.utils.interfaces.user_mood import UserMood
 from app.utils.interfaces.user_persona import PersonaUpdate, Preferences, UserPersona
+
 
 
 # --- Constants ---
@@ -186,29 +188,23 @@ def is_dissatisfied_evaluator(step_input: StepInput, session_state: Dict[str, An
     """Condition evaluator that returns True when the user is dissatisfied
     (satisfaction level <= 2), triggering the remediation agent.
     """
-    user_mood = session_state.get("user_mood", {})
-    if not user_mood:
+    user_mood = session_state.get("user_mood", None)
+    if user_mood is None:
         return False
 
-    satisfaction = user_mood.get("satisfaction", {})
-    if not satisfaction:
+    satisfaction = user_mood.get("satisfaction", None)
+    if satisfaction is None:
         return False
 
     return True
-
-
-def clear_user_mood(step_input: StepInput, session_state: Dict[str, Any]) -> StepOutput:
-    """Reset user_mood in session_state to None after feedback processing."""
-    session_state["user_mood"] = None
-    return StepOutput(content="User mood cleared")
 
 
 def manage_persona(step_input: StepInput, session_state: Dict[str, Any]) -> StepOutput:
     """Conditionally run the persona manager agent and apply persona updates.
 
     Calls the persona manager agent only when:
-    - satisfaction level >= 3, OR
-    - satisfaction level < 3 AND remediation effectiveness > 3
+    - satisfaction level >= 2, OR
+    - satisfaction level < 2 AND remediation effectiveness > 3
 
     The agent returns a PersonaUpdate with preferences (and optionally name,
     role, regionality) to change. The executor applies those changes directly
@@ -216,78 +212,69 @@ def manage_persona(step_input: StepInput, session_state: Dict[str, Any]) -> Step
 
     After applying updates (or skipping), clears user_mood from session_state.
     """
-    user_mood = session_state.get("user_mood", {})
+    raw_user_mood = session_state.get("user_mood", None)
+    if raw_user_mood is None:
+        return
+    
+    user_mood = UserMood.model_validate(raw_user_mood)
 
-    # Determine whether to call the agent based on satisfaction level
-    should_call_agent = False
-    satisfaction = user_mood.get("satisfaction", {}) if isinstance(user_mood, dict) else {}
-    satisfaction_level = satisfaction.get("level", 0) if isinstance(satisfaction, dict) else 0
+    if (
+        user_mood.satisfaction.level < 3 and
+        user_mood.remediation and
+        user_mood.remediation.effectiveness
+        and user_mood.remediation.effectiveness.level < 4
+        ):
+        return
 
-    if satisfaction_level >= 2:
-        should_call_agent = True
-    else:
-        remediation = user_mood.get("remediation", {}) if isinstance(user_mood, dict) else {}
-        remediation_effectiveness = (
-            remediation.get("effectiveness", {}) if isinstance(remediation, dict) else {}
+    user_msg = step_input.get_input_as_string() or ""
+    try:
+        response = persona_manager_agent.run(
+            user_msg,
+            session_state={"user_mood": user_mood},
         )
-        remediation_level = (
-            remediation_effectiveness.get("level", 0)
-            if isinstance(remediation_effectiveness, dict)
-            else 0
-        )
-        if remediation_level > 3:
-            should_call_agent = True
+        if response and response.content:
+            # Parse the PersonaUpdate from the agent's response
+            persona_update = response.content
+            if isinstance(persona_update, dict):
+                persona_update = PersonaUpdate.model_validate(persona_update)
 
-    if should_call_agent:
-        user_msg = step_input.get_input_as_string() or ""
-        try:
-            response = persona_manager_agent.run(
-                user_msg,
-                session_state={"user_mood": user_mood},
+            # Apply updates to session_state["user_persona"]
+            current_persona = session_state.get("user_persona", {})
+            user_persona = (
+                UserPersona.model_validate(current_persona) if current_persona else UserPersona()
             )
-            if response and response.content:
-                # Parse the PersonaUpdate from the agent's response
-                persona_update = response.content
-                if isinstance(persona_update, dict):
-                    persona_update = PersonaUpdate.model_validate(persona_update)
 
-                # Apply updates to session_state["user_persona"]
-                current_persona = session_state.get("user_persona", {})
-                user_persona = (
-                    UserPersona.model_validate(current_persona) if current_persona else UserPersona()
-                )
+            # Apply scalar field updates (only if non-None)
+            if persona_update.name is not None:
+                user_persona.name = persona_update.name
+            if persona_update.role is not None:
+                user_persona.role = persona_update.role
+            if persona_update.regionality is not None:
+                user_persona.regionality = persona_update.regionality
 
-                # Apply scalar field updates (only if non-None)
-                if persona_update.name is not None:
-                    user_persona.name = persona_update.name
-                if persona_update.role is not None:
-                    user_persona.role = persona_update.role
-                if persona_update.regionality is not None:
-                    user_persona.regionality = persona_update.regionality
+            # Apply preference updates (add new, update existing)
+            existing_prefs = {p.key: i for i, p in enumerate(user_persona.preferences)}
+            for new_pref in persona_update.preferences:
+                normalized_key = new_pref.key.strip().lower()
+                if normalized_key in existing_prefs:
+                    idx = existing_prefs[normalized_key]
+                    user_persona.preferences[idx] = Preferences(
+                        key=normalized_key,
+                        description=new_pref.description,
+                    )
+                else:
+                    user_persona.preferences.append(Preferences(
+                        key=normalized_key,
+                        description=new_pref.description,
+                    ))
+                    existing_prefs[normalized_key] = len(user_persona.preferences) - 1
 
-                # Apply preference updates (add new, update existing)
-                existing_prefs = {p.key: i for i, p in enumerate(user_persona.preferences)}
-                for new_pref in persona_update.preferences:
-                    normalized_key = new_pref.key.strip().lower()
-                    if normalized_key in existing_prefs:
-                        idx = existing_prefs[normalized_key]
-                        user_persona.preferences[idx] = Preferences(
-                            key=normalized_key,
-                            description=new_pref.description,
-                        )
-                    else:
-                        user_persona.preferences.append(Preferences(
-                            key=normalized_key,
-                            description=new_pref.description,
-                        ))
-                        existing_prefs[normalized_key] = len(user_persona.preferences) - 1
+            session_state["user_persona"] = user_persona.model_dump()
 
-                session_state["user_persona"] = user_persona.model_dump()
+        session_state["user_mood"] = None
 
-            session_state["user_mood"] = None
-
-        except Exception as e:
-            log_error(f"manage_persona: agent failed: {e}")
+    except Exception as e:
+        log_error(f"manage_persona: agent failed: {e}")
 
 
 # --- Workflow Definition ---
@@ -346,6 +333,8 @@ def _forward_response(step_input: StepInput, session_state: Dict[str, Any]) -> S
             return StepOutput(content="")
         last_output = list(step_input.previous_step_outputs.values())[-1]
         return last_output if not last_output.steps else last_output.steps[-1]
+
+    print(router_output, flush=True)
 
     if router_output.steps:
         return router_output.steps[-1]

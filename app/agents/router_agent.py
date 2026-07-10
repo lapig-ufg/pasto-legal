@@ -56,5 +56,6 @@ router_agent = Agent(
     model=config.model,
     instructions=get_instructions,
     output_schema=RouterOutput,
+    use_json_mode=True,
     debug_mode=config.DEBUG_MODE,
 )

@@ -4,14 +4,6 @@ from agno.agent import Agent
 from agno.run import RunContext
 
 from app.configs.config import config
-from app.tools.persona_tools import (
-    update_persona_name,
-    update_persona_role,
-    update_persona_region,
-    create_persona_preference,
-    update_persona_preference,
-    remove_persona_preference,
-)
 from app.utils.interfaces.user_persona import PersonaUpdate, UserPersona
 
 
@@ -58,7 +50,7 @@ def get_instructions(run_context: RunContext) -> str:
         ---
 
         # Instruções e Diretrizes de Execução
-        Sua tarefa é avaliar se a nova interação traz insights suficientes para atualizar o perfil do usuário. Você deve retornar um objeto PersonaUpdate com as alterações desejadas.
+        Você recebera como input a última e a nova interação do usuário, sua tarefa é avaliar se a nova interação traz insights suficientes para atualizar o perfil do usuário. Você deve retornar um objeto PersonaUpdate com as alterações desejadas.
 
         1. **Limite de Modificações:** Você pode criar ou atualizar no **máximo 2 características/preferências** por iteração. Não polua o perfil.
         2. **Critério de Atualização:** - Se a satisfação foi **Nível 1**, identifique o que causou a quebra de expectativa e salve como uma restrição ou preferência clara (ex: "Evitar respostas longas", "Prefere termos técnicos").
@@ -75,14 +67,7 @@ persona_manager_agent = Agent(
     name="User Persona Management Agent",
     model=config.model,
     instructions=get_instructions,
-    tools=[
-        update_persona_name,
-        update_persona_role,
-        update_persona_region,
-        create_persona_preference,
-        update_persona_preference,
-        remove_persona_preference,
-    ],
     output_schema=PersonaUpdate,
+    use_json_mode=True,
     debug_mode=config.DEBUG_MODE,
 )

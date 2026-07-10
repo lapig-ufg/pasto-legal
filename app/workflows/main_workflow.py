@@ -77,11 +77,17 @@ def route_selector(step_input: StepInput, session_state: Dict[str, Any]) -> str:
 
     try:
         user_msg = step_input.get_input_as_string()
-        if not user_msg:
-            log_debug("route_selector: empty user message, defaulting to 'default'")
-            return "default"
+        history_data = step_input.get_workflow_history(num_runs=1)
+        
+        final_message=""
+        if history_data:
+            last_user_msg, last_system_response = history_data[0]
+            final_message+="### Talk History ###"
+            final_message+=f"User: {last_user_msg}"
+            final_message+=f"System: {last_system_response}"
+        final_message=f"User: {user_msg}"
 
-        response = router_agent.run(user_msg)
+        response = router_agent.run(final_message)
         route_data = response.content
 
         if route_data and hasattr(route_data, "route"):
@@ -89,6 +95,9 @@ def route_selector(step_input: StepInput, session_state: Dict[str, Any]) -> str:
 
         if isinstance(route_data, dict) and "route" in route_data:
             return route_data["route"]
+        
+        if isinstance(route_data, str) and len(route_data.split(" ")) == 1:
+            return route_data
 
     except Exception as e:
         log_debug(f"route_selector: agent failed: {e}")
