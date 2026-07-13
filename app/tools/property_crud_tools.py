@@ -18,13 +18,29 @@ from app.utils.scripts.sicar_scripts import (
 from app.utils.scripts.image_scripts import create_vertical_mosaic
 from app.utils.scripts.gee_scripts import retrieve_feature_images
 from app.utils.interfaces.property_record import RuralProperty
+from app.utils.interfaces.workflow_state import WorkflowState, WorkflowRouteEnum
 
 
-# TODO: Se o usuário informar uma URL de coordenadas de uma propriedade que já existe no sistema, validar se a propriedade existe por meio do CAR. Se existir então retornar menssagem que já existe.
-@tool(stop_after_tool_call=True)
+def _clear_session_state(run_context: RunContext):
+    workflow_state = WorkflowState.model_validate(run_context.session_state["workflow_state"])        
+    workflow_state.route = WorkflowRouteEnum.AUTO
+    workflow_state.is_loop_active = True
+    run_context.session_state["workflow_state"] = workflow_state.model_dump()
+
+    run_context.session_state["registration_state"] = None
+
+    run_context.session_state['candidate_properties'] = None
+
+def _set_workflow_state(run_context):
+    workflow_state = WorkflowState.model_validate(run_context.session_state["workflow_state"])        
+    workflow_state.route = WorkflowRouteEnum.MANAGER
+    workflow_state.is_loop_active = True
+    run_context.session_state["workflow_state"] = workflow_state.model_dump()
+
+
 def start_registration_by_coordinate(run_context: RunContext, latitude: float, longitude: float):
     """
-    Inicia o registro de uma nova propriedade rural baseando-se nas coordenadas fornecidas.
+    Iniciar o registro de uma nova propriedade rural baseando-se nas coordenadas fornecidas.
 
     Use esta ferramenta quando o usuário fornecer coordenadas geográficas (latitude/longitude).
     
@@ -43,17 +59,21 @@ def start_registration_by_coordinate(run_context: RunContext, latitude: float, l
             "Peça que tente novamente e verificar se as coordenadas estão corretas."
         )
     
-    registered_map = {prop["car_code"]: prop for prop in run_context.session_state.get("registered_properties", [])}
+    registered_map = {prop["car_code"]: prop for prop in run_context.session_state.get("all_properties", [])}
     for prop in properties:
         car_code = prop.car_code
         if car_code in registered_map:
             record = registered_map[car_code]
             property_record = RuralProperty.model_validate(record) 
-            return ToolResult(content=str(property_record))
-
-    run_context.session_state["candidate_properties"] = [prop.model_dump() for prop in properties] 
+            return ToolResult(content=str(property_record)) 
 
     imgs = retrieve_feature_images([prop.get_coords()[0] for prop in properties])
+
+    run_context.session_state["candidate_properties"] = [prop.model_dump() for prop in properties]
+
+    run_context.session_state["registration_state"] = "pending"
+
+    _set_workflow_state(run_context)
     
     if len(properties) == 1:
         img = imgs[0]
@@ -85,10 +105,9 @@ def start_registration_by_coordinate(run_context: RunContext, latitude: float, l
             )
 
 
-@tool(stop_after_tool_call=True)
 def start_registration_by_car(run_context: RunContext, car_codes: List[str]):
     """
-    Inicia o registro de uma nova propriedade rural baseando-se nas coordenadas fornecidas.
+    Inicia o registro de uma nova propriedade rural baseando-se no código CAR fornecidos.
     
     Use esta ferramenta quando o usuário fornecer um valor de CAR ainda não registrado no sistema.
     
@@ -132,6 +151,10 @@ def start_registration_by_car(run_context: RunContext, car_codes: List[str]):
     mosaic.save(buffer, format="PNG")
 
     result_text = f"  > {_property.describe()}"
+
+    run_context.session_state["registration_state"] = "pending"
+
+    _set_workflow_state(run_context)
     
     if len(properties) == 1:
         return ToolResult(
@@ -151,10 +174,9 @@ def start_registration_by_car(run_context: RunContext, car_codes: List[str]):
             )
 
 
-@tool(stop_after_tool_call=True,)
 def start_registration_by_url(run_context: RunContext, url: str) -> ToolResult:
     """
-    Inicia o registro de uma nova propriedade rural baseando-se na URL de compartilhamento do Google Maps.
+    Inicia o processo de registro de uma nova propriedade rural baseando-se na URL de compartilhamento do Google Maps.
 
     Use esta ferramenta quando o usuário fornecer uma URL de compartilhamento do Google Maps.
     
@@ -187,7 +209,7 @@ def start_registration_by_url(run_context: RunContext, url: str) -> ToolResult:
     
     registered_map = {
         prop["car_code"]: prop
-        for prop in run_context.session_state.get("registered_properties", [])
+        for prop in run_context.session_state.get("all_properties", [])
     }
     for prop in properties:
         car_code = prop.car_code
@@ -196,9 +218,13 @@ def start_registration_by_url(run_context: RunContext, url: str) -> ToolResult:
             property_record = RuralProperty.model_validate(record) 
             return ToolResult(content=str(property_record))
 
+    imgs = retrieve_feature_images([prop.get_coords()[0] for prop in properties])
+
     run_context.session_state["candidate_properties"] = [prop.model_dump() for prop in properties] 
 
-    imgs = retrieve_feature_images([prop.get_coords()[0] for prop in properties])
+    run_context.session_state["registration_state"] = "pending"
+
+    _set_workflow_state(run_context)
     
     if len(properties) == 1:
         img = imgs[0]
@@ -230,7 +256,6 @@ def start_registration_by_url(run_context: RunContext, url: str) -> ToolResult:
             )
 
 
-@tool(stop_after_tool_call=True)
 def select_car_from_list(run_context: RunContext, selection: int):
     """
     Seleciona uma propriedade específica quando a busca retorna múltiplos resultados.
@@ -249,14 +274,9 @@ def select_car_from_list(run_context: RunContext, selection: int):
         return ToolResult(content=f"Seleção inválida. Escolha um número válido entre 1 e {len(candidate_properties)}.")
     
     selected_property = candidate_properties[selection - 1]
+    run_context.session_state['candidate_properties'] = [selected_property]
 
-    run_context.session_state['selected_property'] = selected_property
-    run_context.session_state['candidate_properties'] = []
-
-    new_property = RuralProperty.model_validate(selected_property)
-    old_registered_properties = run_context.session_state.get("registered_properties", [])
-    old_registered_properties.append(new_property.model_dump())  
-    run_context.session_state["registered_properties"] = old_registered_properties                             
+    run_context.session_state["registration_state"] = "final"                        
 
     return ToolResult(
         content=(
@@ -266,7 +286,6 @@ def select_car_from_list(run_context: RunContext, selection: int):
     )
 
 
-@tool(stop_after_tool_call=True)
 def confirm_car_selection(run_context: RunContext):
     """
     Confirma a propriedade encontrada quando a busca retorna apenas um resultado único.
@@ -278,14 +297,10 @@ def confirm_car_selection(run_context: RunContext):
     if not candidate_properties:
         return ToolResult(content="Não há propriedade pendente de confirmação. Realize uma busca primeiro.")
     
+    run_context.session_state["registration_state"] = "final"
+    
     selected_property = candidate_properties[0]
-
-    run_context.session_state['candidate_properties'] = []
-
-    new_property = RuralProperty.model_validate(selected_property)
-    old_registered_properties = run_context.session_state.get("registered_properties", [])
-    old_registered_properties.append(new_property.model_dump())  
-    run_context.session_state["registered_properties"] = old_registered_properties         
+    run_context.session_state['candidate_properties'] = [selected_property]       
 
     return ToolResult(
         content=(
@@ -295,19 +310,17 @@ def confirm_car_selection(run_context: RunContext):
     )
 
 
-@tool(stop_after_tool_call=True)
-def reject_car_selection(run_context: RunContext):
+def cancel_registration(run_context: RunContext):
     """
     Cancela a seleção ou rejeita os resultados encontrados.
     
     Use esta ferramenta se o usuário disser que a propriedade mostrada na imagem NÃO é a correta ou quiser cancelar a seleção.
     """
-    run_context.session_state['candidate_properties'] = None
+    _clear_session_state(run_context)
 
     return ToolResult(content=("Peça desculpas por não ter encontrado a propriedade correta.\n"))
 
 
-@tool(stop_after_tool_call=True)
 def set_property_name(run_context: RunContext, car_codes: List[str], name: str):
     """
     Atualizar o nome propriedade registrada no sistema.
@@ -316,18 +329,37 @@ def set_property_name(run_context: RunContext, car_codes: List[str], name: str):
         car_codes(str): Códigos CAR da propriedade.
         name (str): Nome da propriedade.
     """
-    registered_properties = run_context.session_state.get('registered_properties', [])
-    selected_property = next((prop for prop in registered_properties if prop["car_code"] == ', '.join(car_codes)), None)
+    candidate_properties = run_context.session_state.get('candidate_properties', None)
+
+    if not candidate_properties is None:
+        selected_property = candidate_properties[0]
+        selected_property["nickname"] = name
+
+        old_all_properties = run_context.session_state.get("all_properties", [])
+        old_all_properties.append(selected_property)  
+
+        run_context.session_state["all_properties"] = old_all_properties
+
+        _clear_session_state(run_context)
+
+        return ToolResult(
+            content=f"Faça um diagnóstico inicial para a propriedade de código CAR: {selected_property["car_code"]}."
+        )
+
+    all_properties: List[dict] = run_context.session_state.get('all_properties', [])
+    selected_property = next((prop for prop in all_properties if prop["car_code"] == ', '.join(car_codes)), None)
     
     if selected_property is None:
         return ToolResult(content="Não foi possível registrar o nome da propriedade.")
     
-    new_selected_property = RuralProperty.model_validate(selected_property)
-    new_selected_property.nickname = name
+    updated_selected_property = selected_property
+    updated_selected_property["nickname"] = name
 
-    registered_properties.remove(selected_property)
-    registered_properties.append(new_selected_property.model_dump())
-    run_context.session_state["registered_properties"] = registered_properties
+    all_properties.remove(selected_property)
+    all_properties.append(updated_selected_property)
+    run_context.session_state["all_properties"] = all_properties
+
+    _clear_session_state(run_context)
 
     return ToolResult(
         content=(
@@ -337,7 +369,6 @@ def set_property_name(run_context: RunContext, car_codes: List[str], name: str):
     )
 
 
-@tool(stop_after_tool_call=True)
 def remove_property(car: str, run_context: RunContext) -> str:
     """
     Remove a propriedade selecionada do sistema.
@@ -345,16 +376,16 @@ def remove_property(car: str, run_context: RunContext) -> str:
     Args:
         car(str): Código de Cadastro Ambiental Rural (CAR)
     """
-    registered_properties = run_context.session_state.get('registered_properties', [])
+    all_properties = run_context.session_state.get('all_properties', [])
 
     flag=False
-    new_registered_properties = []
-    for prop in registered_properties:
+    new_all_properties = []
+    for prop in all_properties:
         if prop.get("car_code") == car:
             flag=True
             continue
         
-        new_registered_properties.append(prop)
+        new_all_properties.append(prop)
 
     if not flag:
         return "A propriedade não foi encontrada no sistema."
@@ -362,19 +393,18 @@ def remove_property(car: str, run_context: RunContext) -> str:
     selected_car = run_context.session_state.get('selected_property', None)
     if selected_car is not None:
         if selected_car.get("car_code") == car:
-            run_context.session_state['selected_property'] = new_registered_properties[-1] if new_registered_properties else None
+            run_context.session_state['selected_property'] = new_all_properties[-1] if new_all_properties else None
 
-    run_context.session_state['registered_properties'] = new_registered_properties
+    run_context.session_state['all_properties'] = new_all_properties
 
     return "A propriedade foi removida com sucesso."
 
 
-@tool(stop_after_tool_call=True)
-def remove_registered_properties(run_context: RunContext) -> str:
+def remove_all_properties(run_context: RunContext) -> str:
     """
     Remove todas as propriedades registradas no sistema.
     """
-    run_context.session_state['registered_properties'] = []
+    run_context.session_state['all_properties'] = []
     run_context.session_state['selected_property'] = None
 
     return "Todas as propriedades foram removidas com sucesso."

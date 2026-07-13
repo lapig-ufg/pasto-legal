@@ -6,7 +6,7 @@ from agno.models.google import Gemini
 from agno.models.ollama import Ollama
 
 # Define o caminho base do projeto (onde o .env geralmente fica)
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path.cwd()
 
 # Carrega as variáveis do arquivo .env para o ambiente
 load_dotenv(dotenv_path=BASE_DIR / ".env")

@@ -16,7 +16,7 @@ os.environ["POSTGRES_PASSWORD"] = "postgres"
 os.environ["POSTGRES_DBNAME"] = "pasto_legal_db" # <--- Correção feita aqui
 
 # Passo 2: Importar os Elementos Necessários
-from app.agents.property_analyst_agent import get_instructions
+from app.agents.analyst_agent import get_instructions
 
 # Fixture do Pytest para criar um contexto falso limpo antes de cada teste
 @pytest.fixture
