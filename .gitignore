@@ -223,3 +223,7 @@ data/
 global-pasture-watch-f46d09d13b4e.json
 users_db.json
 phone_numbers.in
+
+# Notas locais / contexto de IA (não fazem parte do repositório)
+COMANDOS.md
+ai_project_memory.md

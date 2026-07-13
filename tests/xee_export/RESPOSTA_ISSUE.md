@@ -1,178 +1,131 @@
-# Testes de exportação via Xee + onde é melhor rodar o mapeamento (issue #112)
+# Resposta — testes de exportação Xee (issue #112)
 
-Fala, pessoal! Terminei os testes de exportação que foram pedidos e fui um pouco além pra
-ajudar naquela dúvida de "processar no GEE ou trazer pro nosso servidor". No caminho, uma
-pergunta boa do time me fez descobrir uma coisa importante (tem uma **correção** na seção 4).
-
-Tá tudo na branch `feature/112-suporte-mapeamento-on-the-fly` — **não subi nada ainda**.
+Branch: `feature/112-suporte-mapeamento-on-the-fly` — sem push ainda.
 
 ---
 
-## 1. O que era pra fazer
+## Pergunta 1: quanto tempo leva exportar os dados brutos via Xee?
 
-Testar, via Xee, a exportação de dois imóveis de teste (`car_1` e `car_2`): as **64 features**
-do Satellite Embedding V1 (2025) e a série de **NDVI gapfilled** do Sentinel-2 (2025),
-convertendo pra **Int16**, salvando em **zarr** e **medindo o tempo** por imóvel.
+Testado: **Satellite Embedding V1 (64 features)** e **NDVI gapfilled (~100 datas)**, Int16, zarr local.
 
-## 2. Antes de tudo: o que são esses dois dados
+### Satellite Embedding — 64 features × 1 data (Int16)
 
-Isso é a chave pra entender o resto, então vale explicar:
-
-- **Satellite Embedding V1 (as "64 features"):** é um produto **anual** do Google. Pra cada
-  pixel, num ano, ele dá um **vetor de 64 números** (bandas `A00`…`A63`) que "resume" a
-  assinatura daquele lugar no ano (ele já junta várias imagens Sentinel, tira nuvem, e
-  comprime tudo em 64 dimensões). Detalhe: pra usar o embedding (ex.: classificar), você
-  **precisa das 64** — elas são as dimensões de **um vetor só**, não coisas que você escolhe.
-  Formato: **64 variáveis × 1 data**.
-- **NDVI gapfilled (as "~100 datas"):** é uma **série temporal**. Pra cada pixel é **um
-  número** (o NDVI, o "verde" da vegetação) medido em **cada data** do ano — 100 passagens
-  do Sentinel-2 em 2025, já preenchido/suavizado por regressão harmônica (sem buraco de
-  nuvem). Formato: **1 variável × 100 datas**.
-
-Ou seja, cada um tem um **formato natural diferente**: o embedding é *largo* (muitas
-variáveis, 1 data); o NDVI é *comprido* (1 variável, muitas datas). Guarda isso — vai ser
-crucial na seção 4.
-
-## 3. O que estamos respondendo com essa análise
-
-Antes de ver os números, vale deixar claro **qual pergunta esse teste responde**:
-
-> *"Quando o fazendeiro pedir o mapa de pastagem, o backend consegue buscar os dados do
-> GEE em tempo hábil via Xee, ou vai demorar demais?"*
-
-Ou mais precisamente: **é viável usar Xee como transporte GEE→servidor** para os dois
-insumos do pipeline (embedding para classificação LULC + NDVI para análise de vigor)?
-E dentro disso: **Int16 ou Float32 faz diferença no tempo e no disco?**
-
-Cada linha da tabela abaixo é uma resposta a uma fatia dessa pergunta:
-- **mesmo dado, dtypes diferentes** → mostra o custo real de não usar Int16
-- **mesmo dtype, imóveis diferentes** → mostra como o tempo escala com área
-- **embedding vs NDVI** → mostra qual insumo é o gargalo do pipeline
-
-## 4. Os números — matriz completa (2 imóveis × 2 dados × 2 dtypes)
-
-Todos os testes rodaram em 2025, escala 10 m/pixel, zarr local.
-
-**O que significa cada coluna da tabela:**
-
-| Coluna | Significado |
-|---|---|
-| **dtype** | Tipo numérico do dado armazenado: `int16` (inteiro de 16 bits, ±32767) ou `float32` (ponto flutuante de 32 bits). Os valores originais do GEE (faixa [-1, 1]) são multiplicados por 10000 antes de virar int16, sem perda relevante de precisão. |
-| **Dimensões (time×y×x)** | Forma do array exportado: `time` = nº de datas (embedding tem 1 data anual; NDVI tem ~100 datas); `y`/`x` = nº de pixels na grade UTM que cobre o bbox do imóvel a 10 m. |
-| **t_open** | Tempo para o Xee abrir a conexão com o GEE e ler os metadados da coleção (sem baixar pixels). É sempre rápido (~1–3 s). |
-| **t_export** | Tempo para baixar todos os pixels do GEE para a memória RAM local (`dataset.load()`). É o **gargalo principal** — dominado pelo número de variáveis/bandas, não pelo tamanho do imóvel. |
-| **t_persist** | Tempo para gravar o array já em memória no disco em formato zarr (`.to_zarr()`). Sempre abaixo de 0,5 s nessas áreas. |
-| **t_total** | Soma dos três anteriores: tempo real "do zero até o dado estar salvo em disco". É o número que importa para o backend. |
-| **Tamanho** | Espaço ocupado pelo store zarr no disco após a compressão padrão. |
-
-**car_1 — 3,2 ha** (grade 29 × 49 px a 10 m)
-
-| Dado | dtype | Dimensões (time×y×x) | t_open | t_export (GEE) | t_persist (zarr) | **t_total** | Tamanho |
+| Imóvel | Área | Grid (px) | t_open | t_export | t_persist | **t_total** | Disco |
 |---|---|---|---|---|---|---|---|
-| Satellite Embedding (64 features) | **int16** | 1 × 29 × 49 | 1,4 s | 74,7 s | 0,3 s | **76,4 s** | 0,23 MB |
-| Satellite Embedding (64 features) | float32 | 1 × 29 × 49 | 1,2 s | 70,3 s | 0,2 s | **71,6 s** | 0,25 MB |
-| NDVI gapfilled (~100 datas) | **int16** | 100 × 29 × 49 | 2,8 s | 5,5 s | 0,03 s | **8,4 s** | 0,27 MB |
-| NDVI gapfilled (~100 datas) | float32 | 100 × 29 × 49 | 1,7 s | 10,7 s | 0,03 s | **12,4 s** | 0,51 MB |
+| car_1 — Jaraguá | 3,2 ha | 1 × 29 × 49 | 1,4 s | 74,7 s | 0,3 s | **76,4 s** | 0,23 MB |
+| car_2 — Jaraguá | 54,9 ha | 1 × 117 × 144 | 1,5 s | 59,9 s | 0,2 s | **61,5 s** | 0,92 MB |
+| new_car_1 — Silvânia | 2073,5 ha | 1 × 643 × 940 | 1,5 s | 131,8 s | 0,4 s | **133,7 s** | 25,6 MB |
+| new_car_2 — Córrego do Ouro | 23,5 ha | 1 × 94 × 48 | 0,4 s | 51,0 s | 0,2 s | **51,6 s** | 0,40 MB |
 
-**car_2 — 54,9 ha** (grade 117 × 144 px a 10 m)
+### NDVI Gapfilled — 1 variável × ~100 datas (Int16)
 
-| Dado | dtype | Dimensões (time×y×x) | t_open | t_export (GEE) | t_persist (zarr) | **t_total** | Tamanho |
+| Imóvel | Área | Datas | t_open | t_export | t_persist | **t_total** | Disco |
 |---|---|---|---|---|---|---|---|
-| Satellite Embedding (64 features) | **int16** | 1 × 117 × 144 | 1,5 s | 59,9 s | 0,2 s | **61,5 s** | 0,92 MB |
-| Satellite Embedding (64 features) | float32 | 1 × 117 × 144 | 0,3 s | 75,8 s | 0,2 s | **76,3 s** | 1,11 MB |
-| NDVI gapfilled (~100 datas) | **int16** | 100 × 117 × 144 | 3,0 s | 9,7 s | 0,03 s | **12,7 s** | 2,91 MB |
-| NDVI gapfilled (~100 datas) | float32 | 100 × 117 × 144 | 1,5 s | 9,5 s | 0,03 s | **11,0 s** | 5,79 MB |
+| car_1 — Jaraguá | 3,2 ha | 100 | 2,8 s | 5,5 s | 0,03 s | **8,4 s** | 0,27 MB |
+| car_2 — Jaraguá | 54,9 ha | 100 | 3,0 s | 9,7 s | 0,03 s | **12,7 s** | 2,91 MB |
+| new_car_1 — Silvânia | 2073,5 ha | 100 | 2,1 s | 48,3 s | 0,1 s | **50,6 s** | 104,6 MB |
+| new_car_2 — Córrego do Ouro | 23,5 ha | 404¹ | 7,8 s | 11,9 s | 0,03 s | **19,7 s** | 1,43 MB |
 
-### O que os números revelam
+> ¹ Córrego do Ouro cobre múltiplos tiles S2 sobrepostos → GEE retorna ~404 cenas.
 
-**1. Int16 vale a pena, especialmente em disco e em propriedades maiores:**
-- Embedding `car_2`: Int16 leva **61,5 s vs 76,3 s** no float32 — **1,2× mais rápido**.
-- NDVI `car_1` em disco: **0,27 MB vs 0,51 MB** — Int16 ocupa **metade**.
-- NDVI `car_2` em disco: **2,91 MB vs 5,79 MB** — Int16 ocupa **metade**.
-- Não há razão para usar float32 — o custo de precisão (±0,0001) é irrelevante pro modelo.
+**Por que o embedding é mais lento que o NDVI?** O Xee faz ~1 requisição por variável. Embedding = 64 variáveis → lento. NDVI = 1 variável × N datas → rápido. Não é o volume de pixels, é o número de variáveis.
 
-**2. O tempo do embedding é quase independente do tamanho do imóvel:**
-- `car_1` (3 ha): 76,4 s | `car_2` (55 ha, 17× maior): 61,5 s — mesmos ~60–80 s.
-- O gargalo é o **número de variáveis** (64 bandas = ~64 requisições ao GEE), não os pixels.
+---
 
-**3. O NDVI escala suavemente com a área:**
-- `car_1` (3 ha): 8,4 s | `car_2` (55 ha): 12,7 s — cresce ~1,5×, não 17×.
-- 1 variável × 100 datas = ~1 requisição eficiente. É o formato natural de série temporal.
+## Pergunta 2: e o mapa de pastagem — GEE ou local?
 
-**4. NDVI é o insumo rápido; embedding é o gargalo do pipeline:**
-- NDVI fica abaixo de 13 s em qualquer imóvel e qualquer dtype.
-- Embedding fica entre 61–76 s — é onde está o custo com o layout atual.
+Pipeline: MapBiomas classe 15 → amostras → Random Forest → classifica embedding 2025. Dois caminhos testados.
 
-## 5. Por que o embedding é lento — e a correção que eu devo a vocês
+### `classify_gee` — tudo no GEE server-side
 
-Alguém no time fez a pergunta certa: *"faz sentido comparar 64 variáveis × 1 data com 1
-variável × 100 datas? O embedding precisa das 64, isso não é o que importa?"* **Sim, precisa
-das 64 — e foi justamente investigar isso que revelou o pulo do gato.**
-
-Testei a **mesma base** nos dois formatos (car_1, Int16):
-
-| Exportei | nº de variáveis | nº de datas | tempo |
+| Imóvel | Área pasto | **t_total** | Resultado |
 |---|---|---|---|
-| embedding como **64 variáveis** | 64 | 1 | ~69 s |
-| o **mesmo** embedding **empilhado** (1 variável) | 1 | 64 | **~3 s** |
-| NDVI como **série** (1 variável) | 1 | 100 | ~7 s |
-| o **mesmo** NDVI como **100 variáveis** | 100 | 1 | **~335 s** |
+| car_1 — Jaraguá (3 ha) | 0,35 ha | **~2 s** | PNG |
+| car_2 — Jaraguá (55 ha) | 12,08 ha | **~4 s** | PNG |
+| new_car_1 — Silvânia (2073 ha) | 711,55 ha | **9,78 s** | PNG |
+| new_car_2 — Córrego do Ouro (23 ha) | 15,18 ha | **12,37 s** | PNG |
 
-O que isso diz: o Xee fica lento quando o dado vem quebrado em **muitas variáveis** (ele faz
-mais ou menos **1 requisição por variável**). Não é o volume de dado nem o número de datas —
-é o **número de variáveis**.
+### `classify_xee` — Xee baixa embedding, sklearn classifica local
 
-**A correção importante:** eu tinha dito que "exportar o embedding é caro (~70 s)". Isso
-**não está totalmente certo**. Peguei o embedding empilhado (o de 3 s) e **conferi pixel a
-pixel**: são **exatamente os mesmos 64 valores** (diferença zero). Ou seja, **os 69 s eram
-culpa do LAYOUT, não do embedding.** Se você empacota as 64 features numa variável só (com um
-eixo "banda"), baixa **o mesmo dado ~24× mais rápido**. Então: **dá sim pra exportar o
-embedding rápido via Xee — é só estruturar direito.**
+| Imóvel | Área pasto | **t_total** | t_download Xee | t_predict sklearn |
+|---|---|---|---|---|
+| car_1 — Jaraguá (3 ha) | 0,33 ha | **~79 s** | ~76 s | <1 s |
+| car_2 — Jaraguá (55 ha) | 12,60 ha | **~70 s** | ~69 s | <1 s |
+| new_car_1 — Silvânia (2073 ha) | 758,17 ha | **136 s** | 131 s | 0,22 s |
+| new_car_2 — Córrego do Ouro (23 ha) | 16,18 ha | **50 s** | 47 s | 0,03 s |
 
-> ⚠️ Esse empilhamento ainda **não está embutido** no código de exportação atual
-> (`xee_export.py` usa layout de 64 variáveis). Os ~61–69 s da tabela acima são o custo
-> real com o layout ingênuo; com a otimização cairia para ~3–5 s.
+> O sklearn é quase instantâneo — todo o custo é o Xee baixando 64 variáveis.
 
-## 6. E o mapa de pastagem (a classificação de verdade)
+---
 
-O objetivo final é o fazendeiro pedir o **mapa de pastagem** e receber a **imagem
-classificada + a área**. Implementei isso seguindo a lógica do script do Bernardo (amostra
-MapBiomas + embedding → Random Forest, treina 2024 → prevê 2025) de **dois jeitos**:
+## Pergunta 3 (nova task @leandroleal): exportar só o `classified` via Xee fica abaixo de 20 s?
 
-| Imóvel | Jeito | Área de pasto | **Tempo total** |
+### ✅ Sim. Resultado: `classify_gee_xee`
+
+GEE classifica inteiramente no servidor (mesmo pipeline do `classify_gee`). Xee baixa só o raster resultado — **1 variável binária** (pasto=1 / não-pasto=0) × 1 data.
+
+| Imóvel | Área pasto | t_xee_open | t_xee_export | t_xee_persist | **t_total** | Disco (zarr) |
+|---|---|---|---|---|---|---|
+| new_car_1 — Silvânia (2073 ha) | 714,37 ha | 0,98 s | 4,30 s | 0,03 s | **7,49 s ✅** | 0,024 MB |
+| new_car_2 — Córrego do Ouro (23 ha) | 15,73 ha | 1,02 s | 1,24 s | 0,03 s | **3,92 s ✅** | 0,008 MB |
+
+Ambos **bem abaixo de 20 s**.
+
+---
+
+## Comparação final — os 3 métodos
+
+| Imóvel | `classify_gee` | `classify_gee_xee` | `classify_xee` |
 |---|---|---|---|
-| car_1 | **GEE (nuvem)** | 0,35 ha | **~2 s** |
-| car_1 | Xee (local) | 0,33 ha | ~79 s |
-| car_2 | **GEE (nuvem)** | 12,08 ha | **~4 s** |
-| car_2 | Xee (local) | 12,6 ha | ~70 s |
+| **new_car_1 (2073 ha)** | 9,78 s — só PNG | **7,49 s** — zarr 24 KB | 136 s — zarr 26 MB |
+| **new_car_2 (23 ha)** | 12,37 s — só PNG | **3,92 s** — zarr 8 KB | 50 s — zarr 0,4 MB |
 
-- **As duas dão a mesma área** (0,35≈0,33; 12≈12,6) → o método funciona: treina num ano,
-  prevê no outro.
-- **Ressalva:** o ~78 s do caminho local é porque exportei o embedding do jeito ingênuo
-  (64 variáveis, tabela da seção 4). Com o empilhamento da seção 5, esse download cai pra
-  ~3 s → o caminho local deve cair pra **~10 s** (a confirmar rodando).
+| Imóvel | Área `classify_gee` | Área `classify_gee_xee` | Área `classify_xee` |
+|---|---|---|---|
+| new_car_1 (2073 ha) | 711,55 ha | 714,37 ha | 758,17 ha |
+| new_car_2 (23 ha) | 15,18 ha | 15,73 ha | 16,18 ha |
 
-## 7. Então, onde é melhor rodar? (revisado)
+`classify_gee` e `classify_gee_xee` concordam em <0,4% (mesmo RF no GEE). O `classify_xee` difere ~6% porque sklearn e `smileRandomForest` do GEE são implementações distintas.
 
-- **Pro mapa/área hoje:** GEE (nuvem) ainda é o mais simples e direto (~2–4 s).
-- **Mas o "local" não é mais o vilão lento que eu pintei** — com o embedding empilhado, trazer
-  o dado pra cá é rápido (~3–5 s). Então a escolha vira menos "quem é mais rápido" e mais
-  **"eu quero o dado aqui pra cruzar com outras camadas / usar modelo próprio (GeoCLAP)?"**.
-- **Em qualquer caso, a chave é cachear:** processar uma vez e **salvar o resultado no
-  S3/MinIO**, pra não refazer do zero a cada requisição — especialmente em propriedades
-  grandes onde o download bruto (sem otimização) passa de 1 min.
-- **Int16 sempre:** não tem razão pra usar float32 — é mais lento, ocupa o dobro em disco e
-  a precisão perdida (±0,0001) é irrelevante pro modelo.
+---
 
-## 8. Como rodar / onde tá o código
+## Por que `classify_gee_xee` e não `classify_gee`?
+
+A diferença é o que você tem em mãos depois de rodar:
+
+| O que você quer fazer | `classify_gee` | `classify_gee_xee` |
+|---|---|---|
+| Saber a área de pasto | ✅ | ✅ |
+| Cachear e reusar o resultado | ❌ | ✅ |
+| Exportar GeoTIFF / servir tiles | ❌ | ✅ |
+| Sobrepor com outro shapefile local | ❌ | ✅ |
+| Análise espacial local | ❌ | ✅ |
+| Funcionar offline após o primeiro run | ❌ | ✅ |
+
+Com `classify_gee` o raster classificado fica no servidor do GEE — você recebe apenas um número e um PNG estático. Próxima consulta do mesmo imóvel: paga os ~9–12 s novamente.
+
+Com `classify_gee_xee` o raster está em disco (zarr, ~8–24 KB). Próxima consulta: leitura local em < 1 s, sem tocar o GEE.
+
+## Recomendação
+
+**`classify_gee_xee` é a solução.** É o método mais rápido dos três, persiste o raster completo em disco (zarr) e abre caminho para cache no storage do LAPIG:
+
+- **Primeira requisição:** ~4–8 s → GEE classifica, Xee baixa o raster, salva no cache.
+- **Requisições seguintes:** leitura do zarr em cache → **< 1 s**.
+
+---
+
+## Como rodar
 
 ```bash
-uv pip install xee xarray zarr scikit-learn
+# Benchmark completo (todos os 3 métodos + export de dados brutos):
+.venv/bin/python -m tests.xee_export.run
 
-.venv/bin/python -m tests.xee_export.run_benchmark          # matriz completa (8 combinações)
-.venv/bin/python -m tests.xee_export.run_classification     # classificação GEE x local + imagens
-.venv/bin/python -m tests.xee_export.layout_experiment      # prova do "nº de variáveis"
+# Só classificação, sem classify_xee (~75 s):
+.venv/bin/python -m tests.xee_export.run --skip-xee --skip-embed
+
+# Benchmark NDVI gapfilled:
+.venv/bin/python -m tests.xee_export.run_ndvi
 ```
 
-Tudo em `tests/xee_export/`. Detalhes técnicos completos em `EXPLICACAO.md`. Qualquer dúvida
-é só chamar!
+Código em `tests/xee_export/`. Detalhes técnicos em `EXPLICACAO.md`.

@@ -66,21 +66,32 @@ except Exception as error:
     raise ValueError("GEE_PROJECT/GEE_SERVICE_ACCOUNT/GEE_KEY_FILE devem estar definidos no .env.")
 
 
-def load_test_properties() -> List[Dict]:
+def load_test_properties(mock_path: Path = None) -> List[Dict]:
     """
-    Carrega os dois imóveis rurais de teste (car_1 e car_2) do mock local.
+    Carrega os imóveis rurais de teste de um mock local.
 
-    Cada imóvel vira um dicionário com a geometria pronta para o Earth Engine,
-    usada como área de interesse (ROI) nos testes de exportação.
+    Aceita geometrias Polygon ou MultiPolygon do GeoJSON. Polígonos simples são
+    automaticamente envolvidos em MultiPolygon para compatibilidade com o Earth Engine.
+
+    Args:
+        mock_path (Path, optional): Caminho do arquivo mock. Usa _MOCK_PATH se omitido.
 
     Returns:
         List[Dict]: um dicionário por imóvel com "name", "codigo", "area_ha" e "roi".
     """
-    features = json.loads(_MOCK_PATH.read_text())["features"]
+    path = mock_path or _MOCK_PATH
+    features = json.loads(path.read_text())["features"]
 
     properties: List[Dict] = []
     for index, feature in enumerate(features):
-        roi = ee.Geometry.MultiPolygon(feature["geometry"]["coordinates"])
+        geom = feature["geometry"]
+        if geom["type"] == "MultiPolygon":
+            roi = ee.Geometry.MultiPolygon(geom["coordinates"])
+        elif geom["type"] == "Polygon":
+            roi = ee.Geometry.MultiPolygon([geom["coordinates"]])
+        else:
+            raise ValueError(f"Tipo de geometria não suportado: {geom['type']}")
+
         properties.append({
             "name": f"car_{index + 1}",
             "codigo": feature["properties"]["codigo"],
