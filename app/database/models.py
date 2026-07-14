@@ -1,8 +1,20 @@
-from sqlalchemy import Column, Integer, Text
+import datetime
+from sqlalchemy import Column, Integer, Text, String, DateTime, Boolean
 
 from app.database.session import Base
+from app.configs.config import config
 
-
+class UserTermsAcceptance(Base):
+    """Table that records the formal acceptance of the system's terms and conditions."""
+    __tablename__ = "user_terms_acceptance"
+    
+    if config.DATABASE_TYPE != 'sqlite':
+        __table_args__ = {'schema': 'ai'} 
+    user_id = Column(String, primary_key=True, index=True, comment="Unique identifier (e.g., wa:5511999999999)")
+    accepted = Column(Boolean, default=False, nullable=False, comment="Flag indicating acceptance")
+    accepted_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False, comment="Date and time of formal acceptance")
+    
+    
 class NegativeFeedback(Base):
     __tablename__ = 'negative_feedbacks'
 
