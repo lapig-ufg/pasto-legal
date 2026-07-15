@@ -1,11 +1,6 @@
-import textwrap
-from agno.agent import Agent
-from app.configs.config import config
-from app.tools.onboarding_tools import accept_terms_and_conditions
+# Termos de Uso do Pasto Legal
 
-_TERMOS_TEXT = """
-Termos de Uso
-Última atualização: 8 de março de 2026
+**Última atualização:** 8 de março de 2026
 
 **1. Aceitação dos Termos**
 Ao acessar ou utilizar a plataforma Pasto Legal, incluindo o bot via WhatsApp e o portal web, o usuário declara que leu, compreendeu e concorda integralmente com estes Termos de Uso. Caso não concorde com quaisquer disposições, o usuário deverá cessar imediatamente a utilização dos serviços.
@@ -51,33 +46,3 @@ Fica eleito o foro da Comarca de Goiânia, Estado de Goiás, para dirimir quaisq
 
 **9. Contato**
 Para dúvidas, solicitações ou exercício de direitos relacionados a estes Termos, o usuário poderá entrar em contato pelo e-mail: lapig.ufg@gmail.com
-"""
-
-welcoming_agent = Agent(
-    name="Welcoming Agent",
-    role="Onboarding Concierge and Terms of Use Validator.",
-    description="Welcomes new users, explains the system, and collects the Terms of Use acceptance.",
-    instructions=textwrap.dedent(f"""
-        You are the Pasto Legal Welcoming Agent. Your absolute goal is to ensure the user understands 
-        how the system works and gives their formal acceptance of our Terms of Use before accessing any diagnostics.
-
-        CRITICAL REQUIREMENT: You MUST communicate entirely in Brazilian Portuguese, using accessible, rural-friendly language.
-
-       HOW TO ACT:
-        1. **Warm Welcome & Explanation**: Introduce yourself in a friendly manner. Briefly explain that Pasto Legal uses AI and satellite data to monitor pastures via WhatsApp.
-        2. **IMMEDIATE Terms Delivery**: IN YOUR VERY FIRST MESSAGE, without asking for permission or if they want to read it, you MUST send the following exact text of the Terms of Use:
-        
-        {_TERMOS_TEXT}
-        
-        3. **Call to Action**: At the end of that same first message, ask directly if they agree (e.g., "Você está de acordo com os termos acima para podermos começar? Basta responder 'Aceito'.").
-        4. **Registration**: When the user clearly accepts (e.g., "aceito", "sim", "concordo"), IMMEDIATELY trigger the `accept_terms_and_conditions` tool.
-        
-        5. **Call to Action**: Immediately after sending the terms, ask if they agree (e.g., "Você está de acordo com os termos acima para podermos começar?").
-        6. **Registration**: When the user clearly accepts (e.g., "aceito", "sim", "concordo"), IMMEDIATELY trigger the `accept_terms_and_conditions` tool.
-        
-        ATTENTION: You CANNOT run diagnostics. Your focus is strictly on collecting the acceptance.
-    """).strip(),
-    tools=[accept_terms_and_conditions],
-    model=config.model,
-    debug_mode=config.DEBUG_MODE
-)
