@@ -22,7 +22,7 @@ from app.agents.feedback_agent import remediation_agent, satisfaction_evaluation
 from app.agents.persona_agent import persona_manager_agent
 from app.utils.interfaces.user_mood import UserMood
 from app.utils.interfaces.user_persona import PersonaUpdate, Preferences, UserPersona
-
+from app.utils.fine_tuning_exporter import export_session_to_fine_tuning
 
 
 # --- Constants ---
@@ -35,71 +35,85 @@ INTENT_ROUTER_STEP_NAME = "Intent Router"
 _DEFAULT_SATISFACTION = {"level": 3, "level_message": "Neutral (default)"}
 
 
-# --- Step Executors ---
+# --- Helpers ---
 
+def _get_normal_response(step_input: StepInput) -> str:
+    """
+    Extrai a resposta da ramificação principal (Intent Router) de forma segura.
+    Lida com a estrutura aninhada de StepOutputs e possíveis latências de paralelismo.
+    """
+    try:
+        
+        router_output = step_input.get_step_output(step_name=INTENT_ROUTER_STEP_NAME)
+        
+        if router_output:
+            
+            if hasattr(router_output, "steps") and router_output.steps:
+                return getattr(router_output.steps[-1], "content", "") or ""
+            
+            
+            return getattr(router_output, "content", "") or ""
+        
+        
+        if step_input.previous_step_outputs:
+            last_output = list(step_input.previous_step_outputs.values())[-1]
+            
+            if hasattr(last_output, "steps") and last_output.steps:
+                return getattr(last_output.steps[-1], "content", "") or ""
+                
+            return getattr(last_output, "content", "") or ""
+            
+        return ""
+        
+    except Exception as e:
+        log_debug(f"Falha silenciosa ao capturar resposta principal para o patch do jsonl: {e}")
+        return ""
+
+
+# --- Step Executors ---
 
 def persist_positive_feedback(
     step_input: StepInput,
     session_state: Dict[str, Any],
 ) -> StepOutput:
-    """Persist a frustrated interaction to the NegativeFeedback table."""
-    #user_msg = step_input.get_input_as_string() or ""
-    #normal_response = _get_normal_response(step_input)
-    #handler_msg = session_state.get("handler_message", "")
-    #
-    #NegativeFeedback.metadata.create_all(bind=engine)
-    #session = SessionLocal()
-    #try:
-    #    novo_feedback = NegativeFeedback(
-    #        timestamp=datetime.now().isoformat(),
-    #        original_question="Original Question", # TODO: Deveria ser a mensagem que gerou a frustração (a mensagem anterior à run atual)
-    #        reason_frustration=user_msg, 
-    #        desired_answer=_mask_pii(normal_response),
-    #        context=_mask_pii(handler_msg),
-    #    )
-    #    session.add(novo_feedback)
-    #    session.commit()
-    #    log_debug("negative feedback saved by workflow.")
-    #except Exception as e:
-    #    session.rollback()
-    #    log_error(f"Erro ao registrar negative feedback: {e}")
-    #finally:
-    #    session.close()
+    """Persist a positive interaction and export for fine-tuning via Rehydration."""
+    session_id = session_state.get("session_id", "unknown_session")
+    grade = session_state.get("satisfaction_grade", 5.0)
+    
+    user_msg = step_input.get_input_as_string() or ""
+    normal_response = _get_normal_response(step_input)
+    
+    export_session_to_fine_tuning(
+        session_id=session_id,
+        feedback_score=float(grade),
+        agent_id="pasto_legal_team_positive",
+        local_user_msg=user_msg,
+        local_assistant_resp=normal_response
+    )
 
-    return StepOutput(content="Negative Feedback Saved")
+    return StepOutput(content="Positive Feedback Exported via Rehydration successfully.")
 
 
 def persist_negative_feedback(
     step_input: StepInput,
     session_state: Dict[str, Any],
 ) -> StepOutput:
-    """Persist an positive interaction to the PositiveFeedback table for future fine-tuning."""
-    #grade = session_state.get("satisfaction_grade", 3)
-    #user_msg = step_input.get_input_as_string() or ""
-    #normal_response = _get_normal_response(step_input)
-    #handler_msg = session_state.get("handler_message", "")
-    #
-    #PositiveFeedback.metadata.create_all(bind=engine)
-    #session = SessionLocal()
-    #try:
-    #    novo_feedback = PositiveFeedback(
-    #        timestamp=datetime.now().isoformat(),
-    #        user_message=_mask_pii(user_msg),
-    #        assistant_response=_mask_pii(normal_response),
-    #        handler_message=_mask_pii(handler_msg),
-    #        grade=grade,
-    #        context=_mask_pii(normal_response),
-    #    )
-    #    session.add(novo_feedback)
-    #    session.commit()
-    #    log_debug("Positive feedback saved by workflow.")
-    #except Exception as e:
-    #    session.rollback()
-    #    log_error(f"Erro ao registrar positive feedback: {e}")
-    #finally:
-    #    session.close()
+    """Persist a frustrated interaction and export for fine-tuning via Rehydration."""
+    session_id = session_state.get("session_id", "unknown_session")
+    grade = session_state.get("satisfaction_grade", 1.0)
+    
+    user_msg = step_input.get_input_as_string() or ""
+    normal_response = _get_normal_response(step_input)
+    
+    export_session_to_fine_tuning(
+        session_id=session_id,
+        feedback_score=float(grade),
+        agent_id="pasto_legal_team_frustrated",
+        local_user_msg=user_msg,
+        local_assistant_resp=normal_response
+    )
 
-    return StepOutput(content="Positive Feedback Saved")
+    return StepOutput(content="Negative Feedback Exported via Rehydration successfully.")
 
 
 def evaluate_satisfaction(step_input: StepInput, session_state: Dict[str, Any]) -> StepOutput:
