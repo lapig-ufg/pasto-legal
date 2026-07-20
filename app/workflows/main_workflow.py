@@ -27,12 +27,14 @@ from app.agents import (
 from app.database.agno_db import db
 from app.utils.interfaces.workflow_state import WorkflowRouteEnum, WorkflowState
 from app.workflows.feedback_workflow import feedback_workflow, merge_output_step
-from app.workflows.feedback_workflow import feedback_workflow, merge_output_step
 from app.guardrails.pii_gate import check_pii, mensagem_bloqueio
 from app.utils.transcription import transcrever_audio
 from app.utils.image_ocr import extrair_texto_imagem
 from app.tools.tts_tools import audioTTS
-# --- Step Executors ---
+from app.agents.welcoming_agent import welcoming_agent
+from app.database.session import SessionLocal
+from app.database.models import UserTermsAcceptance
+
 
 # --- Step Executors ---
 
@@ -61,26 +63,36 @@ def guardrail_pii_executor(step_input: StepInput) -> StepOutput:
         return StepOutput(content=aviso, stop=True)
 
 
-def is_first_interaction(step_input: StepInput, session_state: Dict[str, Any]) -> bool:
-    """Condition evaluator that returns True when this is the user's first
-    interaction (no workflow_state in session yet).
-
-    Also initializes session_state['workflow_state'] with a fresh WorkflowState
-    so that subsequent turns have a valid routing state.
+def needs_onboarding(step_input: StepInput, session_state: Dict[str, Any]) -> bool:
     """
-    workflow_state_dict = session_state.get("workflow_state", None)
+    Determines whether the user needs to go through onboarding. 
+    Returns True if the terms have NOT yet been accepted.
+    """
 
-    if workflow_state_dict is None:
+    if session_state.get("workflow_state") is None:
         session_state["workflow_state"] = WorkflowState().model_dump()
+
+    if session_state.get("terms_accepted"):
+        return False
+        
+    user_id = session_state.get("user_id") 
+    if not user_id:
+        return True 
+
+    db = SessionLocal()
+    try:
+        record = db.query(UserTermsAcceptance).filter(
+            UserTermsAcceptance.user_id == user_id, 
+            UserTermsAcceptance.accepted == True
+        ).first()
+        
+        if record:
+            session_state["terms_accepted"] = True
+            return False
+            
         return True
-
-    return False
-
-
-def welcome_message_executor(step_input: StepInput) -> StepOutput:
-    """Return a static welcome message for first-time users."""
-    return StepOutput(content="Olá, seja bem-vindo ao Pato Legal. Como posso te ajudar hoje?")
-
+    finally:
+        db.close()
 
 def route_selector(step_input: StepInput, session_state: Dict[str, Any]) -> str:
     """Selector for the Intent Router. Runs the Router Agent to classify
@@ -165,12 +177,12 @@ pasto_legal_workflow = Workflow(
     steps=[
         Step(name="Guardrail PII", executor=guardrail_pii_executor),
         Condition(
-            name="Is First Interaction",
-            evaluator=is_first_interaction,
+            name="Onboarding Check", 
+            evaluator=needs_onboarding, 
             steps=[
                 Step(
-                    name="Welcome Message",
-                    executor=welcome_message_executor,
+                    name="Welcoming Agent",
+                    agent=welcoming_agent, 
                 ),
             ],
             else_steps=[
