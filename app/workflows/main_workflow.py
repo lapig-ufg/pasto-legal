@@ -27,9 +27,38 @@ from app.agents import (
 from app.database.agno_db import db
 from app.utils.interfaces.workflow_state import WorkflowRouteEnum, WorkflowState
 from app.workflows.feedback_workflow import feedback_workflow, merge_output_step
-
+from app.workflows.feedback_workflow import feedback_workflow, merge_output_step
+from app.guardrails.pii_gate import check_pii, mensagem_bloqueio
+from app.utils.transcription import transcrever_audio
+from app.utils.image_ocr import extrair_texto_imagem
+from app.tools.tts_tools import audioTTS
+# --- Step Executors ---
 
 # --- Step Executors ---
+
+
+def guardrail_pii_executor(step_input: StepInput) -> StepOutput:
+    """Primeiro step: converte mídia em texto e barra PII antes dos agentes.
+
+    Transcreve áudio + lê texto de imagem (OCR), junta com o texto do usuário e
+    roda o check_pii. Se detectar PII, para o fluxo (stop=True) e devolve o aviso.
+    """
+    texto = step_input.get_input_as_string() or ""
+    texto_audio = transcrever_audio(step_input.audio)
+    texto_imagem = extrair_texto_imagem(step_input.images)
+
+    tipos_pii = check_pii(f"{texto}\n{texto_audio}\n{texto_imagem}")
+    if tipos_pii:
+        aviso = mensagem_bloqueio(tipos_pii)
+        # Se o usuário mandou áudio, responde o aviso em áudio.
+        if step_input.audio:
+            try:
+                resultado = audioTTS(aviso)
+                if resultado.audios:
+                    return StepOutput(content=aviso, audio=resultado.audios, stop=True)
+            except Exception:
+                pass  # TTS falhou → cai no aviso em texto abaixo
+        return StepOutput(content=aviso, stop=True)
 
 
 def is_first_interaction(step_input: StepInput, session_state: Dict[str, Any]) -> bool:
@@ -134,6 +163,7 @@ pasto_legal_workflow = Workflow(
     add_workflow_history_to_steps=True,
     num_history_runs=1,
     steps=[
+        Step(name="Guardrail PII", executor=guardrail_pii_executor),
         Condition(
             name="Is First Interaction",
             evaluator=is_first_interaction,
