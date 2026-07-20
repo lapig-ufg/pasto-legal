@@ -16,3 +16,6 @@ psycopg-binary
 sqlalchemy
 python-multipart
 ffmpeg-python
+ollama
+openai
+duckdb
