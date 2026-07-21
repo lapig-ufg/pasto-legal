@@ -24,7 +24,6 @@ from app.utils.interfaces.user_mood import UserMood
 from app.utils.interfaces.user_persona import PersonaUpdate, CommunicationPreference, UserPersona
 
 
-
 # --- Constants ---
 
 # Step name used by _forward_response to look up the Intent Router output.
@@ -184,21 +183,6 @@ def satisfaction_branch_selector(step_input: StepInput, session_state: Dict[str,
     return ["Neutral"]
 
 
-def is_dissatisfied_evaluator(step_input: StepInput, session_state: Dict[str, Any]) -> bool:
-    """Condition evaluator that returns True when the user is dissatisfied
-    (satisfaction level <= 2), triggering the remediation agent.
-    """
-    user_mood = session_state.get("user_mood", None)
-    if user_mood is None:
-        return False
-
-    satisfaction = user_mood.get("satisfaction", None)
-    if satisfaction is None:
-        return False
-
-    return True
-
-
 def manage_persona(step_input: StepInput, session_state: Dict[str, Any]) -> StepOutput:
     """Conditionally run the persona manager agent and apply persona updates.
 
@@ -317,8 +301,18 @@ feedback_workflow = Workflow(
 
 # --- Merge Condition ---
 
+def _is_dissatisfied(user_mood: UserMood) -> bool:
+    """Condition evaluator that returns True when the user is dissatisfied
+    (satisfaction level <= 2), triggering the remediation agent.
+    """
+    satisfaction = user_mood.get("satisfaction", None)
+    if satisfaction is None:
+        return False
 
-def _forward_response(step_input: StepInput, session_state: Dict[str, Any]) -> StepOutput:
+    return True
+
+
+def _forward_response(step_input: StepInput) -> StepOutput:
     """Extract the response from the Intent Router step to forward it
     as the final workflow output.
 
@@ -326,7 +320,7 @@ def _forward_response(step_input: StepInput, session_state: Dict[str, Any]) -> S
     and returns its deepest content. Falls back to the last step output if
     the Intent Router step is not found.
     """
-    router_output = step_input.get_step_output(step_name=INTENT_ROUTER_STEP_NAME)
+    
     if router_output is None:
         log_debug(f"_forward_response: {INTENT_ROUTER_STEP_NAME} step not found, falling back to last step")
         if not step_input.previous_step_outputs:
@@ -334,26 +328,27 @@ def _forward_response(step_input: StepInput, session_state: Dict[str, Any]) -> S
         last_output = list(step_input.previous_step_outputs.values())[-1]
         return last_output if not last_output.steps else last_output.steps[-1]
 
-    print(router_output, flush=True)
-
     if router_output.steps:
         return router_output.steps[-1]
     return router_output
 
+# TODO: Follow from here
+def _merge_output_executor(step_input: StepInput, session_state: Dict[str, Any]):
+    router_output = step_input.get_step_output(step_name=INTENT_ROUTER_STEP_NAME)
 
-merge_output_step = Condition(
+    if router_output is None:
+        log_error("_merge_output_executor: Intent Router step not found, skipping...")
+        return StepOutput(content="Desculpa, houve um erro durante a execução. Tente novamente mais tarde!")
+
+    user_mood_raw = session_state.get("user_mood", None)
+    if user_mood_raw is not None:
+        user_mood = UserMood.model_validate(user_mood_raw)
+
+        
+
+    return _forward_response(step_input)
+
+merge_output_step = Step(
     name="Merge Dissatisfied Check",
-    evaluator=is_dissatisfied_evaluator,
-    steps=[
-        Step(
-            name="Remediation Agent",
-            agent=remediation_agent,
-        ),
-    ],
-    else_steps=[
-        Step(
-            name="Forward Response",
-            executor=_forward_response,
-        ),
-    ],
+    executor=_merge_output_executor
 )
