@@ -33,7 +33,10 @@ from app.workflows.summarization_workflow import summarization_workflow
 from app.agents.welcoming_agent import welcoming_agent
 from app.database.session import SessionLocal
 from app.database.models import UserTermsAcceptance
-
+from app.guardrails.pii_gate import check_pii, mensagem_bloqueio
+from app.utils.transcription import transcrever_audio
+from app.utils.image_ocr import extrair_texto_imagem
+from app.tools.tts_tools import audioTTS
 
 # --- Step Executors ---
 
@@ -243,7 +246,24 @@ def _agent_executor_factory(
 
     return _agent_executor
 
+def guardrail_pii_executor(step_input: StepInput) -> StepOutput:
+    """Converte mídia em texto e barra PII antes dos agentes (#121)."""
+    texto = step_input.get_input_as_string() or ""
+    texto_audio = transcrever_audio(step_input.audio)
+    texto_imagem = extrair_texto_imagem(step_input.images)
 
+    tipos_pii = check_pii(f"{texto}\n{texto_audio}\n{texto_imagem}")
+    if tipos_pii:
+        aviso = mensagem_bloqueio(tipos_pii)
+        if step_input.audio:
+            try:
+                resultado = audioTTS(aviso)
+                if resultado.audios:
+                    return StepOutput(content=aviso, audio=resultado.audios, stop=True)
+            except Exception:
+                pass
+        return StepOutput(content=aviso, stop=True)
+    
 # --- Workflow Definition ---
 
 pasto_legal_workflow = Workflow(
@@ -252,6 +272,7 @@ pasto_legal_workflow = Workflow(
     add_workflow_history_to_steps=True,
     num_history_runs=1,
     steps=[
+        Step(name="Guardrail PII", executor=guardrail_pii_executor),
         Condition(
             name="Onboarding Check",
             evaluator=_needs_onboarding,
