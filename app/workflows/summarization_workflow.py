@@ -1,78 +1,15 @@
-"""Summarization workflow for the Pasto Legal multi-agent system.
-
-Periodically condenses conversation history into a running summary
-to keep the context window manageable while preserving key information.
-
-External interface:
-    summarization_workflow  -- the Step instance imported by main_workflow.
-"""
-
-import textwrap
 from typing import Any, Dict, Optional
 
-from agno.agent import Agent
-from agno.run import RunContext
 from agno.utils.log import log_debug, log_error
 from agno.workflow import Step
 from agno.workflow.types import StepInput, StepOutput
 
-from app.configs.config import config
+from app.agents.summary_agent import summary_agent
 from app.utils.interfaces.input_manager import InputManager
+
 
 SUMMARY_THRESHOLD = 6
 HISTORY_WINDOW = 4
-
-
-def get_instructions(run_context: RunContext) -> str:
-    session_state = run_context.session_state or {}
-    summary_state = InputManager.model_validate(
-        session_state.get("summary_state", {})
-    )
-
-    summary_prompt = ""
-    if summary_state.summary:
-        summary_prompt = textwrap.dedent(f"""\
-            <resumo-anterior>
-            {summary_state.summary}
-            </resumo-anterior>""")
-
-    instructions = textwrap.dedent(f"""\
-        # Perfil e Objetivo
-        Você é um agente especializado em resumo e condensação de contexto conversacional.
-        Sua função é produzir um resumo compacto que preserve o essencial para a continuidade
-        da conversa, descartando detalhes supérfluos e informações que não são mais relevantes.
-
-        # Tarefa
-        Você receberá como entrada um histórico de interações entre o usuário e o sistema.
-        Analise esse histórico e produza um novo resumo que:
-        - Mantenha o tópico principal da conversa e a intenção do usuário.
-        - Preserve dados concretos citados pelo usuário (nomes de propriedades, números,
-          preferências, localidades, etc.).
-        - Remova informações que o usuário já abandonou (mudança de assunto, correções, etc.).
-        - Integre, se existir, o resumo anterior como base — atualizando-o com as novas
-          informações e removendo o que perdeu relevância.
-
-        # Regras
-        - O resumo final deve ter no máximo 1000 tokens.
-        - Não copie trechos literais longos; reformule de forma concisa.
-        - Priorize contexto e intenção, não decore diálogos.
-        - Se o usuário mudou de assunto, descarte o contexto anterior que não é mais útil.
-        - Mantenha referências a dados gerados pelo sistema que podem ser úteis ou
-          consultados pelo usuário na conversa atual.
-
-        # Formato de Saída
-        Produza apenas o texto do resumo, sem títulos, marcadores ou explicações adicionais.
-
-        {summary_prompt}""")
-
-    return instructions
-
-
-summary_agent = Agent(
-    name="Summary Agent",
-    model=config.model,
-    instructions=get_instructions,
-)
 
 
 def summarization_executor(
@@ -130,7 +67,7 @@ def summarization_executor(
             if isinstance(response.content, str)
             else str(response.content)
         )
-        summary_state.runs_count = 1
+        summary_state.runs_count = 2
     else:
         log_debug("summarization_executor: agent returned empty content")
         summary_state.runs_count += 1

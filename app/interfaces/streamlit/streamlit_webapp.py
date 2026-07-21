@@ -9,8 +9,8 @@ from typing import List
 from agno.media import Image, Audio
 
 from app.configs.config import config
-from app.utils.debug_helpers import extract_workflow_debug_data, extract_session_state
-from app.utils.debug_panel import render_debug_panel
+from app.interfaces.streamlit.debug_helpers import extract_workflow_debug_data, extract_session_state
+from app.interfaces.streamlit.debug_panel import render_debug_panel
 from app.workflows.main_workflow import pasto_legal_workflow
 
 st.set_page_config(page_title="Pasto Legal", page_icon="P")
