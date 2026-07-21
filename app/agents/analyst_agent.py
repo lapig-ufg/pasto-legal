@@ -59,6 +59,7 @@ def get_instructions(run_context: RunContext):
         - Gere imagens apenas quando explicitamente pedido pelo usuário.
         - Gere apenas um tipo de imagem por vez. Nunca gere mais de um tipo de imagem por vez.
         - Use markdown no formato do WhatsApp. Não use bullet points.
+        - Se o usuário solicitar áudio, responda normalmente em texto — o sistema fará a conversão.
         <instructions>
                                                                   
         <workflow>                    

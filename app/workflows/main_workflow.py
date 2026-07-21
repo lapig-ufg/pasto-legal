@@ -27,7 +27,9 @@ from app.agents import (
 )
 from app.database.agno_db import db
 from app.utils.interfaces.input_manager import InputManager
+from app.utils.interfaces.user_persona import UserPersona
 from app.utils.interfaces.workflow_state import WorkflowRouteEnum, WorkflowState
+from app.utils.scripts.audio_tts import generate_speech
 from app.workflows.feedback_workflow import feedback_workflow, merge_output_step
 from app.workflows.summarization_workflow import summarization_workflow
 from app.agents.welcoming_agent import welcoming_agent
@@ -132,6 +134,18 @@ def _final_output(step_input: StepInput, session_state: Dict[str, Any]) -> StepO
 
     while last_output.steps:
         last_output = last_output.steps[-1]
+
+    if last_output.audio:
+        audio_transcript = "\n\n".join(audio.transcript for audio in last_output.audio)
+
+        print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAa", flush=True)
+        print(audio_transcript, flush=True)
+
+        last_output.content = audio_transcript 
+        last_output.audio = [generate_speech(
+            text=audio_transcript,
+            user_id=step_input.workflow_session.user_id
+        )]
 
     return last_output
 
@@ -258,7 +272,7 @@ pasto_legal_workflow = Workflow(
             steps=[
                 Step(
                     name="Welcoming Agent",
-                    agent=welcoming_agent,
+                    executor=_agent_executor_factory(welcoming_agent),
                 ),
             ],
             else_steps=[

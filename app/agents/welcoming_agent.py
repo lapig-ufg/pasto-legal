@@ -1,7 +1,11 @@
 import textwrap
+
 from agno.agent import Agent
+
 from app.configs.config import config
+from app.tools.tts_tools import audioTTS
 from app.tools.onboarding_tools import accept_terms_and_conditions
+
 
 _TERMOS_TEXT = """
 Termos de Uso
@@ -75,7 +79,10 @@ welcoming_agent = Agent(
         TERMOS DE REFERÊNCIA (Use este texto APENAS para responder às perguntas do usuário sobre os termos):
         {_TERMOS_TEXT}
     """).strip(),
-    tools=[accept_terms_and_conditions],
+    tools=[
+        audioTTS,
+        accept_terms_and_conditions
+    ],
     model=config.model,
     debug_mode=config.DEBUG_MODE
 )

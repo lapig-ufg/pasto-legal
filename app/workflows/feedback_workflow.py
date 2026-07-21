@@ -251,6 +251,8 @@ def manage_persona(step_input: StepInput, session_state: Dict[str, Any]) -> Step
                 user_persona.role = persona_update.role
             if persona_update.regionality is not None:
                 user_persona.regionality = persona_update.regionality
+            if persona_update.audio_preference is not None:
+                user_persona.audio_preference = persona_update.audio_preference
 
             # Apply preference updates (add new, update existing)
             existing_prefs = {p.key: i for i, p in enumerate(user_persona.preferences)}

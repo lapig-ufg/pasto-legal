@@ -4,16 +4,30 @@ from pydantic import BaseModel, Field
 
 
 class Preferences(BaseModel):
-    key: str = Field(description="A chave ou categoria da preferência (ex: 'hobbie', 'comida')")
-    description: str = Field(description="A descrição detalhada da preferência")  # Corrigido 'FIeld'
+    key: str = Field(
+        description="A chave ou categoria da preferência (ex: 'tom_voz', 'tamanho_resposta')"
+    )
+    description: str = Field(
+        description="A descrição detalhada da preferência"
+    )
 
 
 class UserPersona(BaseModel):
-    name: Optional[str] = Field(default="Desconhecido (Tente descobrir de forma sutíl)")
-    role: Optional[str] = Field(default="Desconhecido (Tente descobrir de forma sutíl)")
-    regionality: Optional[str] = Field(default="Desconhecida (Tente descobrir de forma sutíl)")
-    
-    preferences: List[Preferences] = Field(default_factory=list)
+    name: Optional[str] = Field(
+        default="Ainda não conhecido"
+    )
+    role: Optional[str] = Field(
+        default="Ainda não conhecido"
+    )
+    regionality: Optional[str] = Field(
+        default="Ainda não conhecido"
+    )
+    audio_preference: Optional[bool] = Field(
+        default=False,
+    )
+    preferences: List[Preferences] = Field(
+        default_factory=list
+    )
 
     def __str__(self) -> str:
         preferences_text = "".join(
@@ -45,6 +59,10 @@ class PersonaUpdate(BaseModel):
     regionality: Optional[str] = Field(
         default=None,
         description="Updated city/state/region, or None to keep current.",
+    )
+    audio_preference: Optional[bool] = Field(
+        default=False,
+        description="User preference for audio responses."
     )
     preferences: List[Preferences] = Field(
         default_factory=list,

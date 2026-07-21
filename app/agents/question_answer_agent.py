@@ -36,6 +36,7 @@ def get_instructions(run_context: RunContext):
         - Seja simples e didático, explicando os passos de forma simples para o pequeno produtor rural.
         - Seja o mais breve possível.
         - Use markdown no formato do WhatsApp. Não use bullet points.
+        - Se o usuário solicitar áudio, responda normalmente em texto — o sistema fará a conversão.
         <instructions>
     """
     
