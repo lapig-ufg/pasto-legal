@@ -9,11 +9,11 @@ from typing import List
 from agno.media import Image, Audio
 
 from app.configs.config import config
-from app.utils.debug_helpers import extract_workflow_debug_data, extract_session_state
-from app.utils.debug_panel import render_debug_panel
+from app.interfaces.streamlit.debug_helpers import extract_workflow_debug_data, extract_session_state
+from app.interfaces.streamlit.debug_panel import render_debug_panel
 from app.workflows.main_workflow import pasto_legal_workflow
 
-st.set_page_config(page_title="Pasto Legal", page_icon="🐂")
+st.set_page_config(page_title="Pasto Legal", page_icon="P")
 
 DB_FILE = "users_db.json"
 
@@ -69,13 +69,13 @@ if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
 if not st.session_state["logged_in"]:
-    st.title("🔐 Login - Pasto Legal")
+    st.title("Login - Pasto Legal")
 
     col1, col2, col3 = st.columns(3)
 
     # 1. Lista de Usuários Armazenados
     with col1:
-        st.subheader("📂 Histórico")
+        st.subheader("Historico")
         stored_users = get_users()
         
         if stored_users:
@@ -105,7 +105,7 @@ if not st.session_state["logged_in"]:
 
     # 3. Entrar Anonimamente
     with col3:
-        st.subheader("🕵️ Anônimo")
+        st.subheader("Anonimo")
         if st.button("Entrar Anonimamente"):
             anon_id = str(uuid.uuid4())
             login_user(anon_id, "Visitante Anônimo")
@@ -118,7 +118,7 @@ if not st.session_state["logged_in"]:
 
 with st.sidebar:
     st.sidebar.title("Configurações")
-    st.write(f"👤 **Usuário:** {st.session_state.get('user_name', 'Desconhecido')}")
+    st.write(f"**Usuario:** {st.session_state.get('user_name', 'Desconhecido')}")
     st.caption(f"ID: {st.session_state['session_id']}")
     st.divider()
     if st.button("Sair / Trocar Usuário"):
@@ -128,14 +128,14 @@ with st.sidebar:
     if config.DEBUG_MODE:
         st.divider()
         st.session_state.debug_mode_enabled = st.toggle(
-            "🐛 Debug Mode",
+            "Debug Mode",
             value=st.session_state.get("debug_mode_enabled", True),
             key="debug_mode_toggle",
         )
         if st.session_state.debug_mode_enabled:
             render_debug_panel()
 
-st.title(f"🐂 Olá, {st.session_state.get('user_name', '')}")
+st.title(f"Ola, {st.session_state.get('user_name', '')}")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -180,7 +180,7 @@ if "audio_uploader_key" not in st.session_state:
     st.session_state.audio_uploader_key = 0
 
 audio_input_value = st.audio_input(
-    "🎤 Gravar áudio",
+    "Gravar audio",
     key=f"audio_uploader_{st.session_state.audio_uploader_key}",
     )
 
@@ -188,7 +188,7 @@ chat_input_value = st.chat_input("Pergunte sobre pastagem...")
 
 col_btn, _ = st.columns([0.4, 0.6])
 with col_btn:
-    loc_input_value = st.button("📍 Enviar Localização da Propriedade")
+    loc_input_value = st.button("Enviar Localizacao da Propriedade")
 
 user_query = None
 

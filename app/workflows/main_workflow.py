@@ -11,9 +11,10 @@ External interface:
 
 # --- Imports ---
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
-from agno.utils.log import log_debug
+from agno.agent import Agent
+from agno.utils.log import log_debug, log_error
 from agno.workflow import Condition, Parallel, Router, Step, Workflow
 from agno.workflow.types import StepInput, StepOutput
 
@@ -25,12 +26,17 @@ from app.agents import (
     small_talk_agent,
 )
 from app.database.agno_db import db
+from app.utils.interfaces.input_manager import InputManager
 from app.utils.interfaces.workflow_state import WorkflowRouteEnum, WorkflowState
 from app.workflows.feedback_workflow import feedback_workflow, merge_output_step
+<<<<<<< HEAD
 from app.guardrails.pii_gate import check_pii, mensagem_bloqueio
 from app.utils.transcription import transcrever_audio
 from app.utils.image_ocr import extrair_texto_imagem
 from app.tools.tts_tools import audioTTS
+=======
+from app.workflows.summarization_workflow import summarization_workflow
+>>>>>>> origin/develop
 from app.agents.welcoming_agent import welcoming_agent
 from app.database.session import SessionLocal
 from app.database.models import UserTermsAcceptance
@@ -38,6 +44,7 @@ from app.database.models import UserTermsAcceptance
 
 # --- Step Executors ---
 
+<<<<<<< HEAD
 
 def guardrail_pii_executor(step_input: StepInput) -> StepOutput:
     """Primeiro step: converte mídia em texto e barra PII antes dos agentes.
@@ -66,35 +73,39 @@ def guardrail_pii_executor(step_input: StepInput) -> StepOutput:
 def needs_onboarding(step_input: StepInput, session_state: Dict[str, Any]) -> bool:
     """
     Determines whether the user needs to go through onboarding. 
+=======
+def _needs_onboarding(step_input: StepInput, session_state: Dict[str, Any]) -> bool:
+    """Determines whether the user needs to go through onboarding.
+>>>>>>> origin/develop
     Returns True if the terms have NOT yet been accepted.
     """
-
     if session_state.get("workflow_state") is None:
         session_state["workflow_state"] = WorkflowState().model_dump()
 
     if session_state.get("terms_accepted"):
         return False
-        
-    user_id = session_state.get("user_id") 
-    if not user_id:
-        return True 
 
-    db = SessionLocal()
+    user_id = session_state.get("user_id")
+    if not user_id:
+        return True
+
+    db_session = SessionLocal()
     try:
-        record = db.query(UserTermsAcceptance).filter(
-            UserTermsAcceptance.user_id == user_id, 
-            UserTermsAcceptance.accepted == True
+        record = db_session.query(UserTermsAcceptance).filter(
+            UserTermsAcceptance.user_id == user_id,
+            UserTermsAcceptance.accepted == True,
         ).first()
-        
+
         if record:
             session_state["terms_accepted"] = True
             return False
-            
+
         return True
     finally:
-        db.close()
+        db_session.close()
 
-def route_selector(step_input: StepInput, session_state: Dict[str, Any]) -> str:
+
+def _route_selector(step_input: StepInput, session_state: Dict[str, Any]) -> str:
     """Selector for the Intent Router. Runs the Router Agent to classify
     the user's message and returns the matching route enum value.
 
@@ -117,16 +128,16 @@ def route_selector(step_input: StepInput, session_state: Dict[str, Any]) -> str:
         return workflow_state.route.value
 
     try:
-        user_msg = step_input.get_input_as_string()
+        user_msg = step_input.get_input_as_string() or ""
         history_data = step_input.get_workflow_history(num_runs=1)
-        
-        final_message=""
+
+        final_message = ""
         if history_data:
             last_user_msg, last_system_response = history_data[0]
-            final_message+="### Talk History ###"
-            final_message+=f"User: {last_user_msg}"
-            final_message+=f"System: {last_system_response}"
-        final_message=f"User: {user_msg}"
+            final_message += "### Talk History ###\n"
+            final_message += f"User: {last_user_msg}\n"
+            final_message += f"System: {last_system_response}\n"
+        final_message += f"User: {user_msg}"
 
         response = router_agent.run(final_message)
         route_data = response.content
@@ -136,7 +147,7 @@ def route_selector(step_input: StepInput, session_state: Dict[str, Any]) -> str:
 
         if isinstance(route_data, dict) and "route" in route_data:
             return route_data["route"]
-        
+
         if isinstance(route_data, str) and len(route_data.split(" ")) == 1:
             return route_data
 
@@ -146,25 +157,129 @@ def route_selector(step_input: StepInput, session_state: Dict[str, Any]) -> str:
     return "default"
 
 
-def _extract_last_step_output(step_input: StepInput, session_state: Dict[str, Any]) -> StepOutput:
-    """Extract the deepest content from the last step in previous_step_outputs.
-
-    This is a utility executor that extracts the final meaningful output
-    from the workflow's preceding steps, used to normalize the workflow's
-    output after branching (Condition/Router/Parallel).
-
-    Falls back to an empty StepOutput if no previous outputs are available.
+def _final_output(step_input: StepInput, session_state: Dict[str, Any]) -> StepOutput:
+    """Extract the deepest content from the last step output, drilling
+    through nested steps (Parallel, Condition, Router) until reaching
+    a leaf StepOutput with no sub-steps.
     """
     if not step_input.previous_step_outputs:
-        log_debug("_extract_last_step_output: no previous_step_outputs available")
+        log_debug("_final_output: no previous_step_outputs available")
         return StepOutput(content="")
 
     last_output = list(step_input.previous_step_outputs.values())[-1]
 
-    if not last_output.steps:
-        return last_output
+    while last_output.steps:
+        last_output = last_output.steps[-1]
 
-    return last_output.steps[-1]
+    return last_output
+
+
+# --- Input Pre-processing ---
+
+
+def _input_pre_processing(
+    step_input: StepInput,
+    session_state: Dict[str, Any],
+    summary: bool,
+    num_runs: Optional[int] = None,
+) -> str:
+    """Build the enriched input string for an agent step.
+
+    Prepends the conversation summary (if available and requested) and a
+    configurable number of history runs, then appends the current user input.
+
+    Args:
+        step_input: The step input containing the user message and history.
+        session_state: The current session state dict.
+        summary: Whether to include the running summary in the input.
+        num_runs: Override for how many history runs to include.
+            If None, uses ``runs_count`` from InputManager.
+
+    Returns:
+        The assembled input string for the agent.
+    """
+    input_manager = InputManager.model_validate(
+        session_state.get("summary_state", {})
+    )
+
+    parts: list[str] = []
+
+    if summary and input_manager.summary:
+        parts.append(f"[Resumo do Histórico]\n{input_manager.summary}\n")
+
+    effective_runs = num_runs if num_runs is not None else input_manager.runs_count
+    history_msgs = step_input.get_workflow_history(num_runs=effective_runs)
+
+    if history_msgs:
+        history_block = "[Histórico de Interações]"
+        for idx, msg in enumerate(history_msgs):
+            user_msg, assistant_msg = msg
+            history_block += (
+                f"\n[Iteração {idx}]\n"
+                f"Usuário: {user_msg}\n"
+                f"Assistente: {assistant_msg}\n"
+            )
+        parts.append(history_block)
+
+    user_input = step_input.get_input_as_string() or ""
+    if user_input:
+        parts.append(f"[Input do Usuário]\n{user_input}")
+
+    return "\n".join(parts)
+
+
+def _agent_executor_factory(
+    agent: Agent,
+    summary: bool = True,
+    num_runs: Optional[int] = None,
+):
+    """Create a step executor that pre-processes input before running an agent.
+
+    The executor assembles the input string via ``_input_pre_processing``
+    (which prepends summary and history context), then runs the agent with
+    the full session state so that agents with dynamic instructions can
+    access up-to-date context.
+
+    Args:
+        agent: The Agent instance to run.
+        summary: Whether to include the running summary in the input.
+        num_runs: Override for how many history runs to include.
+
+    Returns:
+        A callable matching the ``StepExecutor`` signature
+        ``(step_input, session_state) -> StepOutput``.
+    """
+    def _agent_executor(
+        step_input: StepInput,
+        session_state: Dict[str, Any],
+    ) -> StepOutput:
+        final_input = _input_pre_processing(
+            step_input, session_state, summary, num_runs
+        )
+
+        try:
+            response = agent.run(
+                final_input,
+                session_state=session_state,
+            )
+        except Exception as exc:
+            log_error(f"{agent.name} failed: {exc}")
+            return StepOutput(
+                content="Desculpa, houve um erro durante a execução. Tente novamente mais tarde!"
+            )
+
+        content = response.content if response.content else ""
+
+        return StepOutput(
+            content=content,
+            images=response.images if response.images else None,
+            videos=response.videos if response.videos else None,
+            audio=response.audio if response.audio else None,
+            files=response.files if response.files else None,
+            metrics=response.metrics if response.metrics else None,
+        )
+
+    return _agent_executor
 
 
 # --- Workflow Definition ---
@@ -177,55 +292,52 @@ pasto_legal_workflow = Workflow(
     steps=[
         Step(name="Guardrail PII", executor=guardrail_pii_executor),
         Condition(
-            name="Onboarding Check", 
-            evaluator=needs_onboarding, 
+            name="Onboarding Check",
+            evaluator=_needs_onboarding,
             steps=[
                 Step(
                     name="Welcoming Agent",
-                    agent=welcoming_agent, 
+                    agent=welcoming_agent,
                 ),
             ],
             else_steps=[
                 Parallel(
+                    summarization_workflow,
                     feedback_workflow,
                     Router(
                         name="Intent Router",
-                        selector=route_selector,
+                        selector=_route_selector,
                         choices=[
                             Step(
                                 name="default",
-                                executor=lambda x: None,
+                                executor=lambda step_input: None,
                             ),
                             Step(
                                 name=WorkflowRouteEnum.ANALYST.value,
-                                agent=analyst_agent,
+                                executor=_agent_executor_factory(analyst_agent),
                             ),
                             Step(
                                 name=WorkflowRouteEnum.MANAGER.value,
-                                agent=manager_agent,
+                                executor=_agent_executor_factory(manager_agent, summary=False, num_runs=1),
                             ),
                             Step(
                                 name=WorkflowRouteEnum.QUESTION_ANSWER.value,
-                                agent=question_answer_agent,
+                                executor=_agent_executor_factory(question_answer_agent, summary=False, num_runs=1),
                             ),
                             Step(
                                 name=WorkflowRouteEnum.SMALL_TALK.value,
-                                agent=small_talk_agent,
+                                executor=_agent_executor_factory(small_talk_agent, summary=False, num_runs=1),
                             ),
                         ],
                     ),
                     name="Feedback and Routing",
                 ),
                 merge_output_step,
-                Step(
-                    name="Extract Last Output",
-                    executor=_extract_last_step_output,
-                ),
             ],
         ),
         Step(
-            name="Extract Last Output",
-            executor=_extract_last_step_output,
+            name="Final Output",
+            executor=_final_output,
         ),
     ],
 )

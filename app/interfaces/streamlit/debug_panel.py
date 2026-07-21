@@ -9,110 +9,25 @@ from typing import Any, Dict, List
 import streamlit as st
 
 
-def _render_key_value(key: str, value: Any) -> None:
-    """Render a single key-value pair with appropriate formatting.
-
-    Known session state keys get human-readable labels.
-    Lists and dicts are rendered in expanders; scalars inline.
-    """
-    # Human-readable labels for known keys
-    LABELS = {
-        "is_greeted": "👋 Greeted",
-        "workflow_route": "🔀 Workflow Route",
-        "registration_state": "📋 Registration State",
-        "all_properties": "🏡 All Properties",
-        "candidate_properties": "📝 Candidate Properties",
-        "user_mood": "😊 User Mood",
-        "user_persona": "👤 User Persona",
-        "terms_acceptance": "📜 Terms Accepted",
-        "delivered_media": "🖼️ Delivered Media",
-        "workflow_id": "🔑 Workflow ID",
-        "workflow_name": "📛 Workflow Name",
-        "current_user_id": "👤 Current User ID",
-        "current_session_id": "🔗 Current Session ID",
-        "current_run_id": "🏃 Current Run ID",
-    }
-
-    label = LABELS.get(key, f"🔑 {key}")
-
-    if value is None or value == "None":
-        st.caption(f"{label}: `None`")
-        return
-
-    # Lists — show count and expandable details
-    if isinstance(value, list):
-        with st.expander(f"{label} ({len(value)} items)", expanded=False):
-            if len(value) == 0:
-                st.caption("Empty list")
-            else:
-                for i, item in enumerate(value):
-                    if isinstance(item, dict):
-                        st.json(item)
-                    else:
-                        st.text(str(item))
-        return
-
-    # Dicts — show in expander as JSON
-    if isinstance(value, dict):
-        with st.expander(f"{label}", expanded=False):
-            st.json(value)
-        return
-
-    # Booleans — use colored badges
-    if isinstance(value, bool):
-        if value:
-            st.success(f"{label}: ✅ True")
-        else:
-            st.error(f"{label}: ❌ False")
-        return
-
-    # Strings — show inline
-    if isinstance(value, str):
-        display = value if len(value) <= 100 else value[:100] + "..."
-        st.caption(f"{label}: `{display}`")
-        return
-
-    # Numbers — show inline
-    if isinstance(value, (int, float)):
-        st.caption(f"{label}: `{value}`")
-        return
-
-    # Fallback
-    st.caption(f"{label}: `{str(value)[:100]}`")
-
-
 def render_session_state_tab(session_state: Dict[str, Any]) -> None:
     """Tab 1: Session State Inspector.
 
-    Shows the current workflow session state with human-readable formatting
-    for known keys and raw values for unknown keys.
+    Dynamically renders each key in session_state as a JSON expander.
+    New keys appear automatically without code changes.
     """
     if not session_state:
         st.info("No session state data yet. Send a message to populate.")
         return
 
-    st.subheader("🔑 Session State")
+    st.subheader("Session State")
 
-    # Priority keys shown first
-    priority_keys = [
-        "is_greeted", "workflow_route", "registration_state",
-        "all_properties", "candidate_properties",
-        "user_mood", "user_persona", "terms_acceptance",
-        "delivered_media",
-    ]
-
-    # Render priority keys first
-    for key in priority_keys:
-        if key in session_state:
-            _render_key_value(key, session_state[key])
-
-    # Render remaining keys
-    remaining = {k: v for k, v in session_state.items() if k not in priority_keys}
-    if remaining:
-        st.divider()
-        st.caption("Other keys:")
-        for key, value in remaining.items():
-            _render_key_value(key, value)
+    for key in sorted(session_state.keys()):
+        value = session_state[key]
+        with st.expander(str(key), expanded=False):
+            if isinstance(value, (dict, list)):
+                st.json(value)
+            else:
+                st.json({"value": value})
 
 
 def render_agent_routing_tab(routing_data: List[Dict[str, Any]]) -> None:
@@ -125,7 +40,7 @@ def render_agent_routing_tab(routing_data: List[Dict[str, Any]]) -> None:
         st.info("No agent routing data yet. Send a message to populate.")
         return
 
-    st.subheader("🔀 Agent Routing Trace")
+    st.subheader("Agent Routing Trace")
 
     for i, agent_data in enumerate(routing_data):
         agent_name = agent_data.get("agent_name", "unknown")
@@ -134,12 +49,11 @@ def render_agent_routing_tab(routing_data: List[Dict[str, Any]]) -> None:
         status = agent_data.get("status", "?")
         content_preview = agent_data.get("content", "")
 
-        # Status icon
-        status_icon = "✅" if status == "RunStatus.completed" else "⚠️" if "error" in status.lower() else "⏳"
+        status_icon = "[OK]" if status == "RunStatus.completed" else "[ERR]" if "error" in status.lower() else "[...]"
 
         with st.expander(
             f"{status_icon} Step {i + 1}: {agent_name}",
-            expanded=(i == len(routing_data) - 1),  # Expand last step by default
+            expanded=(i == len(routing_data) - 1),
         ):
             col1, col2 = st.columns(2)
             with col1:
@@ -152,21 +66,19 @@ def render_agent_routing_tab(routing_data: List[Dict[str, Any]]) -> None:
             if content_preview:
                 st.text(content_preview[:500])
 
-            # Show tool calls for this agent
             tool_calls = agent_data.get("tool_calls", [])
             if tool_calls:
                 st.caption(f"**Tools called:** {len(tool_calls)}")
                 for tc in tool_calls:
-                    tool_label = f"🔧 {tc.get('tool_name', '?')}"
-                    tc_status = "✅" if tc.get("status") == "success" else "❌"
+                    tool_label = tc.get("tool_name", "?")
+                    tc_status = "[OK]" if tc.get("status") == "success" else "[FAIL]"
                     st.text(f"  {tc_status} {tool_label}")
                     if tc.get("tool_args"):
                         st.json(tc["tool_args"])
 
-            # Reasoning
             reasoning = agent_data.get("reasoning_content")
             if reasoning:
-                with st.expander("🧠 Reasoning", expanded=False):
+                with st.expander("Reasoning", expanded=False):
                     st.text(reasoning)
 
 
@@ -180,7 +92,7 @@ def render_tool_calls_tab(tool_calls: List[Dict[str, Any]]) -> None:
         st.info("No tool calls yet. Use features that trigger tools to populate.")
         return
 
-    st.subheader("🔧 Tool Calls Log")
+    st.subheader("Tool Calls Log")
     st.caption(f"Total: {len(tool_calls)} tool calls in this session")
 
     for i, tc in enumerate(tool_calls):
@@ -189,7 +101,7 @@ def render_tool_calls_tab(tool_calls: List[Dict[str, Any]]) -> None:
         status = tc.get("status", "unknown")
         duration = tc.get("duration")
 
-        status_icon = "✅" if status == "success" else "❌"
+        status_icon = "[OK]" if status == "success" else "[FAIL]"
         duration_text = f" ({duration:.2f}s)" if duration else ""
 
         with st.expander(
@@ -221,7 +133,7 @@ def render_metrics_tab(metrics_list: List[Dict[str, Any]]) -> None:
         st.info("No metrics data yet. Send a message to populate.")
         return
 
-    st.subheader("📊 Metrics")
+    st.subheader("Metrics")
 
     # Current message metrics (last entry)
     current = metrics_list[-1]
@@ -262,7 +174,7 @@ def render_metrics_tab(metrics_list: List[Dict[str, Any]]) -> None:
     if step_metrics:
         st.markdown("**Step Metrics**")
         for step_name, sm in step_metrics.items():
-            with st.expander(f"📦 {step_name}", expanded=False):
+            with st.expander(f"{step_name}", expanded=False):
                 st.json(sm)
 
     # Cumulative metrics
@@ -295,15 +207,14 @@ def render_messages_tab(messages: List[Dict[str, Any]]) -> None:
         st.info("No messages yet. Send a message to populate.")
         return
 
-    st.subheader("💬 Message History")
+    st.subheader("Message History")
     st.caption(f"Total: {len(messages)} messages in this session")
 
-    # Role-based coloring
-    ROLE_COLORS = {
-        "system": "🔵",
-        "user": "🟢",
-        "assistant": "🟣",
-        "tool": "🟡",
+    ROLE_LABELS = {
+        "system": "[SYS]",
+        "user": "[USR]",
+        "assistant": "[AST]",
+        "tool": "[TOOL]",
     }
 
     for i, msg in enumerate(messages):
@@ -312,10 +223,10 @@ def render_messages_tab(messages: List[Dict[str, Any]]) -> None:
         name = msg.get("name")
         agent_name = msg.get("agent_name")
 
-        role_icon = ROLE_COLORS.get(role, "⚪")
+        role_tag = ROLE_LABELS.get(role, f"[{role.upper()}]")
 
         # Header line
-        header_parts = [f"{role_icon} **{role.upper()}**"]
+        header_parts = [f"{role_tag} **{role.upper()}**"]
         if agent_name:
             header_parts.append(f"({agent_name})")
         if name:
@@ -349,7 +260,7 @@ def render_debug_panel() -> None:
     messages = st.session_state.get("debug_messages", [])
 
     with st.sidebar:
-        with st.expander("🐛 Debug Panel", expanded=False):
+        with st.expander("Debug Panel", expanded=False):
             # Quick stats at the top
             col1, col2 = st.columns(2)
             with col1:
@@ -358,10 +269,10 @@ def render_debug_panel() -> None:
                 st.metric("Tool Calls", len(tool_calls))
 
             # Refresh session state from workflow (live)
-            if st.button("🔄 Refresh State", key="refresh_debug_state"):
+            if st.button("Refresh State", key="refresh_debug_state"):
                 try:
                     from app.workflows.main_workflow import pasto_legal_workflow
-                    from app.utils.debug_helpers import extract_session_state
+                    from app.interfaces.streamlit.debug_helpers import extract_session_state
                     live_state = pasto_legal_workflow.get_session_state(
                         session_id=st.session_state.session_id
                     )
@@ -372,7 +283,7 @@ def render_debug_panel() -> None:
                     st.error(f"Failed to refresh: {e}")
 
             # Clear debug log button
-            if st.button("🗑️ Clear Debug Log", key="clear_debug"):
+            if st.button("Clear Debug Log", key="clear_debug"):
                 st.session_state.debug_log = []
                 st.session_state.debug_agent_routing = []
                 st.session_state.debug_tool_calls = []
@@ -384,7 +295,7 @@ def render_debug_panel() -> None:
 
             # Tabs for different debug views
             tab_state, tab_routing, tab_tools, tab_metrics, tab_messages = st.tabs(
-                ["🔑 State", "🔀 Routing", "🔧 Tools", "📊 Metrics", "💬 Messages"]
+                ["State", "Routing", "Tools", "Metrics", "Messages"]
             )
 
             with tab_state:
