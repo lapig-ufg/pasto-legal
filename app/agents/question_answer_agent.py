@@ -4,6 +4,7 @@ from agno.run import RunContext
 from agno.agent import Agent
 
 from app.configs.config import config
+from app.tools.tts_tools import generate_speech
 
 
 files = [
@@ -58,4 +59,7 @@ question_answer_agent = Agent(
     use_instruction_tags=False,
     instructions=get_instructions,
     model=config.model,
+    tools=[
+        generate_speech
+    ]
 )

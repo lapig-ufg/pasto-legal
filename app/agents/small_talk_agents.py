@@ -6,6 +6,7 @@ from agno.utils.log import log_debug
 
 from app.configs.config import config
 from app.utils.interfaces.user_persona import UserPersona
+from app.tools.tts_tools import generate_speech
 
 
 def get_instructions(run_context: RunContext) -> str:
@@ -52,5 +53,8 @@ small_talk_agent = Agent(
     name="Small Talk Agent",
     debug_mode=config.DEBUG_MODE,
     instructions=get_instructions,
-    model=config.model
+    model=config.model,
+    tools=[
+        generate_speech
+    ]
 )

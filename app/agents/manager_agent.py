@@ -13,6 +13,7 @@ from app.tools.property_crud_tools import (
     confirm_car_selection,
     cancel_registration
 )
+from app.tools.tts_tools import generate_speech
 from app.utils.interfaces.property_record import RuralProperty
 from app.configs.config import config
 
@@ -136,7 +137,8 @@ manager_agent = Agent(
         start_registration_by_coordinate,
         confirm_car_selection,
         select_car_from_list,
-        cancel_registration
+        cancel_registration,
+        generate_speech
     ],
     markdown=True,
     use_instruction_tags=False,

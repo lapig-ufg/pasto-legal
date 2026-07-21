@@ -138,9 +138,6 @@ def _final_output(step_input: StepInput, session_state: Dict[str, Any]) -> StepO
     if last_output.audio:
         audio_transcript = "\n\n".join(audio.transcript for audio in last_output.audio)
 
-        print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAa", flush=True)
-        print(audio_transcript, flush=True)
-
         last_output.content = audio_transcript 
         last_output.audio = [generate_speech(
             text=audio_transcript,
@@ -234,8 +231,11 @@ def _agent_executor_factory(
         )
 
         try:
+            user_id = step_input.workflow_session.user_id
+
             response = agent.run(
                 final_input,
+                user_id=user_id,
                 session_state=session_state,
             )
         except Exception as exc:

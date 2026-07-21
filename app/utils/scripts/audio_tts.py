@@ -91,10 +91,12 @@ def generate_speech(text: str, user_id: str = "default") -> Audio:
                 
             except ImportError:
                 log_error("pydub não instalado.")
+                
             except Exception as e:
                 log_error(f"Falha na conversão do áudio: {e}.")
                     
     except Exception as e:
         log_error(f"Falha na geração do áudio: {e}.")
-    finally:
-        return None
+    
+    return None
+        

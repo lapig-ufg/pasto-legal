@@ -12,6 +12,7 @@ from app.tools.property_analyst_tools import (
     get_pasture_stats,
     get_topographic_stats
     )
+from app.tools.tts_tools import generate_speech
 from app.utils.interfaces.property_record import RuralProperty
 from app.utils.interfaces.user_persona import UserPersona
 from app.configs.config import config
@@ -59,7 +60,6 @@ def get_instructions(run_context: RunContext):
         - Gere imagens apenas quando explicitamente pedido pelo usuário.
         - Gere apenas um tipo de imagem por vez. Nunca gere mais de um tipo de imagem por vez.
         - Use markdown no formato do WhatsApp. Não use bullet points.
-        - Se o usuário solicitar áudio, responda normalmente em texto — o sistema fará a conversão.
         <instructions>
                                                                   
         <workflow>                    
@@ -79,12 +79,15 @@ analyst_agent = Agent(
     name="Agente Extensionista Agrônomo",
     debug_mode=config.DEBUG_MODE,
     tools=[
-        CalculatorTools(exclude_tools=["is_prime", "factorial"]),
+        CalculatorTools(
+            exclude_tools=["is_prime", "factorial"]
+        ),
         get_pasture_stats,
         get_topographic_stats,
         generate_property_image,
         generate_biomass_image,
-        generate_soil_texture_image
+        generate_soil_texture_image,
+        generate_speech
     ],
     skills=skills,
     use_instruction_tags=False,

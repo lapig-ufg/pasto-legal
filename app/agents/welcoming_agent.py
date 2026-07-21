@@ -3,7 +3,7 @@ import textwrap
 from agno.agent import Agent
 
 from app.configs.config import config
-from app.tools.tts_tools import audioTTS
+from app.tools.tts_tools import generate_speech
 from app.tools.onboarding_tools import accept_terms_and_conditions
 
 
@@ -80,7 +80,7 @@ welcoming_agent = Agent(
         {_TERMOS_TEXT}
     """).strip(),
     tools=[
-        audioTTS,
+        generate_speech,
         accept_terms_and_conditions
     ],
     model=config.model,

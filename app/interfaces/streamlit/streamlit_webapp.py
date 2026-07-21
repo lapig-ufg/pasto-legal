@@ -1,5 +1,4 @@
 import os
-import re
 import uuid
 import json
 import tempfile
@@ -163,7 +162,7 @@ for message in st.session_state.messages:
                 st.image(img, use_container_width=True)
         if "audio" in message:
             for aud in message["audio"]:
-                st.audio(aud)
+                st.audio(aud, format="audio/ogg")
 
 # Inputs do usuário
 if 'file_uploader_key' not in st.session_state:
@@ -250,6 +249,8 @@ if user_query:
             # TODO: Implementar files.
             with st.spinner("Analisando dados e gerando resposta..."):
                 response = pasto_legal_workflow.run(**run_kwargs)
+
+            print(response, flush=True)
             
             if hasattr(response, 'content'):
                 full_response = response.content
@@ -291,59 +292,9 @@ if user_query:
             audio_to_display = []
             if response and hasattr(response, 'audio') and response.audio:
                 audio_to_display.extend(response.audio)
-            
-            # Tenta extrair áudio de tools_output se a lista principal estiver vazia
-            if not audio_to_display and hasattr(response, 'tools_output'):
-                for tool_out in response.tools_output:
-                    # Verifica se é dicionário
-                    if isinstance(tool_out, dict) and 'audio' in tool_out:
-                        audio_to_display.extend(tool_out['audio'])
-                    # Verifica se é objeto (ToolResult/ToolOutput)
-                    elif hasattr(tool_out, 'audio') and tool_out.audio:
-                        audio_to_display.extend(tool_out.audio)
-
-            # REGEX: Extração de caminhos de áudio do texto (incluindo padrões tipo path=... ou filepath=...)
-            # Procura por caminhos Windows ou caminhos relativos/unix que terminam em extensões de áudio
-            audio_patterns = [
-                r'(?:path|filepath)\s*=\s*[\'"]?([a-zA-Z]:\\[^\s\(\)\[\]\'",]+?\.(?:ogg|mp3|wav))[\'"]?',
-                r'([a-zA-Z]:\\[^\s\(\)\[\]\'",]+?\.(?:ogg|mp3|wav))'
-            ]
-
-            #for pattern in audio_patterns:
-            #    matches = re.findall(pattern, full_response, re.IGNORECASE)
-#
-            #    for path in matches:
-            #        # Limpa possíveis aspas residuais ou espaços
-            #        clean_path = path.strip().strip("'").strip('"')
-            #        
-            #        if os.path.exists(clean_path):
-            #             # Evita duplicatas
-            #             current_paths = [getattr(a, 'filepath', getattr(a, 'path', '')) for a in audio_to_display]
-            #             # Handle dicts in current_paths (audio_to_display can have dicts now)
-            #             current_path_strings = []
-            #             for cp in audio_to_display:
-            #                 if isinstance(cp, dict):
-            #                     current_path_strings.append(cp.get('filepath') or cp.get('path'))
-            #                 else:
-            #                     current_path_strings.append(getattr(cp, 'filepath', getattr(cp, 'path', '')))
-#
-            #             if clean_path not in current_path_strings:
-            #                audio_to_display.append({'filepath': clean_path})
-#
-            #if audio_to_display:
-            #    for audio_item in audio_to_display:
-            #        if isinstance(audio_item, dict):
-            #            path = audio_item.get('filepath') or audio_item.get('path')
-            #            content = audio_item.get('content')
-            #            if path: st.audio(path)
-            #            elif content: st.audio(content)
-            #        else:
-            #            if hasattr(audio_item, 'filepath') and audio_item.filepath:
-            #                st.audio(audio_item.filepath)
-            #            elif hasattr(audio_item, 'path') and audio_item.path:
-            #                st.audio(audio_item.path)
-            #            elif hasattr(audio_item, 'content') and audio_item.content:
-            #                st.audio(audio_item.content)
+                for aud in audio_to_display:
+                    if getattr(aud, 'filepath', None):
+                        st.audio(str(aud.filepath), format="audio/ogg")
             # Exibe a resposta final
             message_placeholder.markdown(full_response)
 
@@ -365,20 +316,9 @@ if user_query:
             if response.images:
                 new_message["images"] = [img.content for img in response.images]
             if audio_to_display:
-                new_message["audio"] = []
-                for aud in audio_to_display:
-                    if isinstance(aud, dict):
-                        path = aud.get('filepath') or aud.get('path')
-                        content = aud.get('content')
-                        if path: new_message["audio"].append(path)
-                        elif content: new_message["audio"].append(content)
-                    else:
-                        if hasattr(aud, 'filepath') and aud.filepath:
-                            new_message["audio"].append(aud.filepath)
-                        elif hasattr(aud, 'path') and aud.path:
-                            new_message["audio"].append(aud.path)
-                        elif hasattr(aud, 'content') and aud.content:
-                            new_message["audio"].append(aud.content)
+                new_message["audio"] = [
+                    str(aud.filepath) for aud in audio_to_display if getattr(aud, 'filepath', None)
+                ]
         
         st.session_state.messages.append(new_message)
 

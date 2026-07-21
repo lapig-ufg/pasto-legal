@@ -3,35 +3,42 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
-class Preferences(BaseModel):
+class CommunicationPreference(BaseModel):
     key: str = Field(
-        description="A chave ou categoria da preferência (ex: 'tom_voz', 'tamanho_resposta')"
+        description=(
+            "A chave da preferência de comunicação/interação com o usuário "
+            "(ex: 'tom_de_voz', 'tamanho_resposta', 'formato_explicacao', 'uso_emojis'). "
+        )
     )
     description: str = Field(
-        description="A descrição detalhada da preferência"
+        description=(
+            "A especificação de como o agente deve se comportar ao responder "
+            "(ex: 'Prefere respostas em tópicos e bem diretas', 'Gosta de tom informal e descontraído')."
+        )
     )
 
 
 class UserPersona(BaseModel):
     name: Optional[str] = Field(
-        default="Ainda não conhecido"
+        default="Ainda não conhecido",
+        description="Nome do usuário."
     )
     role: Optional[str] = Field(
-        default="Ainda não conhecido"
+        default="Ainda não conhecido",
+        description="O papel ou profissão do usuário (ex: 'Produtor', 'Técnico')."
     )
     regionality: Optional[str] = Field(
-        default="Ainda não conhecido"
+        default="Ainda não conhecido",
+        description="Localização regional, cidade ou estado do usuário."
     )
-    audio_preference: Optional[bool] = Field(
-        default=False,
-    )
-    preferences: List[Preferences] = Field(
-        default_factory=list
+    communication_preferences: List[CommunicationPreference] = Field(
+        default_factory=list,
+        description="Lista de preferências exclusivamente focadas em como o agente deve interagir e formatar as respostas."
     )
 
-    def __str__(self) -> str:
+def __str__(self) -> str:
         preferences_text = "".join(
-            f"\n- {pref.key.title()}: {pref.description}" for pref in self.preferences
+            f"\n- {pref.key.title()}: {pref.description}" for pref in self.communication_preferences
         )
 
         return textwrap.dedent(f"""
@@ -42,30 +49,28 @@ class UserPersona(BaseModel):
 
 
 class PersonaUpdate(BaseModel):
-    """Structured output from the persona manager agent.
+    """Structured output do agente gerenciador de persona.
 
-    Represents the changes the agent wants to apply to the user's persona.
-    Only non-None fields will be applied.
+    Representa as mudanças que o agente deseja aplicar na persona do usuário.
+    Apenas campos preenchidos serão atualizados.
     """
 
     name: Optional[str] = Field(
         default=None,
-        description="Updated name for the user, or None to keep current.",
+        description="Nome atualizado do usuário, ou None para manter o atual.",
     )
     role: Optional[str] = Field(
         default=None,
-        description="Updated role ('Produtor' or 'Tecnico'), or None to keep current.",
+        description="Cargo ou papel atualizado ('Produtor' ou 'Técnico'), ou None para manter o atual.",
     )
     regionality: Optional[str] = Field(
         default=None,
-        description="Updated city/state/region, or None to keep current.",
+        description="Cidade/estado/região atualizada, ou None para manter o atual.",
     )
-    audio_preference: Optional[bool] = Field(
-        default=False,
-        description="User preference for audio responses."
-    )
-    preferences: List[Preferences] = Field(
+    communication_preferences: List[CommunicationPreference] = Field(
         default_factory=list,
-        description="List of preferences to add or update in the user persona. "
-        "Use an existing key to update, or a new key to create.",
+        description=(
+            "Lista de preferências EXCLUSIVAMENTE de estilo de comunicação, formato de resposta "
+            "ou tom de voz a serem adicionadas ou atualizadas."
+        ),
     )

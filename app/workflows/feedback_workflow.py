@@ -15,13 +15,13 @@ External interface:
 from typing import Any, Dict, Optional
 
 from agno.utils.log import log_debug, log_error
-from agno.workflow import Condition, Parallel, Router, Step, Steps, Workflow
+from agno.workflow import Condition, Parallel, Router, Step, Workflow
 from agno.workflow.types import StepInput, StepOutput
 
 from app.agents.feedback_agent import remediation_agent, satisfaction_evaluation_agent
 from app.agents.persona_agent import persona_manager_agent
 from app.utils.interfaces.user_mood import UserMood
-from app.utils.interfaces.user_persona import PersonaUpdate, Preferences, UserPersona
+from app.utils.interfaces.user_persona import PersonaUpdate, CommunicationPreference, UserPersona
 
 
 
@@ -251,25 +251,23 @@ def manage_persona(step_input: StepInput, session_state: Dict[str, Any]) -> Step
                 user_persona.role = persona_update.role
             if persona_update.regionality is not None:
                 user_persona.regionality = persona_update.regionality
-            if persona_update.audio_preference is not None:
-                user_persona.audio_preference = persona_update.audio_preference
 
             # Apply preference updates (add new, update existing)
-            existing_prefs = {p.key: i for i, p in enumerate(user_persona.preferences)}
-            for new_pref in persona_update.preferences:
+            existing_prefs = {p.key: i for i, p in enumerate(user_persona.communication_preferences)}
+            for new_pref in persona_update.communication_preferences:
                 normalized_key = new_pref.key.strip().lower()
                 if normalized_key in existing_prefs:
                     idx = existing_prefs[normalized_key]
-                    user_persona.preferences[idx] = Preferences(
+                    user_persona.communication_preferences[idx] = CommunicationPreference(
                         key=normalized_key,
                         description=new_pref.description,
                     )
                 else:
-                    user_persona.preferences.append(Preferences(
+                    user_persona.communication_preferences.append(CommunicationPreference(
                         key=normalized_key,
                         description=new_pref.description,
                     ))
-                    existing_prefs[normalized_key] = len(user_persona.preferences) - 1
+                    existing_prefs[normalized_key] = len(user_persona.communication_preferences) - 1
 
             session_state["user_persona"] = user_persona.model_dump()
 
