@@ -27,7 +27,7 @@ from app.agents import (
 from app.database.agno_db import db
 from app.utils.interfaces.workflow_state import WorkflowRouteEnum, WorkflowState
 from app.utils.scripts.audio_tts import generate_speech
-from app.workflows.feedback_workflow import feedback_workflow, merge_output_step
+from app.workflows.feedback_workflow import feedback_workflow, remediation_check_step
 from app.workflows.summarization_workflow import summarization_workflow
 from app.agents.welcoming_agent import welcoming_agent
 from app.database.session import SessionLocal
@@ -194,7 +194,7 @@ pasto_legal_workflow = Workflow(
                     ),
                     name="Feedback and Routing",
                 ),
-                merge_output_step,
+                remediation_check_step,
             ],
         ),
         Step(

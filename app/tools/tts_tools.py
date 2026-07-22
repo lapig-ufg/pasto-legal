@@ -8,13 +8,17 @@ from agno.media import Audio
 @tool
 def generate_speech(text: str) -> ToolResult:
     """
-    Generates audio speech from the given text. It must be called last.
-    
+    Gera áudio falado (conversão de texto em fala) a partir de um texto fornecido.
+
+    QUANDO USAR:
+    - Chame esta ferramenta APENAS quando o usuário solicitar explicitamente uma resposta em áudio ou voz.
+    - Chame esta ferramenta se a sessão atual ou a preferência do sistema exigir respostas em áudio.
+
     Args:
-        text (str): The full text of the content.
-        
+        text (str): O texto completo do conteúdo.
+
     Returns:
-        ToolResult: The result containing the message and the audio media.
+        ToolResult: Objeto de resultado contendo a fala gerada.
     """
     buffer = io.BytesIO()
     with wave.open(buffer, "wb") as wav_file:

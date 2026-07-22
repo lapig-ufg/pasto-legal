@@ -301,54 +301,50 @@ feedback_workflow = Workflow(
 
 # --- Merge Condition ---
 
-def _is_dissatisfied(user_mood: UserMood) -> bool:
-    """Condition evaluator that returns True when the user is dissatisfied
-    (satisfaction level <= 2), triggering the remediation agent.
-    """
-    satisfaction = user_mood.get("satisfaction", None)
-    if satisfaction is None:
+
+def _should_apply_remediation(session_state: Dict[str, Any]) -> bool:
+    """Verifica de forma segura se a remediação do humor deve ser aplicada."""
+    user_mood_raw = session_state.get("user_mood")
+    if not user_mood_raw:
         return False
 
-    return True
+    try:
+        user_mood = UserMood.model_validate(user_mood_raw)
+        return bool(user_mood.remediation and user_mood.remediation.effectiveness)
+    except Exception as exc:
+        log_error(f"_should_apply_remediation: failed to validate user_mood - {exc}")
+        return False
 
 
-def _forward_response(step_input: StepInput) -> StepOutput:
-    """Extract the response from the Intent Router step to forward it
-    as the final workflow output.
-
-    Looks up the step named INTENT_ROUTER_STEP_NAME in previous_step_outputs
-    and returns its deepest content. Falls back to the last step output if
-    the Intent Router step is not found.
-    """
-    
-    if router_output is None:
-        log_debug(f"_forward_response: {INTENT_ROUTER_STEP_NAME} step not found, falling back to last step")
-        if not step_input.previous_step_outputs:
-            return StepOutput(content="")
-        last_output = list(step_input.previous_step_outputs.values())[-1]
-        return last_output if not last_output.steps else last_output.steps[-1]
-
-    if router_output.steps:
-        return router_output.steps[-1]
-    return router_output
-
-# TODO: Follow from here
-def _merge_output_executor(step_input: StepInput, session_state: Dict[str, Any]):
+def _merge_output_executor(step_input: StepInput, session_state: Dict[str, Any]) -> StepOutput:
     router_output = step_input.get_step_output(step_name=INTENT_ROUTER_STEP_NAME)
 
-    if router_output is None:
+    if not router_output:
         log_error("_merge_output_executor: Intent Router step not found, skipping...")
         return StepOutput(content="Desculpa, houve um erro durante a execução. Tente novamente mais tarde!")
 
-    user_mood_raw = session_state.get("user_mood", None)
-    if user_mood_raw is not None:
-        user_mood = UserMood.model_validate(user_mood_raw)
+    audio_item = router_output.audio[0] if (router_output.audio and len(router_output.audio) > 0) else None
+    is_audio = bool(audio_item and audio_item.transcript)
+    
+    current_content = audio_item.transcript if is_audio else router_output.content
 
-        
+    if _should_apply_remediation(session_state):
+        try:
+            response = remediation_agent.run(current_content)
+            
+            if is_audio:
+                audio_item.transcript = response.content
+            else:
+                router_output.content = response.content
 
-    return _forward_response(step_input)
+        except Exception as exc:
+            log_error(f"_merge_output_executor: remediation agent failed - {exc}")
+            return StepOutput(content="")
 
-merge_output_step = Step(
-    name="Merge Dissatisfied Check",
+    return router_output
+
+
+remediation_check_step = Step(
+    name="Remediation Check Step",
     executor=_merge_output_executor
 )
