@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "a2a-sdk>=1.1.0",
+    "affine>=2.4.0",
     "agno==2.6.6",
     "bs4>=0.0.2",
     "chromadb>=1.5.8",
@@ -39,9 +40,13 @@ dependencies = [
     "streamlit>=1.52.2",
     "tantivy>=0.25.1",
     "uvicorn~=0.34.0",
+    "xarray>=2026.7.0",
+    "xee==0.1.1",
+    "zarr>=3.2.1",
 ]
 
 [dependency-groups]
 dev = [
     "ollama>=0.6.1",
+    "scikit-learn>=1.9.0",
 ]

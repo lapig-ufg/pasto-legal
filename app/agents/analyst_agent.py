@@ -9,6 +9,7 @@ from app.tools.property_analyst_tools import (
     generate_property_image,
     generate_biomass_image,
     generate_soil_texture_image,
+    generate_pasture_classification_image,
     get_pasture_stats,
     get_topographic_stats
     )
@@ -83,7 +84,8 @@ analyst_agent = Agent(
         get_topographic_stats,
         generate_property_image,
         generate_biomass_image,
-        generate_soil_texture_image
+        generate_soil_texture_image,
+        generate_pasture_classification_image
     ],
     skills=skills,
     use_instruction_tags=False,
