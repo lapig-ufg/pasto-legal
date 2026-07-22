@@ -29,9 +29,11 @@ _FEATURE_BUFFER = 256
 
 _IMAGE_DIMENSION = 512
 
+_HIGHVOLUME_URL = "https://earthengine-highvolume.googleapis.com"
+
 try:
     credentials = ee.ServiceAccountCredentials(config.GEE_SERVICE_ACCOUNT, config.GEE_KEY_FILE)
-    ee.Initialize(credentials, project=config.GEE_PROJECT)
+    ee.Initialize(credentials, project=config.GEE_PROJECT, opt_url=_HIGHVOLUME_URL)
     GEE_CONNECTED_FLAG = True
 except Exception as e:
     log_error(f"Authentication failed: {e}")

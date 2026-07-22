@@ -16,8 +16,10 @@ from app.utils.scripts.gee_scripts import (
     query_pasture_statistics,
     query_topographic_stats,
     )
-from app.utils.interfaces.property_stats import PastureStats, TopographicStats 
+from app.utils.scripts.pasture_classification_scripts import classify_pasture_on_the_fly
+from app.utils.interfaces.property_stats import PastureStats, TopographicStats
 from app.utils.interfaces.property_record import RuralProperty
+import ee
 
 
 @tool(tool_hooks=[validate_selected_property_hook])
@@ -96,7 +98,47 @@ def generate_biomass_image(run_context: RunContext, car_codes: list[str]) -> Too
 
     except Exception as e:
         return ToolResult(content=str(e))
-    
+
+
+@tool(tool_hooks=[validate_selected_property_hook])
+def generate_pasture_classification_image(run_context: RunContext, car_codes: list[str]) -> ToolResult:
+    """
+    Gera o mapa de classificação de pastagem (pasto x não-pasto) da propriedade rural,
+    calculado sob demanda ("on-the-fly") para o ano mais recente disponível.
+
+    Diferente de `get_pasture_stats` (que usa o mapeamento oficial do MapBiomas, sempre
+    com pelo menos um ano de atraso), esta ferramenta classifica a propriedade em tempo real
+    usando o ano de satélite mais recente disponível, útil quando o usuário quer o mapeamento
+    de uso do solo mais atualizado possível.
+
+    params:
+        car_codes (list[str]): Lista de códigos CAR da propriedade.
+
+    Return:
+        ToolResult: Mapa em PNG (verde = pastagem) e a área de pastagem em hectares.
+    """
+    try:
+        all_properties = run_context.session_state['all_properties']
+        selected_property = next((prop for prop in all_properties if prop["car_code"] == ', '.join(car_codes)), None)
+        selected_property = RuralProperty.model_validate(selected_property)
+
+        roi = ee.Geometry.MultiPolygon(selected_property.get_coords())
+        result = classify_pasture_on_the_fly(roi=roi, car_code=selected_property.car_code)
+
+        buffer = BytesIO()
+        result["imagem"].save(buffer, format="PNG")
+
+        return ToolResult(
+            content=(
+                f"Área de pastagem classificada (ano {result['pred_year']}): "
+                f"{result['area_pasto_ha']} hectares. Legenda: Verde (Pastagem)."
+            ),
+            images=[Image(content=buffer.getvalue())]
+        )
+
+    except Exception as e:
+        return ToolResult(content=str(e))
+
 
 @tool(tool_hooks=[validate_selected_property_hook])
 def generate_soil_texture_image(run_context: RunContext, car_codes: list[str]) -> ToolResult:
