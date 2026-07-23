@@ -1,6 +1,6 @@
 from typing import Optional, Dict, Any
 
-from agno.agent import Agent
+from agno.agent import Agent, RunOutput
 from agno.utils.log import log_error, log_debug
 from agno.workflow import StepInput, StepOutput, Step
 
@@ -90,13 +90,19 @@ def _agent_executor_factory(
         try:
             user_id = step_input.workflow_session.user_id
 
-            response = agent.run(
+            response: RunOutput = agent.run(
                 final_input,
                 user_id=user_id,
                 session_state=session_state,
             )
         except Exception as exc:
             log_error(f"{agent.name} failed: {exc}")
+            return StepOutput(
+                content="Desculpa, houve um erro durante a execução. Tente novamente mais tarde!"
+            )
+
+        if response.status == "ERROR":
+            log_error(f"{agent.name} failed.")
             return StepOutput(
                 content="Desculpa, houve um erro durante a execução. Tente novamente mais tarde!"
             )
