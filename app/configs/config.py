@@ -121,3 +121,7 @@ if env_app not in ["production", "development", "stagging"]:
 
 # Instancia a classe de configuração correta
 config = config_map[env_app]()
+
+from app.configs.logging_config import setup_logging  # noqa: E402
+
+setup_logging(config)
