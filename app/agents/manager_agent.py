@@ -18,6 +18,48 @@ from app.utils.interfaces.property_record import RuralProperty
 from app.configs.config import config
 
 
+def get_tools(run_context: RunContext):
+    session_state = run_context.session_state
+    registration_state = session_state.get("registration_state", None)
+
+    tools = [generate_speech]
+
+    # ==========================================
+    # ESTADO: PENDING (Confirmação ou Seleção)
+    # ==========================================
+    if registration_state == "pending":
+        candidate_properties = [RuralProperty.model_validate(prop) for prop in session_state.get("candidate_properties", [])]
+        
+        # Cenário A: Apenas 1 propriedade encontrada para confirmação
+        if len(candidate_properties) == 1:
+            tools.extend([confirm_car_selection, cancel_registration])
+        
+        # Cenário B: Múltiplas propriedades encontradas (Usuário precisa escolher)
+        tools.extend([select_car_from_list, cancel_registration])
+            
+    # ==========================================
+    # ESTADO: FINAL (Definição de Nome customizado)
+    # ==========================================
+    elif registration_state == "final":
+        tools.extend([set_property_name, cancel_registration])
+
+    # ==========================================
+    # ESTADO: DEFAULT / ELSE (Gerenciamento Geral)
+    # ==========================================
+    else:
+        tools.extend([
+            remove_property,
+            remove_all_properties,
+            set_property_name,
+            start_registration_by_url,
+            start_registration_by_car,
+            start_registration_by_coordinate,
+            generate_speech
+        ])
+
+    return tools
+
+
 def get_instructions(run_context: RunContext) -> str:
     session_state = run_context.session_state
     registration_state = session_state.get("registration_state", None)
@@ -41,10 +83,9 @@ def get_instructions(run_context: RunContext) -> str:
                 > {candidate_text}
 
                 # Diretrizes de Execução
-                - **Ação Positiva:** Se o usuário confirmar que esta é a propriedade correta (ex: "sim", "essa mesma", "pode salvar"), acione imediatamente a ferramenta `confirm_car_selection`.
-                - **Ação Negativa:** Se o usuário rejeitar a propriedade (ex: "não é essa", "está errado"), acione a ferramenta `cancel_car_selection`.
-                - **Foco Absoluto:** Ignore assuntos paralelos. Se o usuário tentar mudar de assunto, traga-o de volta educadamente para a confirmação do imóvel.
-                - **Comunicação (WhatsApp):** Seja direto e use o markdown do WhatsApp (use `*texto*` para negrito).
+                - Se o usuário confirmar que esta é a propriedade correta (ex: "sim", "essa mesma", "pode salvar"), acione imediatamente a ferramenta `confirm_car_selection`.
+                - Se o usuário rejeitar a propriedade (ex: "não é essa", "está errado"), acione a ferramenta `cancel_car_selection`.
+                - Ignore assuntos paralelos. Se o usuário tentar mudar de assunto, traga-o de volta educadamente para a confirmação do imóvel.
             """).strip()
         
         # Cenário B: Múltiplas propriedades encontradas (Usuário precisa escolher)
@@ -62,10 +103,9 @@ def get_instructions(run_context: RunContext) -> str:
                 {candidate_text}
 
                 # Diretrizes de Execução
-                - **Ação de Seleção:** Se o usuário escolher uma das opções (pelo número, nome ou índice), invoque a ferramenta `select_car_from_list` passando o parâmetro correspondente.
-                - **Ação de Cancelamento:** Se o usuário desistir ou disser que nenhuma serve, acione a ferramenta `cancel_car_selection`.
-                - **Instrução ao Usuário:** Se ele demonstrar confusão, instrua-o de forma simples a digitar apenas o número da opção desejada.
-                - **Comunicação (WhatsApp):** Seja direto e utilize `*texto*` para negritos.
+                - Se o usuário escolher uma das opções (pelo número, nome ou índice), invoque a ferramenta `select_car_from_list` passando o parâmetro correspondente.
+                - Se o usuário desistir ou disser que nenhuma serve, acione a ferramenta `cancel_car_selection`.
+                - Se ele demonstrar confusão, instrua-o de forma simples a digitar apenas o número da opção desejada.
             """).strip()
 
     # ==========================================
@@ -83,10 +123,10 @@ def get_instructions(run_context: RunContext) -> str:
             Sua missão é coletar ou definir um nome amigável para esta propriedade.
 
             # Diretrizes de Execução
-            - **Definição de Nome:** Se o usuário informar um nome para a propriedade (ex: "Quero que se chame Fazenda Primavera"), invoque imediatamente a ferramenta `set_property_name`.
-            - **Cancelamento:** Se o usuário desejar abortar o processo nesta fase, chame a ferramenta `cancel_car_selection`.
-            - **Usuário Omissivo/Indeciso:** Se o usuário não fornecer um nome claro ou enviar saudações vagas, lembre-o de que ele precisa dar um nome para concluir ou digitar "cancelar".
-            - **Comunicação (WhatsApp):** Mantenha o texto limpo, curto e focado em mensagens de celular (`*texto*` para negrito).
+            - Se o usuário informar um nome para a propriedade (ex: "Quero que se chame Fazenda Primavera"), invoque imediatamente a ferramenta `set_property_name`.
+            - Se o usuário desejar abortar o processo nesta fase, chame a ferramenta `cancel_car_selection`.
+            - Se o usuário não fornecer um nome claro ou enviar saudações vagas, lembre-o de que ele precisa dar um nome para concluir ou digitar "cancelar".
+            - Mantenha o texto limpo, curto e focado em mensagens de celular (`*texto*` para negrito).
         """).strip()
 
     # ==========================================
@@ -118,7 +158,6 @@ def get_instructions(run_context: RunContext) -> str:
             5. **Atribuição de Nome:** Se o usuário solicitar a alteração de nome de um imóvel já existente, utilize `set_property_name`.
 
             # Restrições Absolutas
-            - **PROIBIDO:** Sob nenhuma hipótese tente invocar as ferramentas `confirm_car_selection` ou `select_car_from_list` enquanto estiver neste estado padrão (fora do fluxo de registro). Elas falharão.
             - **Comunicação (WhatsApp):** Respostas curtas, objetivas, instruindo o usuário sobre os dados que ele precisa enviar para gerenciar os imóveis.
         """).strip()
     
@@ -128,18 +167,7 @@ def get_instructions(run_context: RunContext) -> str:
 # Instanciação do Agente Corrigido e Otimizado
 manager_agent = Agent(
     name="Gestor de Propriedades Rurais",
-    tools=[
-        remove_property,
-        remove_all_properties,
-        set_property_name,
-        start_registration_by_url,
-        start_registration_by_car,
-        start_registration_by_coordinate,
-        confirm_car_selection,
-        select_car_from_list,
-        cancel_registration,
-        generate_speech
-    ],
+    tools=get_tools,
     markdown=True,
     use_instruction_tags=False,
     instructions=get_instructions,

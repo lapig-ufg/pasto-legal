@@ -1,11 +1,9 @@
-import io
-import wave
-
 from agno.tools import tool
 from agno.tools.function import ToolResult
 from agno.media import Audio
 
-@tool(stop_after_tool_call=True)
+
+@tool
 def generate_speech(text: str) -> ToolResult:
     """
     Gera áudio falado (conversão de texto em fala) a partir de um texto fornecido.
@@ -20,4 +18,4 @@ def generate_speech(text: str) -> ToolResult:
     Returns:
         ToolResult: Objeto de resultado contendo a fala gerada.
     """
-    return ToolResult(content="", audios=[Audio(content=b"", transcript=text)])
+    return ToolResult(content="Áudio gerado com sucesso!", audios=[Audio(content=bytes(), transcript=text)])
