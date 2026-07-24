@@ -31,11 +31,14 @@ def _clear_session_state(run_context: RunContext):
 
     run_context.session_state['candidate_properties'] = None
 
+
 def _set_workflow_state(run_context):
     workflow_state = WorkflowState.model_validate(run_context.session_state["workflow_state"])        
     workflow_state.route = WorkflowRouteEnum.MANAGER
     workflow_state.is_loop_active = True
     run_context.session_state["workflow_state"] = workflow_state.model_dump()
+
+## tools para registrar novas propriedades
 
 
 def start_registration_by_coordinate(run_context: RunContext, latitude: float, longitude: float):
@@ -256,7 +259,7 @@ def start_registration_by_url(run_context: RunContext, url: str) -> ToolResult:
             )
 
 
-def select_car_from_list(run_context: RunContext, selection: int):
+def select_property(run_context: RunContext, selection: int):
     """
     Seleciona uma propriedade específica quando a busca retorna múltiplos resultados.
     
@@ -286,7 +289,7 @@ def select_car_from_list(run_context: RunContext, selection: int):
     )
 
 
-def confirm_car_selection(run_context: RunContext):
+def confirm_property(run_context: RunContext):
     """
     Confirma a propriedade encontrada quando a busca retorna apenas um resultado único.
     
@@ -310,6 +313,26 @@ def confirm_car_selection(run_context: RunContext):
     )
 
 
+def finish_registration(name: str, run_context: RunContext):
+    """
+    """
+    candidate_properties = run_context.session_state.get('candidate_properties', None)
+
+    selected_property = candidate_properties[0]
+    selected_property["nickname"] = name
+
+    old_all_properties = run_context.session_state.get("all_properties", [])
+    old_all_properties.append(selected_property)  
+
+    run_context.session_state["all_properties"] = old_all_properties
+
+    _clear_session_state(run_context)
+
+    return ToolResult(
+        content=f"Faça um diagnóstico inicial para a propriedade de código CAR: {selected_property["car_code"]}."
+    )
+
+
 def cancel_registration(run_context: RunContext):
     """
     Cancela a seleção ou rejeita os resultados encontrados.
@@ -321,6 +344,8 @@ def cancel_registration(run_context: RunContext):
     return ToolResult(content=("Peça desculpas por não ter encontrado a propriedade correta.\n"))
 
 
+## Tools para gerenciar os cadastros no sistema
+
 def set_property_name(run_context: RunContext, car_codes: List[str], name: str):
     """
     Atualizar o nome propriedade registrada no sistema.
@@ -329,23 +354,6 @@ def set_property_name(run_context: RunContext, car_codes: List[str], name: str):
         car_codes(str): Códigos CAR da propriedade.
         name (str): Nome da propriedade.
     """
-    candidate_properties = run_context.session_state.get('candidate_properties', None)
-
-    if not candidate_properties is None:
-        selected_property = candidate_properties[0]
-        selected_property["nickname"] = name
-
-        old_all_properties = run_context.session_state.get("all_properties", [])
-        old_all_properties.append(selected_property)  
-
-        run_context.session_state["all_properties"] = old_all_properties
-
-        _clear_session_state(run_context)
-
-        return ToolResult(
-            content=f"Faça um diagnóstico inicial para a propriedade de código CAR: {selected_property["car_code"]}."
-        )
-
     all_properties: List[dict] = run_context.session_state.get('all_properties', [])
     selected_property = next((prop for prop in all_properties if prop["car_code"] == ', '.join(car_codes)), None)
     

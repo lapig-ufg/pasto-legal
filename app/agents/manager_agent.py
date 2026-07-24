@@ -9,8 +9,8 @@ from app.tools.property_crud_tools import (
     start_registration_by_url,
     start_registration_by_car,
     start_registration_by_coordinate,
-    select_car_from_list,
-    confirm_car_selection,
+    select_property,
+    confirm_property,
     cancel_registration
 )
 from app.tools.tts_tools import generate_speech
@@ -32,10 +32,10 @@ def get_tools(run_context: RunContext):
         
         # Cenário A: Apenas 1 propriedade encontrada para confirmação
         if len(candidate_properties) == 1:
-            tools.extend([confirm_car_selection, cancel_registration])
+            tools.extend([confirm_property, cancel_registration])
         
         # Cenário B: Múltiplas propriedades encontradas (Usuário precisa escolher)
-        tools.extend([select_car_from_list, cancel_registration])
+        tools.extend([select_property, cancel_registration])
             
     # ==========================================
     # ESTADO: FINAL (Definição de Nome customizado)

@@ -14,7 +14,7 @@ External interface:
 from typing import Any, Dict
 
 from agno.utils.log import log_debug, log_error
-from agno.workflow import Condition, Parallel, Router, Step, Workflow
+from agno.workflow import Condition, Parallel, Router, Step, Steps, Workflow
 from agno.workflow.types import StepInput, StepOutput
 
 from app.agents import (
@@ -180,9 +180,18 @@ pasto_legal_workflow = Workflow(
                                 name=WorkflowRouteEnum.ANALYST.value,
                                 executor=_agent_executor_factory(analyst_agent),
                             ),
-                            Step(
+                            Steps(
                                 name=WorkflowRouteEnum.MANAGER.value,
-                                executor=_agent_executor_factory(manager_agent, summary=False, num_runs=1),
+                                steps=[
+                                    Step(
+                                        name="Manager Agent",
+                                        executor=_agent_executor_factory(manager_agent, summary=False, num_runs=1)
+                                    ),
+                                    Step(
+                                        name="Execute First Analysis",
+                                        executor=first_analysis_executor
+                                    )
+                                ],
                             ),
                             Step(
                                 name=WorkflowRouteEnum.QUESTION_ANSWER.value,
