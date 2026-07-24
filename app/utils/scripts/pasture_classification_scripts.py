@@ -2,7 +2,6 @@ import time
 import traceback
 
 from io import BytesIO
-from pathlib import Path
 from typing import Dict, Tuple
 
 import affine
@@ -14,6 +13,7 @@ import xarray as xr
 from agno.utils.log import log_error, log_info
 
 from app.utils.scripts.gee_scripts import _FEATURE_BUFFER, _IMAGE_DIMENSION, _draw_feature_boundaries, _get_base_image
+from app.utils.scripts.pasture_cache_storage import cache_exists, load_cache, save_cache
 
 
 _EMBEDDING_ASSET = "GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL"
@@ -34,12 +34,6 @@ _SCALE = 10
 
 _MASK_VALUE = -32768
 
-_CACHE_DIR = Path("tmp/pasture_cache")
-
-
-# ---------------------------------------------------------------------------
-# Helpers de exportação via Xee (adaptado de tests/xee_export/export.py)
-# ---------------------------------------------------------------------------
 
 def _utm_grid(roi: ee.Geometry, crs: str, scale: int) -> Tuple[affine.Affine, int, int]:
     """
@@ -113,13 +107,6 @@ def _latest_mapbiomas_year() -> int:
     return max(years)
 
 
-def _cache_paths(car_code: str, pred_year: int) -> Tuple[Path, Path]:
-    """Caminhos do zarr (dado) e do png (imagem) em cache para o imóvel/ano."""
-    safe_code = car_code.replace(",", "_").replace(" ", "")
-    stem = f"{safe_code}_{pred_year}"
-    return _CACHE_DIR / f"{stem}.zarr", _CACHE_DIR / f"{stem}.png"
-
-
 def _area_ha_from_pasto(pasto: xr.DataArray) -> float:
     """Área em hectares a partir da banda binária de pasto (1 = pasto)."""
     return float((pasto.values == 1).sum()) * (_SCALE ** 2) / 1e4
@@ -139,10 +126,6 @@ def _render_classification_image(roi: ee.Geometry, classified: ee.Image, base_ye
     return PIL.Image.open(BytesIO(response.content))
 
 
-# ---------------------------------------------------------------------------
-# Função pública
-# ---------------------------------------------------------------------------
-
 def classify_pasture_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int = None, train_year: int = None) -> Dict:
     """
     Classifica pasto/não-pasto para o ano mais recente disponível e mapeia a propriedade.
@@ -151,8 +134,9 @@ def classify_pasture_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int 
     classificação roda inteiramente no GEE (server-side, `smileRandomForest`,
     treinado com amostras do MapBiomas + Satellite Embedding do ano de treino) e
     prevê sobre o embedding do ano seguinte. O Xee só baixa o raster resultado
-    (1 banda binária) para um cache local em zarr — chamadas seguintes para o
-    mesmo imóvel/ano leem o cache em disco e não tocam o GEE.
+    (1 banda binária) para um cache em zarr + png (`pasture_cache_storage`:
+    local em `tmp/` no `development`, bucket S3 em `production`/`stagging`) —
+    chamadas seguintes para o mesmo imóvel/ano leem o cache e não tocam o GEE.
 
     Args:
         roi (ee.Geometry): Geometria do imóvel (MultiPolygon).
@@ -167,16 +151,15 @@ def classify_pasture_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int 
         train_year = train_year or _latest_mapbiomas_year()
         pred_year = pred_year or (train_year + 1)
 
-        zarr_path, png_path = _cache_paths(car_code, pred_year)
-
-        if zarr_path.exists() and png_path.exists():
-            pasto = xr.open_zarr(zarr_path)["pasto"].isel(time=0)
+        if cache_exists(car_code, pred_year):
+            dataset, image = load_cache(car_code, pred_year)
+            pasto = dataset["pasto"].isel(time=0)
             area_ha = _area_ha_from_pasto(pasto)
             log_info(f"[{car_code}] pasture cache hit ({pred_year}): {area_ha} ha")
             return {
                 "area_pasto_ha": round(area_ha, 4),
                 "pred_year": pred_year, "train_year": train_year,
-                "cached": True, "imagem": PIL.Image.open(png_path),
+                "cached": True, "imagem": image,
             }
 
         start = time.perf_counter()
@@ -201,14 +184,11 @@ def classify_pasture_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int 
             shape_2d=(width, height), mask_and_scale=False, ee_mask_value=_MASK_VALUE,
         ).load().astype("int16")
 
-        zarr_path.parent.mkdir(parents=True, exist_ok=True)
-        dataset.to_zarr(zarr_path, mode="w")
-
         pasto = dataset["pasto"].isel(time=0)
         area_ha = _area_ha_from_pasto(pasto)
 
         image = _render_classification_image(roi=roi, classified=classified, base_year=pred_year)
-        image.save(png_path)
+        save_cache(car_code, pred_year, dataset, image)
 
         log_info(f"[{car_code}] classify_pasture_on_the_fly {pred_year}: {area_ha} ha em {time.perf_counter() - start:.2f}s")
 
