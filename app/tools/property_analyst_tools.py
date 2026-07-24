@@ -5,7 +5,7 @@ from io import BytesIO
 from agno.tools import tool
 from agno.tools.function import ToolResult
 from agno.run import RunContext
-from agno.media import Image
+from agno.media import File, Image
 
 from app.hooks.tool_hooks import validate_selected_property_hook
 from app.utils.scripts.gee_scripts import (
@@ -17,7 +17,9 @@ from app.utils.scripts.gee_scripts import (
     query_topographic_stats,
     )
 from app.utils.scripts.pasture_classification_scripts import classify_pasture_on_the_fly
-from app.utils.interfaces.property_stats import PastureStats, TopographicStats
+from app.utils.scripts.boletim_scripts import build_boletim_story
+from app.utils.scripts.pdf_scripts import render_document
+from app.utils.interfaces.property_stats import PastureStats, PropertyStats, TopographicStats
 from app.utils.interfaces.property_record import RuralProperty
 import ee
 
@@ -251,4 +253,51 @@ def get_topographic_stats(run_context: RunContext, car_codes: list[str]):
         return ToolResult(content=str(new_topographic_stats))
     except Exception as e:
         print(f"ERROR: {e}", flush=True)
+        return ToolResult(content=str(e))
+
+
+@tool(tool_hooks=[validate_selected_property_hook])
+def generate_property_boletim(run_context: RunContext, car_codes: list[str]) -> ToolResult:
+    """
+    Gera um boletim em PDF consolidando as análises da propriedade rural (biomassa,
+    idade, vigor e uso/cobertura do solo da pastagem), pronto para compartilhar com
+    agrônomos ou parceiros.
+
+    IMPORTANTE: a biomassa é calculada para o mês/ano atual; idade, vigor e uso do
+    solo (LULC) refletem o ano mais recente disponível no MapBiomas (2024). Avise o
+    usuário sobre essa defasagem ao entregar o boletim.
+
+    Use apenas quando o usuário pedir explicitamente um boletim, relatório ou PDF
+    para compartilhar ou baixar. A geração consulta o satélite em tempo real e pode
+    levar alguns segundos.
+
+    params:
+        car_codes (list[str]): Lista de códigos CAR da propriedade.
+
+    Return:
+        ToolResult: Arquivo PDF do boletim com dados reais da propriedade.
+    """
+    try:
+        all_properties = run_context.session_state['all_properties']
+        selected_property = next((prop for prop in all_properties if prop["car_code"] == ', '.join(car_codes)), None)
+        selected_property = RuralProperty.model_validate(selected_property)
+
+        today = datetime.date.today()
+        pasture_stats = query_pasture_statistics(coords=selected_property.get_coords(), year=today.year, month=today.month)
+        stats = PropertyStats(car_code=selected_property.car_code, list_pasture_stats=[pasture_stats])
+
+        story = build_boletim_story(selected_property, stats)
+        pdf_bytes = render_document(story)
+
+        return ToolResult(
+            content="Boletim gerado com sucesso com os dados reais mais recentes da propriedade.",
+            files=[File(
+                content=pdf_bytes,
+                format="pdf",
+                mime_type="application/pdf",
+                name=f"boletim_{selected_property.car_code}.pdf",
+            )],
+        )
+
+    except Exception as e:
         return ToolResult(content=str(e))
