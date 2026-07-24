@@ -42,8 +42,6 @@ def _needs_onboarding(step_input: StepInput, session_state: Dict[str, Any]) -> b
     """Determines whether the user needs to go through onboarding.
     Returns True if the terms have NOT yet been accepted.
     """
-    log_error("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
-    log_debug("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB")
     if session_state.get("workflow_state") is None:
         session_state["workflow_state"] = WorkflowState().model_dump()
 
