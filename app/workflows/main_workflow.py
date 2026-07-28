@@ -24,6 +24,7 @@ from app.agents import (
     router_agent,
     small_talk_agent,
 )
+from app.configs.config import config
 from app.database.agno_db import db
 from app.utils.interfaces.workflow_state import WorkflowRouteEnum, WorkflowState
 from app.utils.scripts.audio_tts import generate_speech
@@ -174,6 +175,7 @@ def guardrail_pii_executor(step_input: StepInput) -> StepOutput:
 pasto_legal_workflow = Workflow(
     name="Pasto Legal Workflow",
     db=db,
+    debug_mode=config.DEBUG_MODE,
     add_workflow_history_to_steps=True,
     num_history_runs=1,
     steps=[

@@ -3,6 +3,9 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# Application logs (mounted from ./logs:/app/logs in Docker)
+logs/
+
 # C extensions
 *.so
 
