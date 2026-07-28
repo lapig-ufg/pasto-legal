@@ -55,6 +55,11 @@ def _input_pre_processing(
     if user_input:
         parts.append(f"[Input do Usuário]\n{user_input}")
 
+    descricao_imagem = session_state.get("descricao_imagem", "")
+    if descricao_imagem:
+        parts.append(f"[Descrição da imagem enviada]\n{descricao_imagem}")
+
+
     return "\n".join(parts)
 
 

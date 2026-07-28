@@ -34,11 +34,10 @@ from app.agents.welcoming_agent import welcoming_agent
 from app.database.session import SessionLocal
 from app.database.models import UserTermsAcceptance
 from app.workflows.step_factory import _agent_executor_factory
-
+from app.guardrails.context_gate import ContextValidator, mensagem_fora_escopo
 from app.guardrails.pii_gate import check_pii, mensagem_bloqueio
-from app.utils.transcription import transcrever_audio
-from app.utils.image_ocr import extrair_texto_imagem
-from app.tools.tts_tools import generate_speech
+from app.utils.audio_processor import AudioProcessor
+from app.utils.image_processor import ImageProcessor
 
 # --- Step Executors ---
 
@@ -151,24 +150,41 @@ def _final_output(step_input: StepInput, session_state: Dict[str, Any]) -> StepO
 
 
 # --- Input Pre-processing ---
+def _resposta_bloqueio(aviso: str, tem_audio: bool) -> StepOutput:
+    """Resposta de bloqueio. Responde em ÁUDIO (TTS) se a entrada foi áudio."""
+    if tem_audio:
+        try:
+            fala = generate_speech(aviso)   # audio_tts → Audio (ou None)
+            if fala:
+                return StepOutput(content=aviso, audio=[fala], stop=True)
+        except Exception:
+            pass
+    return StepOutput(content=aviso, stop=True)
 
-def guardrail_pii_executor(step_input: StepInput) -> StepOutput:
-    """Converte mídia em texto e barra PII antes dos agentes (#121)."""
+
+def guardrail_entrada_executor(step_input: StepInput, session_state: Dict[str, Any]) -> StepOutput:
+    """Ingestão: mídia→texto, barra PII e valida escopo antes dos agentes (#121 + #123)."""
     texto = step_input.get_input_as_string() or ""
-    texto_audio = transcrever_audio(step_input.audio)
-    texto_imagem = extrair_texto_imagem(step_input.images)
+    texto_audio = AudioProcessor(step_input.audio).texto
 
+    imagem = ImageProcessor(step_input.images)   # ← lê a imagem UMA vez
+    texto_imagem = imagem.texto_visivel
+    descricao = imagem.descricao
+    session_state["descricao_imagem"] = descricao
+
+    tem_audio = bool(step_input.audio)
+
+    # 1) PII — barra dados pessoais em qualquer texto
     tipos_pii = check_pii(f"{texto}\n{texto_audio}\n{texto_imagem}")
     if tipos_pii:
-        aviso = mensagem_bloqueio(tipos_pii)
-        if step_input.audio:
-            try:
-                resultado = generate_speech(aviso)
-                if resultado.audios:
-                    return StepOutput(content=aviso, audio=resultado.audios, stop=True)
-            except Exception:
-                pass
-        return StepOutput(content=aviso, stop=True)
+        return _resposta_bloqueio(mensagem_bloqueio(tipos_pii), tem_audio)
+
+    # 2) Contexto — barra o que está fora do escopo do Pasto Legal
+    contexto = ContextValidator(texto, texto_audio, descricao, texto_imagem)
+    if not contexto.dentro_do_escopo:
+        return _resposta_bloqueio(mensagem_fora_escopo(contexto.assunto), tem_audio)
+
+    # 3) Passou (PII ok + escopo ok) → segue o fluxo normalmente
     
 # --- Workflow Definition ---
 
@@ -179,7 +195,7 @@ pasto_legal_workflow = Workflow(
     add_workflow_history_to_steps=True,
     num_history_runs=1,
     steps=[
-        Step(name="Guardrail PII", executor=guardrail_pii_executor),
+        Step(name="Guardrail Entrada", executor=guardrail_entrada_executor),
         Condition(
             name="Onboarding Check",
             evaluator=_needs_onboarding,

@@ -50,3 +50,6 @@ dev = [
     "ollama>=0.6.1",
     "scikit-learn>=1.9.0",
 ]
+    [tool.pytest.ini_options]
+pythonpath = ["."]
+
