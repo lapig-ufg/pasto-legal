@@ -1,7 +1,7 @@
 from agno.os import AgentOS
 
 from app.interfaces.whatsapp import Whatsapp
-from app.workflows import main_workflow
+from app.workflows.main_workflow import main_workflow
 
 interfaces = [Whatsapp(workflow=main_workflow)]
 
