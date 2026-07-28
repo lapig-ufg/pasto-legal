@@ -159,10 +159,12 @@ for message in st.session_state.messages:
         st.markdown(message["content"])
         if "images" in message:
             for img in message["images"]:
-                st.image(img, use_container_width=True)
+                if img is not None:
+                    st.image(img, use_container_width=True)
         if "audio" in message:
             for aud in message["audio"]:
-                st.audio(aud, format="audio/ogg")
+                if aud is not None:
+                    st.audio(aud, format="audio/ogg")
 
 # Inputs do usuário
 if 'file_uploader_key' not in st.session_state:
@@ -232,6 +234,7 @@ if user_query:
         
         full_response = ""
         response = None
+        audio_to_display = []
         
         try:
             run_kwargs = {
@@ -287,8 +290,8 @@ if user_query:
 
             if response and response.images:
                 for img in response.images:
-                    st.image(img.content, use_container_width=True)
-
+                    if img.content is not None: 
+                        st.image(img.content, use_container_width=True)
             audio_to_display = []
             if response and hasattr(response, 'audio') and response.audio:
                 audio_to_display.extend(response.audio)
@@ -314,7 +317,8 @@ if user_query:
         new_message = {"role": "assistant", "content": full_response}
         if response:
             if response.images:
-                new_message["images"] = [img.content for img in response.images]
+                if response.images:
+                    new_message["images"] = [img.content for img in response.images if img.content is not None]
             if audio_to_display:
                 new_message["audio"] = [
                     str(aud.filepath) for aud in audio_to_display if getattr(aud, 'filepath', None)
