@@ -5,6 +5,7 @@ from .analyst_agent import analyst_agent
 from .manager_agent import manager_agent
 from .router_agent import router_agent
 from .small_talk_agents import small_talk_agent
+from .media_agents import image_description_agent, audio_transcription_agent
 
 
 __all__ = [
@@ -15,5 +16,7 @@ __all__ = [
     "manager_agent",
     "question_answer_agent",
     "router_agent",
-    "small_talk_agent"
+    "small_talk_agent",
+    "image_description_agent",
+    "audio_transcription_agent",
 ]

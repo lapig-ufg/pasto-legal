@@ -19,6 +19,8 @@ from agno.workflow.types import StepInput, StepOutput
 
 from app.agents import (
     analyst_agent,
+    audio_transcription_agent,
+    image_description_agent,
     manager_agent,
     question_answer_agent,
     router_agent,
@@ -36,9 +38,6 @@ from app.database.models import UserTermsAcceptance
 from app.workflows.step_factory import _agent_executor_factory
 
 from app.guardrails.pii_gate import check_pii, mensagem_bloqueio
-from app.utils.transcription import transcrever_audio
-from app.utils.image_ocr import extrair_texto_imagem
-from app.tools.tts_tools import generate_speech
 
 # --- Step Executors ---
 
@@ -152,25 +151,73 @@ def _final_output(step_input: StepInput, session_state: Dict[str, Any]) -> StepO
 
 # --- Input Pre-processing ---
 
-def guardrail_pii_executor(step_input: StepInput) -> StepOutput:
-    """Converte mídia em texto e barra PII antes dos agentes (#121)."""
-    texto = step_input.get_input_as_string() or ""
-    texto_audio = transcrever_audio(step_input.audio)
-    texto_imagem = extrair_texto_imagem(step_input.images)
+def _input_processing_executor(step_input: StepInput) -> StepOutput:
+    """Converte mídia (áudio e imagem) em texto e monta o input final.
 
-    tipos_pii = check_pii(f"{texto}\n{texto_audio}\n{texto_imagem}")
-    if tipos_pii:
-        aviso = mensagem_bloqueio(tipos_pii)
-        if step_input.audio:
-            try:
-                resultado = generate_speech(aviso)
-                if resultado.audios:
-                    return StepOutput(content=aviso, audio=resultado.audios, stop=True)
-            except Exception:
-                pass
-        return StepOutput(content=aviso, stop=True)
-    
+    Executa o agente de transcrição para áudio e o agente de descrição para
+    imagens, consolidando tudo em um único texto para os passos seguintes
+    (guardrail de PII e agentes de negócio).
+
+    Em caso de falha na transcrição/descrição, registra o erro e segue com o
+    texto que estiver disponível (fallback resiliente).
+    """
+    parts: list[str] = []
+
+    texto = step_input.get_input_as_string() or ""
+    if texto:
+        parts.append(texto)
+
+    if step_input.images:
+        try:
+            response = image_description_agent.run("", images=step_input.images)
+            description = response.content or ""
+            if description:
+                parts.append(f"[IMAGEM]{description}[/IMAGEM]")
+        except Exception as e:
+            log_error(f"image description failed: {e}")
+
+    if step_input.audio:
+        try:
+            response = audio_transcription_agent.run("", audio=step_input.audio)
+            transcription = response.content or ""
+            if transcription:
+                parts.append(transcription)
+        except Exception as e:
+            log_error(f"audio transcription failed: {e}")
+
+    return StepOutput(content="\n".join(parts))
+
+
+def _guardrail_pii_executor(step_input: StepInput) -> StepOutput:
+    """Guardrail de PII que reusa o texto montado pelo passo anterior.
+
+    Varre o texto consolidado (transcrição + descrição + mensagem original)
+    em busca de dados pessoais. Se encontrar, barra a execução e devolve um
+    aviso ao usuário (em áudio quando ele enviou áudio, em texto caso
+    contrário). Caso contrário, repassa o texto limpo aos agentes seguintes.
+    """
+    text = step_input.get_input_as_string() or ""
+
+    pii_types = check_pii(text)
+    if not pii_types:
+        return StepOutput(content=text)
+
+    pii_warning = mensagem_bloqueio(pii_types)
+
+    if step_input.audio:
+        try:
+            user_id = step_input.workflow_session.user_id if step_input.workflow_session else "default"
+            audio = generate_speech(pii_warning, user_id=user_id)
+            if audio:
+                return StepOutput(content=pii_warning, audio=[audio], stop=True)
+        except Exception as e:
+            log_error(f"guardrail TTS failed: {e}")
+
+    return StepOutput(content=pii_warning, stop=True)
+
+
 # --- Workflow Definition ---
+
 
 pasto_legal_workflow = Workflow(
     name="Pasto Legal Workflow",
@@ -179,7 +226,14 @@ pasto_legal_workflow = Workflow(
     add_workflow_history_to_steps=True,
     num_history_runs=1,
     steps=[
-        Step(name="Guardrail PII", executor=guardrail_pii_executor),
+        Step(
+            name="Input Processing",
+            executor=_input_processing_executor
+        ),
+        Step(
+            name="Guardrail PII",
+            executor=_guardrail_pii_executor
+        ),
         Condition(
             name="Onboarding Check",
             evaluator=_needs_onboarding,

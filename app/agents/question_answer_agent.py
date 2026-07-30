@@ -1,7 +1,8 @@
 from pathlib import Path
 
-from agno.run import RunContext
 from agno.agent import Agent
+from agno.run import RunContext
+from agno.utils.log import log_error
 
 from app.configs.config import config
 from app.tools.tts_tools import generate_speech
@@ -22,7 +23,7 @@ for file_name in files:
         with open(file_path, 'r', encoding='utf-8') as file:
             knowledge_text += file.read() + "\n\n"
     except FileNotFoundError:
-        print(f"Erro: O arquivo {file_name} não foi encontrado.")
+        log_error(f"Erro: O arquivo {file_name} não foi encontrado.")
 
 
 def get_instructions(run_context: RunContext):

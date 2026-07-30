@@ -6,6 +6,7 @@ from agno.tools import tool
 from agno.tools.function import ToolResult
 from agno.run import RunContext
 from agno.media import Image
+from agno.utils.log import log_error
 
 from app.hooks.tool_hooks import validate_selected_property_hook
 from app.utils.scripts.gee_scripts import (
@@ -211,7 +212,7 @@ def get_pasture_stats(run_context: RunContext, car_codes: list[str]):
 
         return ToolResult(content=str(new_pasture_stats))
     except Exception as e:
-        print(f"ERROR: {e}", flush=True)
+        log_error(f"ERROR: {e}")
         return ToolResult(content=str(e))
     
 
@@ -250,5 +251,5 @@ def get_topographic_stats(run_context: RunContext, car_codes: list[str]):
 
         return ToolResult(content=str(new_topographic_stats))
     except Exception as e:
-        print(f"ERROR: {e}", flush=True)
+        log_error(f"ERROR: {e}")
         return ToolResult(content=str(e))

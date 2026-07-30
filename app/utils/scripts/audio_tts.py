@@ -48,7 +48,6 @@ def generate_speech(text: str, user_id: str = "default") -> Audio:
             script_dir = Path(__file__).parent.parent.parent.parent
             
             storage_dir = script_dir / "tmp" / "audio" / user_id
-            print(storage_dir, flush=True)
             storage_dir.mkdir(parents=True, exist_ok=True)
             
             filename = f"speech{uuid.uuid4().hex[:8]}.wav"

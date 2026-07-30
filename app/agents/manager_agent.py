@@ -1,6 +1,8 @@
 import textwrap
-from agno.run import RunContext
+
 from agno.agent import Agent
+from agno.run import RunContext
+from agno.utils.log import log_debug, log_error
 
 from app.tools.property_crud_tools import (
     remove_property,
@@ -19,7 +21,11 @@ from app.configs.config import config
 
 
 def get_tools(run_context: RunContext):
+    log_debug("GET TOOLS", center=True)
+
     session_state = run_context.session_state
+    log_debug(run_context)
+    log_debug(session_state)
     registration_state = session_state.get("registration_state", None)
 
     tools = [generate_speech]
@@ -54,13 +60,15 @@ def get_tools(run_context: RunContext):
             start_registration_by_url,
             start_registration_by_car,
             start_registration_by_coordinate,
-            generate_speech
         ])
+
+    log_debug(tools)
 
     return tools
 
 
 def get_instructions(run_context: RunContext) -> str:
+    log_debug("GET INSTRUCTIONS")
     session_state = run_context.session_state
     registration_state = session_state.get("registration_state", None)
 
@@ -171,6 +179,7 @@ manager_agent = Agent(
     markdown=True,
     use_instruction_tags=False,
     instructions=get_instructions,
+    cache_callables=False,
     model=config.model,
     debug_mode=config.DEBUG_MODE
 )
