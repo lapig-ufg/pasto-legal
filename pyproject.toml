@@ -37,6 +37,7 @@ dependencies = [
     "redis>=7.1.0",
     "reportlab>=5.0.0",
     "rich==14.0.0",
+    "s3fs>=2026.6.0",
     "sqlalchemy==2.0.41",
     "streamlit>=1.52.2",
     "tantivy>=0.25.1",

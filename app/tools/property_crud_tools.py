@@ -364,7 +364,7 @@ def set_property_name(run_context: RunContext, car_codes: List[str], name: str):
     return ToolResult(
         content=(
             f"O nome da propriedade foi alterado com sucesso.\n"
-            "Seja proativo, use a tool `delegate_task_to_member` e peça ao agente `Agente Extensionista Agrônomo` para fazer um diagnóstico inicial."
+            "Informe ao usuário que ele já pode pedir, em uma nova mensagem, análises da propriedade."
         )
     )
 

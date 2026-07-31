@@ -43,6 +43,12 @@ class BaseConfig:
     OLLAMA_HOST: str = os.getenv("OLLAMA_MODEL_ID", None)
     OLLAMA_API_KEY: str = os.getenv("OLLAMA_API_KEY", None)
 
+    S3_ENDPOINT_URL: str = os.getenv("S3_ENDPOINT_URL", None)
+    S3_ACCESS_KEY: str = os.getenv("S3_ACCESS_KEY", None)
+    S3_SECRET_KEY: str = os.getenv("S3_SECRET_KEY", None)
+    S3_BUCKET: str = os.getenv("S3_BUCKET", "pasto-legal")
+    S3_REGION: str = os.getenv("S3_REGION", None)
+
     def __init__(self):
         if self.GEE_PROJECT is None:
             raise ValueError("GEE_PROJECT environment variables must be set.")
@@ -50,7 +56,7 @@ class BaseConfig:
             raise ValueError("GEE_SERVICE_ACCOUNT environment variables must be set.")
         if self.GEE_KEY_FILE is None:
             raise ValueError("GEE_KEY_FILE environment variables must be set.")
-        
+
         if self.MODEL_PROVIDER == "ollama":
             if self.OLLAMA_API_KEY is None:
                 raise ValueError("OLLAMA_API_KEY environment variables must be set.")
@@ -99,7 +105,14 @@ class ProductionConfig(BaseConfig):
             raise ValueError("WHATSAPP_PHONE_NUMBER_ID environment variables must be set.")
         if self.WHATSAPP_APP_SECRET is None:
             raise ValueError("WHATSAPP_APP_SECRET environment variables must be set.")
-        
+
+        if self.S3_ENDPOINT_URL is None:
+            raise ValueError("S3_ENDPOINT_URL environment variables must be set.")
+        if self.S3_ACCESS_KEY is None:
+            raise ValueError("S3_ACCESS_KEY environment variables must be set.")
+        if self.S3_SECRET_KEY is None:
+            raise ValueError("S3_SECRET_KEY environment variables must be set.")
+
 
 class StaggingConfig(ProductionConfig):
     """Configurações específicas para Stagging."""
