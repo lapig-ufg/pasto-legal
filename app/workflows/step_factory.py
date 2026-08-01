@@ -58,7 +58,10 @@ def _input_pre_processing(
     descricao_imagem = session_state.get("descricao_imagem", "")
     if descricao_imagem:
         parts.append(f"[Descrição da imagem enviada]\n{descricao_imagem}")
-
+        
+    texto_audio = session_state.get("texto_audio", "")
+    if texto_audio:
+        parts.append(f"[Transcrição do áudio]\n{texto_audio}")
 
     return "\n".join(parts)
 

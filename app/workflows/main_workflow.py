@@ -166,6 +166,7 @@ def guardrail_entrada_executor(step_input: StepInput, session_state: Dict[str, A
     """Ingestão: mídia→texto, barra PII e valida escopo antes dos agentes (#121 + #123)."""
     texto = step_input.get_input_as_string() or ""
     texto_audio = AudioProcessor(step_input.audio).texto
+    session_state["texto_audio"] = texto_audio
 
     imagem = ImageProcessor(step_input.images)   # ← lê a imagem UMA vez
     texto_imagem = imagem.texto_visivel
