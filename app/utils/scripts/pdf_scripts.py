@@ -1,70 +1,69 @@
 from io import BytesIO
+from pathlib import Path
 from typing import List, Optional, Tuple
 
+from PIL import Image as PILImage
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import Flowable, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Flowable, Image as RLImage, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from svglib.svglib import svg2rlg
 
 
 _PAGE_SIZE = A4
 
-_TOP_MARGIN = 20 * mm
+_TOP_MARGIN = 14 * mm
 _BOTTOM_MARGIN = 18 * mm
 _LEFT_MARGIN = 18 * mm
 _RIGHT_MARGIN = 18 * mm
 
 _CONTENT_WIDTH = _PAGE_SIZE[0] - _LEFT_MARGIN - _RIGHT_MARGIN
 
-# Paleta extraída de pasto.legal (modo claro): verde escuro da marca (títulos,
-# CTAs), verde vibrante (destaques) e o "ink" navy usado no corpo de texto do site.
-_HEX_PRIMARY = "#206107"
-_HEX_ACCENT = "#2DAD56"
-_HEX_INK = "#1A252F"
+_LOGO_PATH = Path(__file__).resolve().parents[3] / "assets" / "logos" / "pasto_legal_logo.svg"
 
-_COLOR_PRIMARY = colors.HexColor(_HEX_PRIMARY)
-_COLOR_ACCENT = colors.HexColor(_HEX_ACCENT)
-_COLOR_INK = colors.HexColor(_HEX_INK)
-_COLOR_ZEBRA = colors.HexColor("#F1F5F1")
-_COLOR_GRID = colors.HexColor("#DCE3DC")
-_COLOR_WARNING_BG = colors.HexColor("#FFF3CD")
-_COLOR_WARNING_BORDER = colors.HexColor("#FFECB5")
-_COLOR_PLACEHOLDER_TEXT = colors.HexColor("#5B6B63")
-_COLOR_FOOTER_TEXT = colors.HexColor("#5B6B63")
+# Paleta institucional do LAPIG (Pasto Legal é um projeto do laboratório e segue
+# a mesma identidade): https://lapig-ufg.github.io/identidade-visual/
+_HEX_GREEN = "#429B4D"
+_HEX_DARK_GREEN = "#1B3A2A"
+_HEX_TEAL = "#2A9D8F"
+_HEX_GOLD = "#C4933F"
+_HEX_BROWN = "#6B4C3B"
 
-_BAR_MAX_WIDTH = 70 * mm
+_COLOR_PRIMARY = colors.HexColor(_HEX_GREEN)
+_COLOR_DARK = colors.HexColor(_HEX_DARK_GREEN)
+_COLOR_ACCENT = colors.HexColor(_HEX_TEAL)
+_COLOR_GOLD = colors.HexColor(_HEX_GOLD)
+_COLOR_MUTED_TEXT = colors.HexColor(_HEX_BROWN)
+_COLOR_ZEBRA = colors.HexColor("#F1EDE3")
+_COLOR_GRID = colors.HexColor("#DDD3C2")
+_COLOR_WARNING_BG = colors.HexColor("#FBF0DC")
 
 
 def _build_styles() -> dict:
     base = getSampleStyleSheet()
-    styles = {
-        "BrandHeader": ParagraphStyle(
-            "BrandHeader", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=11,
-            spaceAfter=4 * mm, characterSpace=0.5,
+    return {
+        "MastheadTitle": ParagraphStyle(
+            "MastheadTitle", parent=base["Title"], fontSize=17, alignment=0, textColor=colors.white, spaceAfter=1 * mm
         ),
-        "DocumentTitle": ParagraphStyle(
-            "DocumentTitle", parent=base["Title"], fontSize=18, spaceAfter=2 * mm, textColor=_COLOR_INK
-        ),
-        "DocumentSubtitle": ParagraphStyle(
-            "DocumentSubtitle", parent=base["Normal"], fontSize=10, textColor=_COLOR_PLACEHOLDER_TEXT, spaceAfter=4 * mm
+        "MastheadSubtitle": ParagraphStyle(
+            "MastheadSubtitle", parent=base["Normal"], fontSize=9.5, textColor=_COLOR_GOLD
         ),
         "SectionTitle": ParagraphStyle(
             "SectionTitle", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=12, textColor=colors.white
         ),
         "SubSectionTitle": ParagraphStyle(
             "SubSectionTitle", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=10.5,
-            textColor=_COLOR_PRIMARY, spaceBefore=3 * mm, spaceAfter=1.5 * mm,
+            textColor=_COLOR_ACCENT, spaceBefore=3 * mm, spaceAfter=1.5 * mm,
         ),
-        "Body": ParagraphStyle("Body", parent=base["Normal"], fontSize=9.5, leading=13, textColor=_COLOR_INK),
+        "Body": ParagraphStyle("Body", parent=base["Normal"], fontSize=9.5, leading=13, textColor=_COLOR_DARK),
         "TableHeader": ParagraphStyle("TableHeader", parent=base["Normal"], fontSize=9.5, textColor=colors.white, fontName="Helvetica-Bold"),
         "Placeholder": ParagraphStyle(
-            "Placeholder", parent=base["Normal"], fontSize=9, leading=12, fontName="Helvetica-Oblique", textColor=_COLOR_PLACEHOLDER_TEXT
+            "Placeholder", parent=base["Normal"], fontSize=9, leading=12, fontName="Helvetica-Oblique", textColor=_COLOR_MUTED_TEXT
         ),
-        "Warning": ParagraphStyle("Warning", parent=base["Normal"], fontSize=9, leading=12, textColor=colors.HexColor("#664D03")),
-        "Caption": ParagraphStyle("Caption", parent=base["Normal"], fontSize=8, textColor=_COLOR_FOOTER_TEXT),
+        "Warning": ParagraphStyle("Warning", parent=base["Normal"], fontSize=9, leading=12, textColor=_COLOR_DARK),
+        "Caption": ParagraphStyle("Caption", parent=base["Normal"], fontSize=8, textColor=_COLOR_MUTED_TEXT, alignment=1),
     }
-    return styles
 
 
 _styles = _build_styles()
@@ -79,18 +78,49 @@ def _normalize_widths(weights: Optional[List[float]], count: int) -> List[float]
     return [(weight / total) * _CONTENT_WIDTH for weight in weights]
 
 
-def brand_header() -> Paragraph:
-    """Wordmark 'Pasto' (verde) + 'Legal' (navy), igual ao logo do site."""
-    markup = f'<font color="{_HEX_PRIMARY}">Pasto</font><font color="{_HEX_INK}">Legal</font>'
-    return Paragraph(markup, _styles["BrandHeader"])
+def _fit_image(image_bytes: bytes, max_width: float, max_height: float) -> RLImage:
+    """Redimensiona a imagem (preservando proporção) para caber na área disponível."""
+    pil_image = PILImage.open(BytesIO(image_bytes))
+    aspect = pil_image.width / pil_image.height
+
+    # Pequena folga de segurança para a imagem nunca encostar exatamente na borda da célula.
+    max_width *= 0.97
+    max_height *= 0.97
+
+    width, height = max_width, max_width / aspect
+    if height > max_height:
+        height = max_height
+        width = max_height * aspect
+
+    return RLImage(BytesIO(image_bytes), width=width, height=height)
 
 
-def document_title(text: str) -> Paragraph:
-    return Paragraph(text, _styles["DocumentTitle"])
+def _logo_drawing(height_mm: float = 14):
+    """Carrega o SVG oficial do Pasto Legal e escala para a altura desejada."""
+    drawing = svg2rlg(str(_LOGO_PATH))
+    scale = (height_mm * mm) / drawing.height
+    drawing.width *= scale
+    drawing.height *= scale
+    drawing.scale(scale, scale)
+    return drawing
 
 
-def document_subtitle(text: str) -> Paragraph:
-    return Paragraph(text, _styles["DocumentSubtitle"])
+def masthead(title: str, subtitle: str) -> Table:
+    """Cabeçalho em faixa verde-escura com a logo oficial — abre o boletim."""
+    text_cell = [Paragraph(title, _styles["MastheadTitle"]), Paragraph(subtitle, _styles["MastheadSubtitle"])]
+
+    table = Table([[_logo_drawing(), text_cell]], colWidths=[22 * mm, _CONTENT_WIDTH - 22 * mm])
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), _COLOR_DARK),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (0, 0), (0, 0), "CENTER"),
+        ("LEFTPADDING", (0, 0), (0, 0), 6),
+        ("LEFTPADDING", (1, 0), (1, 0), 10),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    return table
 
 
 def section_title(text: str) -> Table:
@@ -114,16 +144,16 @@ def body_text(text: str) -> Paragraph:
 
 
 def placeholder_note(text: str) -> Paragraph:
-    """Texto em itálico/cinza — marca visualmente um trecho como dado de exemplo."""
+    """Texto em itálico/marrom — nota de apoio (ano de referência, ressalvas etc.)."""
     return Paragraph(text.replace("\n", "<br/>"), _styles["Placeholder"])
 
 
 def warning_box(text: str) -> Table:
-    """Caixa de aviso em destaque (usada para o alerta de dados de exemplo)."""
+    """Caixa de aviso em destaque (tom dourado, dentro da paleta institucional)."""
     table = Table([[Paragraph(f"<b>AVISO:</b> {text}", _styles["Warning"])]], colWidths=[_CONTENT_WIDTH])
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), _COLOR_WARNING_BG),
-        ("BOX", (0, 0), (-1, -1), 0.75, _COLOR_WARNING_BORDER),
+        ("BOX", (0, 0), (-1, -1), 0.75, _COLOR_GOLD),
         ("LEFTPADDING", (0, 0), (-1, -1), 8),
         ("TOPPADDING", (0, 0), (-1, -1), 6),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
@@ -177,28 +207,48 @@ def data_table(headers: List[str], rows: List[List[str]], col_widths: Optional[L
     return table
 
 
-def simulated_bar_table(items: List[Tuple[str, float]], unit: str = "", max_value: Optional[float] = None) -> Flowable:
-    """Tabela com barras de progresso simuladas (placeholder de gráfico), sem depender de matplotlib."""
-    if not items:
-        return placeholder_note("Sem dados disponíveis.")
+def side_by_side_images(
+    left_image_bytes: bytes, right_image_bytes: bytes,
+    left_caption: str = "", right_caption: str = "", image_height_mm: float = 55,
+) -> Table:
+    """Duas imagens lado a lado (ex.: satélite x mapa temático), com legenda opcional embaixo de cada uma."""
+    col_width = (_CONTENT_WIDTH - 4 * mm) / 2
+    max_height = image_height_mm * mm
 
-    reference = max_value or max((value for _, value in items), default=0) or 1
+    def _cell(image_bytes: bytes, caption: str) -> List[Flowable]:
+        content: List[Flowable] = [_fit_image(image_bytes, col_width, max_height)]
+        if caption:
+            content.append(Spacer(1, 1.5 * mm))
+            content.append(Paragraph(caption, _styles["Caption"]))
+        return content
 
-    rows = []
-    for label, value in items:
-        bar_width = max((value / reference) * _BAR_MAX_WIDTH, 1 * mm)
-        bar = Table([[""]], colWidths=[bar_width], rowHeights=[5 * mm])
-        bar.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), _COLOR_ACCENT)]))
-
-        value_text = f"{value:g} {unit}".strip()
-        rows.append([Paragraph(label, _styles["Body"]), bar, Paragraph(value_text, _styles["Caption"])])
-
-    widths = _normalize_widths([0.3, 0.45, 0.25], 3)
-    table = Table(rows, colWidths=widths)
+    table = Table(
+        [[_cell(left_image_bytes, left_caption), _cell(right_image_bytes, right_caption)]],
+        colWidths=[col_width, col_width],
+    )
     table.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2 * mm),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    return table
+
+
+def single_image(image_bytes: bytes, caption: str = "", image_height_mm: float = 70) -> Table:
+    """Uma imagem única, centralizada, ocupando a largura total do conteúdo (ex.: mapa de localização)."""
+    content: List[Flowable] = [_fit_image(image_bytes, _CONTENT_WIDTH, image_height_mm * mm)]
+    if caption:
+        content.append(Spacer(1, 1.5 * mm))
+        content.append(Paragraph(caption, _styles["Caption"]))
+
+    table = Table([[content]], colWidths=[_CONTENT_WIDTH])
+    table.setStyle(TableStyle([
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
     ]))
     return table
 
@@ -213,8 +263,11 @@ def spacer(height_mm: float = 4) -> Spacer:
 
 def _draw_footer(canvas_obj, doc_obj) -> None:
     canvas_obj.saveState()
+    canvas_obj.setStrokeColor(_COLOR_GOLD)
+    canvas_obj.setLineWidth(0.5)
+    canvas_obj.line(_LEFT_MARGIN, 14 * mm, _PAGE_SIZE[0] - _RIGHT_MARGIN, 14 * mm)
     canvas_obj.setFont("Helvetica", 8)
-    canvas_obj.setFillColor(_COLOR_FOOTER_TEXT)
+    canvas_obj.setFillColor(_COLOR_MUTED_TEXT)
     canvas_obj.drawCentredString(
         _PAGE_SIZE[0] / 2, 10 * mm, f"Pasto Legal · Página {canvas_obj.getPageNumber()}"
     )

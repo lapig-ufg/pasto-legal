@@ -34,6 +34,7 @@ from app.agents.welcoming_agent import welcoming_agent
 from app.database.session import SessionLocal
 from app.database.models import UserTermsAcceptance
 from app.workflows.step_factory import _agent_executor_factory
+from app.utils.scripts.response_sanitizer import strip_leaked_reasoning
 
 from app.guardrails.pii_gate import check_pii, mensagem_bloqueio
 from app.utils.transcription import transcrever_audio
@@ -137,6 +138,8 @@ def _final_output(step_input: StepInput, session_state: Dict[str, Any]) -> StepO
 
     while last_output.steps:
         last_output = last_output.steps[-1]
+
+    last_output.content = strip_leaked_reasoning(last_output.content)
 
     if last_output.audio:
         audio_transcript = "\n\n".join(audio.transcript for audio in last_output.audio)

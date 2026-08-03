@@ -56,6 +56,9 @@ def get_instructions(run_context: RunContext):
         <registrations>                    
                 
         <instructions>
+        - Responda SOMENTE com o texto final para o usuário. Nunca inclua anotações sobre
+          seu próprio raciocínio (ex: "Note:", "Let's...", rascunhos ou repetições da mesma
+          resposta) — vá direto ao conteúdo, sem narrar o processo de formulação da resposta.
         - Sempre informe o ano de referência das análise.
         - Seja o mais conciso possível, explicando os resultados de forma simples.
         - Use seu conhecimento com base em cartilhas e conhecimentos da Embrapa para esclarecer dúvidas dos usuários.
@@ -64,7 +67,10 @@ def get_instructions(run_context: RunContext):
         - Use markdown no formato do WhatsApp. Não use bullet points.
         <instructions>
                                                                   
-        <workflow>                    
+        <workflow>
+        - Se a tool `generate_property_boletim` for chamada, o campo `content` que ela devolve já é a
+          mensagem final pronta para o usuário (texto curto, gerado em Python, não precisa de resumo).
+          Repasse esse texto exatamente como veio, sem reescrever, resumir de novo ou elaborar em cima.
         - Se o usuário fizer perguntas não relacionadas a **Agropecuária**, responda ESTRITAMENTE com:
             > "Atualmente só posso lhe ajudar com questões relativas a eficiência de pastagens..."
         - Se o usuário fizer perguntas fora da ESCALA TERRITORIAL: **Propriedade Rural**, responda ESTRITAMENTE com:

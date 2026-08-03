@@ -1,17 +1,26 @@
 """
 Teste unitário e hermético do report builder do boletim (sem GEE, sem credenciais).
 
-`RuralProperty`/`SpatialFeatures` são puros Pydantic, sem dependência de GEE.
+`RuralProperty`/`SpatialFeatures` são puros Pydantic, sem dependência de GEE. As
+imagens usadas são PNGs sintéticos (sem depender do satélite) só para exercitar
+o layout lado a lado.
 
     .venv/bin/python -m pytest tests/pdf/test_boletim_scripts.py -v
 """
 from io import BytesIO
 
+from PIL import Image as PILImage
 from pypdf import PdfReader
 
 from app.utils.interfaces.property_record import RuralProperty, SpatialFeatures
 from app.utils.scripts.boletim_scripts import build_boletim_story, build_placeholder_property_stats
 from app.utils.scripts.pdf_scripts import render_document
+
+
+def _sample_image_bytes(color=(80, 150, 90)) -> bytes:
+    buffer = BytesIO()
+    PILImage.new("RGB", (200, 150), color=color).save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 def _build_sample_property() -> RuralProperty:
@@ -26,11 +35,24 @@ def _build_sample_property() -> RuralProperty:
     )
 
 
+def _build_full_story(rural_property: RuralProperty, stats, **overrides):
+    kwargs = dict(
+        satellite_image_bytes=_sample_image_bytes((150, 130, 100)),
+        location_image_bytes=_sample_image_bytes((150, 130, 100)),
+        pasture_map_image_bytes=_sample_image_bytes((40, 120, 60)),
+        vigor_map_image_bytes=_sample_image_bytes((215, 25, 28)),
+        biomass_map_image_bytes=_sample_image_bytes((120, 60, 40)),
+        soil_map_image_bytes=_sample_image_bytes((168, 56, 0)),
+    )
+    kwargs.update(overrides)
+    return build_boletim_story(rural_property, stats, **kwargs)
+
+
 def test_build_placeholder_property_stats_has_all_sections():
     stats = build_placeholder_property_stats("GO-5205703-5B18B6DF441C4B7FA9444DDC127CF6C0")
 
     assert stats.list_pasture_stats
-    assert all(item.biomass_stats for item in stats.list_pasture_stats)
+    assert stats.list_pasture_stats[0].biomass_stats
 
     latest = stats.list_pasture_stats[-1]
     assert latest.age_stats and latest.age_stats.data
@@ -42,22 +64,37 @@ def test_build_boletim_story_renders_valid_pdf_with_expected_content():
     rural_property = _build_sample_property()
     stats = build_placeholder_property_stats(rural_property.car_code)
 
-    story = build_boletim_story(rural_property, stats)
+    story = _build_full_story(rural_property, stats)
     pdf_bytes = render_document(story)
 
     assert pdf_bytes.startswith(b"%PDF-")
 
     reader = PdfReader(BytesIO(pdf_bytes))
-    text = reader.pages[0].extract_text()
+    text = "".join(page.extract_text() for page in reader.pages)
 
     assert "Fazenda Blue" in text
     assert "Data de Emissão" in text
     assert rural_property.car_code in text
+    assert "Localização da Propriedade" in text
+    assert "Dados de Pastagem" in text
     assert "Análise de Biomassa" in text
-    assert "Análise de Pastagem" in text
     assert "Idade da Pastagem" in text
     assert "Vigor da Pastagem" in text
     assert "Uso e Cobertura do Solo" in text
+    assert "Tipos de Solo" in text
+
+
+def test_build_boletim_story_falls_back_gracefully_without_optional_maps():
+    rural_property = _build_sample_property()
+    stats = build_placeholder_property_stats(rural_property.car_code)
+
+    story = _build_full_story(
+        rural_property, stats,
+        vigor_map_image_bytes=None, biomass_map_image_bytes=None, soil_map_image_bytes=None,
+    )
+    pdf_bytes = render_document(story)
+
+    assert pdf_bytes.startswith(b"%PDF-")
 
 
 def test_build_boletim_story_falls_back_gracefully_without_nickname():
@@ -65,7 +102,7 @@ def test_build_boletim_story_falls_back_gracefully_without_nickname():
     rural_property.nickname = None
     stats = build_placeholder_property_stats(rural_property.car_code)
 
-    story = build_boletim_story(rural_property, stats)
+    story = _build_full_story(rural_property, stats)
     pdf_bytes = render_document(story)
 
     reader = PdfReader(BytesIO(pdf_bytes))

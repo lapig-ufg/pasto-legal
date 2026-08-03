@@ -209,6 +209,66 @@ def retrieve_feature_images(coords: List[List[List[List[float]]]]) -> List[PIL.I
         )
 
 
+def retrieve_plain_satellite_image(coords: List[List[List[List[float]]]]) -> List[PIL.Image]:
+    """
+    Gera imagens de satélite individuais para cada polígono da propriedade rural,
+    sem contorno ou qualquer sobreposição (imagem "crua").
+
+    Args:
+        coords: Lista de coordenadas representando o MultiPolygon da fazenda.
+
+    Returns:
+        List[PIL.Image]: Uma lista de imagens (PIL.Image) correspondentes a cada polígono.
+    """
+    try:
+        result_imgs = []
+        for _coords in coords:
+            roi = ee.Geometry.MultiPolygon([_coords])
+
+            base_image = _get_base_image(roi=roi)
+
+            final_image = base_image.clip(roi.buffer(_FEATURE_BUFFER).bounds())
+
+            url = final_image.getThumbURL({"dimensions": _IMAGE_DIMENSION, "format": "png"})
+
+            response = requests.get(url, timeout=60)
+            response.raise_for_status()
+
+            img_pil = PIL.Image.open(BytesIO(response.content))
+            result_imgs.append(img_pil)
+
+        return result_imgs
+
+    except ee.EEException as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Falha ao processar as coordenadas no satélite. "
+            f"Verifique se as coordenadas da área estão corretas. Detalhes: {str(error)}"
+        )
+    except requests.exceptions.HTTPError as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"O servidor de imagens do satélite retornou um erro. "
+            f"Tente solicitar a imagem novamente em alguns instantes. Detalhes: {str(error)}"
+        )
+    except requests.exceptions.RequestException as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Não foi possível baixar a imagem por falha de conexão. "
+            f"Pode haver instabilidade na rede. Detalhes: {str(error)}"
+        )
+    except PIL.UnidentifiedImageError as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"O arquivo recebido do satélite está corrompido ou num formato inesperado. Detalhes: {str(error)}"
+        )
+    except Exception as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Ocorreu um erro inesperado ao gerar a imagem da fazenda. Detalhes: {str(error)}"
+        )
+
+
 def retrieve_mapbiomas_biomass_image(coords: List[List[List[List[float]]]], year: int = None) -> PIL.Image:
     """
     Gera uma imagem de satélite com a camada de biomassa de pastagem sobreposta,
@@ -444,6 +504,80 @@ def retrieve_feature_soil_texture_image(coords: List[List[List[List[float]]]]):
 
         return img_pil
     
+    except ee.EEException as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Falha ao processar as coordenadas no satélite. "
+            f"Verifique se as coordenadas da área estão corretas. Detalhes: {str(error)}"
+        )
+    except requests.exceptions.HTTPError as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"O servidor de imagens do satélite retornou um erro. "
+            f"Tente solicitar a imagem novamente em alguns instantes. Detalhes: {str(error)}"
+        )
+    except requests.exceptions.RequestException as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Não foi possível baixar a imagem por falha de conexão. "
+            f"Pode haver instabilidade na rede. Detalhes: {str(error)}"
+        )
+    except PIL.UnidentifiedImageError as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"O arquivo recebido do satélite está corrompido ou num formato inesperado. Detalhes: {str(error)}"
+        )
+    except Exception as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Ocorreu um erro inesperado ao gerar a imagem da fazenda. Detalhes: {str(error)}"
+        )
+
+
+def retrieve_pasture_vigor_image(coords: List[List[List[List[float]]]], year: int = 2024) -> PIL.Image:
+    """
+    Gera uma imagem de satélite com a camada de vigor de pastagem sobreposta,
+    baseada na geometria da propriedade rural fornecida.
+
+    Args:
+        coords: Lista de coordenadas representando o MultiPolygon da fazenda.
+        year (int, optional): Ano do mapeamento (MapBiomas). Usa 2024 se omitido.
+
+    Returns:
+        PIL.Image: Imagem final mesclada contendo satélite, vigor, contorno e legenda.
+    """
+    try:
+        PALETTE = {
+            'Baixo': '#d7191c',
+            'Médio': '#fdae61',
+            'Alto': '#1a9641',
+        }
+
+        roi = ee.Geometry.MultiPolygon(coords)
+
+        vigor_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_vigor_v3')
+        vigor = vigor_asset.select(year - 2000)
+
+        palette = ['#d7191c', '#fdae61', '#1a9641']
+        final = vigor.visualize(**{"min": 1, "max": 3, "palette": palette})
+
+        base_image = _get_base_image(roi=roi)
+
+        outline = _draw_feature_boundaries(roi=roi)
+
+        final_image = base_image.blend(final.clip(roi))
+        final_image = final_image.blend(outline).clip(roi.buffer(_FEATURE_BUFFER).bounds())
+
+        url = final_image.getThumbURL({"dimensions": _IMAGE_DIMENSION, "format": "png"})
+
+        response = requests.get(url, timeout=60)
+        response.raise_for_status()
+
+        img_pil = PIL.Image.open(BytesIO(response.content))
+        img_pil = append_discrete_legend(img_pil, "Vigor da Pastagem", PALETTE)
+
+        return img_pil
+
     except ee.EEException as error:
         log_error(traceback.format_exc())
         raise RuntimeError(

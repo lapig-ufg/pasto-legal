@@ -40,6 +40,7 @@ dependencies = [
     "s3fs>=2026.6.0",
     "sqlalchemy==2.0.41",
     "streamlit>=1.52.2",
+    "svglib>=2.0.2",
     "tantivy>=0.25.1",
     "uvicorn~=0.34.0",
     "xarray>=2026.7.0",

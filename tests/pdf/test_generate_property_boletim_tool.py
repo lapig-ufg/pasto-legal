@@ -41,6 +41,11 @@ def test_generate_property_boletim_returns_valid_pdf_file():
     assert result.files[0].mime_type == "application/pdf"
     assert result.files[0].name == f"boletim_{rural_property.car_code}.pdf"
 
+    # O content deve ser a mensagem pronta (determinística, montada em Python) — não um
+    # texto genérico que dependeria da LLM reformular/resumir os dados.
+    assert "Fazenda Blue" in result.content
+    assert "boletim" in result.content.lower()
+
 
 def test_generate_property_boletim_reports_friendly_error_without_property():
     run_context = RunContext(run_id="test-run", session_id="test-session", session_state={})
