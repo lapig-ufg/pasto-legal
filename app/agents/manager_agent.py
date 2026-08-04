@@ -16,16 +16,12 @@ from app.tools.property_crud_tools import (
     cancel_registration
 )
 from app.tools.tts_tools import generate_speech
-from app.schemas.property_record import RuralProperty
+from app.schemas.rural_property import RuralProperty
 from app.configs.config import config
 
 
 def get_tools(run_context: RunContext):
-    log_debug("GET TOOLS", center=True)
-
     session_state = run_context.session_state
-    log_debug(run_context)
-    log_debug(session_state)
     registration_state = session_state.get("registration_state", None)
 
     tools = [generate_speech]

@@ -271,7 +271,7 @@ def render_debug_panel() -> None:
             # Refresh session state from workflow (live)
             if st.button("Refresh State", key="refresh_debug_state"):
                 try:
-                    from app.workflows.main_workflow import pasto_legal_workflow
+                    from app.workflows.pasto_legal_workflow import pasto_legal_workflow
                     from app.interfaces.streamlit.debug_helpers import extract_session_state
                     live_state = pasto_legal_workflow.get_session_state(
                         session_id=st.session_state.session_id

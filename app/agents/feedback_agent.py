@@ -1,7 +1,5 @@
 import textwrap
 
-from pydantic import BaseModel
-
 from agno.agent import Agent
 from agno.run import RunContext
 

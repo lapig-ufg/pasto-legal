@@ -10,8 +10,8 @@ whatever text is available (resilient fallback).
 External interface:
     _input_processing_executor  -- StepExecutor consumed by main_workflow.
 """
-
 from agno.utils.log import log_error
+from agno.workflow import Step
 from agno.workflow.types import StepInput, StepOutput
 
 from app.agents import audio_transcription_agent, image_description_agent
@@ -44,3 +44,8 @@ def _input_processing_executor(step_input: StepInput) -> StepOutput:
             log_error(f"audio transcription failed: {e}")
 
     return StepOutput(content="\n".join(parts))
+
+input_step = Step(
+    name="Input Step",
+    executor=_input_processing_executor,
+)

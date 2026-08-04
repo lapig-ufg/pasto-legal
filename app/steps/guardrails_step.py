@@ -8,8 +8,8 @@ through to the following agents.
 External interface:
     _guardrail_pii_executor  -- StepExecutor consumed by main_workflow.
 """
-
 from agno.utils.log import log_error
+from agno.workflow import Step
 from agno.workflow.types import StepInput, StepOutput
 
 from app.guardrails.pii_gate import check_pii, mensagem_bloqueio
@@ -36,3 +36,9 @@ def _guardrail_pii_executor(step_input: StepInput) -> StepOutput:
             log_error(f"guardrail TTS failed: {e}")
 
     return StepOutput(content=pii_warning, stop=True, success=False)
+
+
+guardrails_step = Step(
+    name="Guardrail PII",
+    executor=_guardrail_pii_executor,
+)

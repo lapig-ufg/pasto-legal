@@ -9,6 +9,7 @@ External interface:
 """
 
 from agno.utils.log import log_debug
+from agno.workflow import Step
 from agno.workflow.types import StepInput, StepOutput
 
 from app.services.audio.tts import generate_speech
@@ -38,3 +39,9 @@ def _final_output(step_input: StepInput) -> StepOutput:
         )]
 
     return last_output
+
+
+output_step = Step(
+    name="Output Step",
+    executor=_final_output,
+)

@@ -8,7 +8,6 @@ Interface externa:
     image_description_agent  -- descreve imagens com o máximo de riqueza de detalhes.
     audio_transcription_agent -- transcreve áudio de forma fiel e literal.
 """
-
 from agno.agent import Agent
 
 from app.configs.config import config

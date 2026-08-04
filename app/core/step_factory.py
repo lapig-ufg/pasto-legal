@@ -10,7 +10,7 @@ from app.schemas.input_manager import InputManager
 def _input_pre_processing(
     step_input: StepInput,
     session_state: Dict[str, Any],
-    summary: bool,
+    include_summary: bool,
     num_runs: Optional[int] = None,
 ) -> str:
     """Build the enriched input string for an agent step.
@@ -34,14 +34,14 @@ def _input_pre_processing(
 
     parts: list[str] = []
 
-    if summary and input_manager.summary:
-        parts.append(f"[Resumo do Histórico]\n{input_manager.summary}\n")
+    if include_summary and input_manager.summary:
+        parts.append(f"<resumo>\n{input_manager.summary}\n</resumo>\n")
 
     effective_runs = num_runs if num_runs is not None else input_manager.runs_count
     history_msgs = step_input.get_workflow_history(num_runs=effective_runs)
 
     if history_msgs:
-        history_block = "[Histórico de Interações]"
+        history_block = "<iterações>"
         for idx, msg in enumerate(history_msgs):
             user_msg, assistant_msg = msg
             history_block += (
@@ -49,18 +49,19 @@ def _input_pre_processing(
                 f"Usuário: {user_msg}\n"
                 f"Assistente: {assistant_msg}\n"
             )
+        history_block+="</iterações>"
         parts.append(history_block)
 
-    user_input = step_input.get_input_as_string() or ""
-    if user_input:
-        parts.append(f"[Input do Usuário]\n{user_input}")
+    text = list(step_input.previous_step_outputs.values())[-1].content or ""
+    if text:
+        parts.append(f"<input>\n{text}\n</input>")
 
     return "\n".join(parts)
 
 
 def _agent_executor_factory(
     agent: Agent,
-    summary: bool = True,
+    include_summary: bool = True,
     num_runs: Optional[int] = None,
 ):
     """Create a step executor that pre-processes input before running an agent.
@@ -84,7 +85,7 @@ def _agent_executor_factory(
         session_state: Dict[str, Any],
     ) -> StepOutput:
         final_input = _input_pre_processing(
-            step_input, session_state, summary, num_runs
+            step_input, session_state, include_summary, num_runs
         )
 
         try:

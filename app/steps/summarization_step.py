@@ -11,6 +11,7 @@ External interface:
 from typing import Any, Dict, Optional
 
 from agno.utils.log import log_debug, log_error
+from agno.workflow import Step
 from agno.workflow.types import StepInput, StepOutput
 
 from app.agents.summary_agent import summary_agent
@@ -83,3 +84,9 @@ def summarization_executor(
 
     session_state["summary_state"] = summary_state.model_dump()
     return StepOutput(content="Summary updated")
+
+
+summarization_step = Step(
+    name="Summarization Step",
+    executor=summarization_executor,
+)

@@ -1,7 +1,7 @@
 from agno.os import AgentOS
 
 from app.interfaces.whatsapp import Whatsapp
-from app.workflows.main_workflow import pasto_legal_workflow
+from app.workflows.pasto_legal_workflow import pasto_legal_workflow
 
 interfaces = [Whatsapp(workflow=pasto_legal_workflow)]
 

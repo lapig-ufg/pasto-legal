@@ -19,7 +19,7 @@ from app.services.geospatial.gee import (
     )
 from app.services.geospatial.pasture_classification import classify_pasture_on_the_fly
 from app.schemas.property_stats import PastureStats, TopographicStats
-from app.schemas.property_record import RuralProperty
+from app.schemas.rural_property import RuralProperty
 import ee
 
 

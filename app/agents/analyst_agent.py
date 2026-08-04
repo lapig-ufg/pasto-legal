@@ -14,7 +14,7 @@ from app.tools.property_analyst_tools import (
     get_topographic_stats
     )
 from app.tools.tts_tools import generate_speech
-from app.schemas.property_record import RuralProperty
+from app.schemas.rural_property import RuralProperty
 from app.schemas.user_persona import UserPersona
 from app.configs.config import config
 

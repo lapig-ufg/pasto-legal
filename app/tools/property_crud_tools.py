@@ -17,23 +17,13 @@ from app.services.geospatial.sicar import (
     )
 from app.services.geospatial.image import create_vertical_mosaic
 from app.services.geospatial.gee import retrieve_feature_images
-from app.schemas.property_record import RuralProperty
-from app.core.session_state import WorkflowState, WorkflowRouteEnum
+from app.schemas.rural_property import RuralProperty
+from app.schemas.workflow_state import WorkflowState, RouteEnum
 
-
-def _clear_session_state(run_context: RunContext):
-    workflow_state = WorkflowState.model_validate(run_context.session_state["workflow_state"])        
-    workflow_state.route = WorkflowRouteEnum.AUTO
-    workflow_state.is_loop_active = True
-    run_context.session_state["workflow_state"] = workflow_state.model_dump()
-
-    run_context.session_state["registration_state"] = None
-
-    run_context.session_state['candidate_properties'] = None
 
 def _set_workflow_state(run_context):
     workflow_state = WorkflowState.model_validate(run_context.session_state["workflow_state"])        
-    workflow_state.route = WorkflowRouteEnum.MANAGER
+    workflow_state.route = RouteEnum.MANAGER
     workflow_state.is_loop_active = True
     run_context.session_state["workflow_state"] = workflow_state.model_dump()
 
@@ -310,13 +300,48 @@ def confirm_car_selection(run_context: RunContext):
     )
 
 
+def complete_registration(run_context: RunContext, name: str):
+    """
+    Concluir cadastro com o nome da propriedade.
+
+    Use esta ferramente quando o usuário informar o nome da propriedade.
+    """
+    candidate_properties = run_context.session_state.get('candidate_properties', None)
+    
+    selected_property = candidate_properties[0]
+    selected_property["nickname"] = name
+
+    old_all_properties = run_context.session_state.get("all_properties", [])
+    old_all_properties.append(selected_property)  
+
+    run_context.session_state["all_properties"] = old_all_properties
+
+    workflow_state = WorkflowState.model_validate(run_context.session_state["workflow_state"])        
+    workflow_state.route = RouteEnum.AUTO
+    run_context.session_state["workflow_state"] = workflow_state.model_dump()
+
+    run_context.session_state["registration_state"] = None
+
+    run_context.session_state['candidate_properties'] = None
+
+    return ToolResult(
+        content=f"Faça um diagnóstico inicial para a propriedade de código CAR: {selected_property["car_code"]}."
+    )
+
+
 def cancel_registration(run_context: RunContext):
     """
     Cancela a seleção ou rejeita os resultados encontrados.
     
     Use esta ferramenta se o usuário disser que a propriedade mostrada na imagem NÃO é a correta ou quiser cancelar a seleção.
     """
-    _clear_session_state(run_context)
+    workflow_state = WorkflowState.model_validate(run_context.session_state["workflow_state"])        
+    workflow_state.route = RouteEnum.AUTO
+    run_context.session_state["workflow_state"] = workflow_state.model_dump()
+
+    run_context.session_state["registration_state"] = None
+
+    run_context.session_state['candidate_properties'] = None
 
     return ToolResult(content=("Peça desculpas por não ter encontrado a propriedade correta.\n"))
 
@@ -329,23 +354,6 @@ def set_property_name(run_context: RunContext, car_codes: List[str], name: str):
         car_codes(str): Códigos CAR da propriedade.
         name (str): Nome da propriedade.
     """
-    candidate_properties = run_context.session_state.get('candidate_properties', None)
-
-    if not candidate_properties is None:
-        selected_property = candidate_properties[0]
-        selected_property["nickname"] = name
-
-        old_all_properties = run_context.session_state.get("all_properties", [])
-        old_all_properties.append(selected_property)  
-
-        run_context.session_state["all_properties"] = old_all_properties
-
-        _clear_session_state(run_context)
-
-        return ToolResult(
-            content=f"Faça um diagnóstico inicial para a propriedade de código CAR: {selected_property["car_code"]}."
-        )
-
     all_properties: List[dict] = run_context.session_state.get('all_properties', [])
     selected_property = next((prop for prop in all_properties if prop["car_code"] == ', '.join(car_codes)), None)
     
