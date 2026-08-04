@@ -14,8 +14,10 @@ External interface:
 from typing import Any, Dict
 
 from agno.utils.log import log_debug, log_error
-from agno.workflow import Condition, Parallel, Router, Step, Workflow
+from agno.workflow import Condition, Parallel, Router, Step
 from agno.workflow.types import StepInput, StepOutput
+
+from app.workflows.persist_on_success_workflow import PersistOnSuccessWorkflow
 
 from app.agents import (
     analyst_agent,
@@ -123,7 +125,7 @@ def _route_selector(step_input: StepInput, session_state: Dict[str, Any]) -> str
     return "default"
 
 
-def _final_output(step_input: StepInput, session_state: Dict[str, Any]) -> StepOutput:
+def _final_output(step_input: StepInput) -> StepOutput:
     """Extract the deepest content from the last step output, drilling
     through nested steps (Parallel, Condition, Router) until reaching
     a leaf StepOutput with no sub-steps.
@@ -209,17 +211,17 @@ def _guardrail_pii_executor(step_input: StepInput) -> StepOutput:
             user_id = step_input.workflow_session.user_id if step_input.workflow_session else "default"
             audio = generate_speech(pii_warning, user_id=user_id)
             if audio:
-                return StepOutput(content=pii_warning, audio=[audio], stop=True)
+                return StepOutput(content=pii_warning, audio=[audio], stop=True, success=False)
         except Exception as e:
             log_error(f"guardrail TTS failed: {e}")
 
-    return StepOutput(content=pii_warning, stop=True)
+    return StepOutput(content=pii_warning, stop=True, success=False)
 
 
 # --- Workflow Definition ---
 
 
-pasto_legal_workflow = Workflow(
+pasto_legal_workflow = PersistOnSuccessWorkflow(
     name="Pasto Legal Workflow",
     db=db,
     debug_mode=config.DEBUG_MODE,
