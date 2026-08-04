@@ -6,7 +6,7 @@ from agno.agent import Agent
 from agno.run import RunContext
 
 from app.configs.config import config
-from app.utils.interfaces.user_mood import Effectiveness
+from app.schemas.user_mood import Effectiveness
 
 #============================================================
 #

@@ -5,7 +5,7 @@ from agno.agent import Agent
 from agno.utils.log import log_debug
 
 from app.configs.config import config
-from app.utils.interfaces.user_persona import UserPersona
+from app.schemas.user_persona import UserPersona
 from app.tools.tts_tools import generate_speech
 
 

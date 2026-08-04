@@ -2,7 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 # Substitua 'app.tools.pasture' pelo caminho real de importação no seu projeto
-from app.utils.scripts.gee_scripts import (
+from app.services.geospatial.gee import (
     Value, 
     BiomassStats, 
     AgeStats, 

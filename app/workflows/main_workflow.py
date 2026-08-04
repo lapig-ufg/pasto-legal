@@ -1,224 +1,38 @@
 """Main workflow composition for the Pasto Legal multi-agent system.
 
 Defines the root workflow (`pasto_legal_workflow`) that orchestrates greeting
-detection, agent routing, feedback evaluation, and response merging.
+detection, agent routing, feedback evaluation, and response merging. This is
+a thin composition file; all executor logic lives in ``app.steps`` and shared
+workflow infrastructure in ``app.core``.
 
 External interface:
     pasto_legal_workflow  -- the Workflow instance imported by app.main,
-                            app.interfaces.streamlit.streamlit_webapp, and
-                            app.utils.debug_panel.
+                             app.interfaces.streamlit.streamlit_webapp, and
+                             app.interfaces.streamlit.debug_panel.
 """
 
-# --- Imports ---
-
-from typing import Any, Dict
-
-from agno.utils.log import log_debug, log_error
 from agno.workflow import Condition, Parallel, Router, Step
-from agno.workflow.types import StepInput, StepOutput
-
-from app.workflows.persist_on_success_workflow import PersistOnSuccessWorkflow
 
 from app.agents import (
     analyst_agent,
-    audio_transcription_agent,
-    image_description_agent,
     manager_agent,
     question_answer_agent,
-    router_agent,
     small_talk_agent,
 )
-from app.configs.config import config
-from app.database.agno_db import db
-from app.utils.interfaces.workflow_state import WorkflowRouteEnum, WorkflowState
-from app.utils.scripts.audio_tts import generate_speech
-from app.workflows.feedback_workflow import feedback_workflow, remediation_check_step
-from app.workflows.summarization_workflow import summarization_workflow
 from app.agents.welcoming_agent import welcoming_agent
-from app.database.session import SessionLocal
-from app.database.models import UserTermsAcceptance
-from app.workflows.step_factory import _agent_executor_factory
-
-from app.guardrails.pii_gate import check_pii, mensagem_bloqueio
-
-# --- Step Executors ---
-
-def _needs_onboarding(step_input: StepInput, session_state: Dict[str, Any]) -> bool:
-    """Determines whether the user needs to go through onboarding.
-    Returns True if the terms have NOT yet been accepted.
-    """
-    if session_state.get("workflow_state") is None:
-        session_state["workflow_state"] = WorkflowState().model_dump()
-
-    if session_state.get("terms_accepted"):
-        return False
-
-    user_id = session_state.get("user_id")
-    if not user_id:
-        return True
-
-    db_session = SessionLocal()
-    try:
-        record = db_session.query(UserTermsAcceptance).filter(
-            UserTermsAcceptance.user_id == user_id,
-            UserTermsAcceptance.accepted == True,
-        ).first()
-
-        if record:
-            session_state["terms_accepted"] = True
-            return False
-
-        return True
-    finally:
-        db_session.close()
-
-
-def _route_selector(step_input: StepInput, session_state: Dict[str, Any]) -> str:
-    """Selector for the Intent Router. Runs the Router Agent to classify
-    the user's message and returns the matching route enum value.
-
-    If a non-AUTO route is already set in WorkflowState, returns it directly
-    (manual override). Falls back to 'default' if the agent fails or the
-    session state does not contain a valid WorkflowState.
-    """
-    raw_state = session_state.get("workflow_state")
-    if raw_state is None:
-        log_debug("route_selector: no workflow_state in session, defaulting to 'default'")
-        return "default"
-
-    try:
-        workflow_state = WorkflowState.model_validate(raw_state)
-    except Exception as e:
-        log_debug(f"route_selector: invalid workflow_state: {e}, defaulting to 'default'")
-        return "default"
-
-    if workflow_state.route != WorkflowRouteEnum.AUTO:
-        return workflow_state.route.value
-
-    try:
-        user_msg = step_input.get_input_as_string() or ""
-        history_data = step_input.get_workflow_history(num_runs=1)
-
-        final_message = ""
-        if history_data:
-            last_user_msg, last_system_response = history_data[0]
-            final_message += "### Talk History ###\n"
-            final_message += f"User: {last_user_msg}\n"
-            final_message += f"System: {last_system_response}\n"
-        final_message += f"User: {user_msg}"
-
-        response = router_agent.run(final_message)
-        route_data = response.content
-
-        if route_data and hasattr(route_data, "route"):
-            return route_data.route
-
-        if isinstance(route_data, dict) and "route" in route_data:
-            return route_data["route"]
-
-        if isinstance(route_data, str) and len(route_data.split(" ")) == 1:
-            return route_data
-
-    except Exception as e:
-        log_debug(f"route_selector: agent failed: {e}")
-
-    return "default"
-
-
-def _final_output(step_input: StepInput) -> StepOutput:
-    """Extract the deepest content from the last step output, drilling
-    through nested steps (Parallel, Condition, Router) until reaching
-    a leaf StepOutput with no sub-steps.
-    """
-    if not step_input.previous_step_outputs:
-        log_debug("_final_output: no previous_step_outputs available")
-        return StepOutput(content="")
-
-    last_output = list(step_input.previous_step_outputs.values())[-1]
-
-    while last_output.steps:
-        last_output = last_output.steps[-1]
-
-    if last_output.audio:
-        audio_transcript = "\n\n".join(audio.transcript for audio in last_output.audio)
-
-        last_output.content = audio_transcript 
-        last_output.audio = [generate_speech(
-            text=audio_transcript,
-            user_id=step_input.workflow_session.user_id
-        )]
-
-    return last_output
-
-
-# --- Input Pre-processing ---
-
-def _input_processing_executor(step_input: StepInput) -> StepOutput:
-    """Converte mídia (áudio e imagem) em texto e monta o input final.
-
-    Executa o agente de transcrição para áudio e o agente de descrição para
-    imagens, consolidando tudo em um único texto para os passos seguintes
-    (guardrail de PII e agentes de negócio).
-
-    Em caso de falha na transcrição/descrição, registra o erro e segue com o
-    texto que estiver disponível (fallback resiliente).
-    """
-    parts: list[str] = []
-
-    texto = step_input.get_input_as_string() or ""
-    if texto:
-        parts.append(texto)
-
-    if step_input.images:
-        try:
-            response = image_description_agent.run("", images=step_input.images)
-            description = response.content or ""
-            if description:
-                parts.append(f"[IMAGEM]{description}[/IMAGEM]")
-        except Exception as e:
-            log_error(f"image description failed: {e}")
-
-    if step_input.audio:
-        try:
-            response = audio_transcription_agent.run("", audio=step_input.audio)
-            transcription = response.content or ""
-            if transcription:
-                parts.append(transcription)
-        except Exception as e:
-            log_error(f"audio transcription failed: {e}")
-
-    return StepOutput(content="\n".join(parts))
-
-
-def _guardrail_pii_executor(step_input: StepInput) -> StepOutput:
-    """Guardrail de PII que reusa o texto montado pelo passo anterior.
-
-    Varre o texto consolidado (transcrição + descrição + mensagem original)
-    em busca de dados pessoais. Se encontrar, barra a execução e devolve um
-    aviso ao usuário (em áudio quando ele enviou áudio, em texto caso
-    contrário). Caso contrário, repassa o texto limpo aos agentes seguintes.
-    """
-    text = step_input.get_input_as_string() or ""
-
-    pii_types = check_pii(text)
-    if not pii_types:
-        return StepOutput(content=text)
-
-    pii_warning = mensagem_bloqueio(pii_types)
-
-    if step_input.audio:
-        try:
-            user_id = step_input.workflow_session.user_id if step_input.workflow_session else "default"
-            audio = generate_speech(pii_warning, user_id=user_id)
-            if audio:
-                return StepOutput(content=pii_warning, audio=[audio], stop=True, success=False)
-        except Exception as e:
-            log_error(f"guardrail TTS failed: {e}")
-
-    return StepOutput(content=pii_warning, stop=True, success=False)
-
-
-# --- Workflow Definition ---
+from app.configs.config import config
+from app.core.persist_on_success_workflow import PersistOnSuccessWorkflow
+from app.core.session_state import WorkflowRouteEnum
+from app.core.step_factory import _agent_executor_factory
+from app.database.agno_db import db
+from app.steps.feedback.remediation import remediation_check_step
+from app.steps.input.final_output import _final_output
+from app.steps.input.guardrail_pii import _guardrail_pii_executor
+from app.steps.input.input_processing import _input_processing_executor
+from app.steps.routing.needs_onboarding import _needs_onboarding
+from app.steps.routing.route_selector import _route_selector
+from app.workflows.feedback_workflow import feedback_workflow
+from app.workflows.summarization_workflow import summarization_workflow
 
 
 pasto_legal_workflow = PersistOnSuccessWorkflow(
@@ -230,11 +44,11 @@ pasto_legal_workflow = PersistOnSuccessWorkflow(
     steps=[
         Step(
             name="Input Processing",
-            executor=_input_processing_executor
+            executor=_input_processing_executor,
         ),
         Step(
             name="Guardrail PII",
-            executor=_guardrail_pii_executor
+            executor=_guardrail_pii_executor,
         ),
         Condition(
             name="Onboarding Check",

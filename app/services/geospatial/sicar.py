@@ -11,7 +11,7 @@ from requests.adapters import HTTPAdapter
 
 from agno.utils.log import log_debug, log_error
 
-from app.utils.interfaces.property_record import RuralProperty, SpatialFeatures, SicarMetadata
+from app.schemas.property_record import RuralProperty, SpatialFeatures, SicarMetadata
 from app.configs.config import config
 
 # Suppress InsecureRequestWarning since we use verify=False for SICAR requests

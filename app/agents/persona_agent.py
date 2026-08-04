@@ -4,7 +4,7 @@ from agno.agent import Agent
 from agno.run import RunContext
 
 from app.configs.config import config
-from app.utils.interfaces.user_persona import PersonaUpdate, UserPersona
+from app.schemas.user_persona import PersonaUpdate, UserPersona
 
 
 def get_instructions(run_context: RunContext) -> str:

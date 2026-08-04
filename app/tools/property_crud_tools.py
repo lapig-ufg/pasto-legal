@@ -9,16 +9,16 @@ from agno.tools.function import ToolResult
 from agno.media import Image
 from agno.utils.log import log_debug
 
-from app.utils.scripts.sicar_scripts import (
+from app.services.geospatial.sicar import (
     fetch_property_by_car,
     fetch_property_by_coordinates,
     fetch_coordinates_by_url,
     clean_car_code
     )
-from app.utils.scripts.image_scripts import create_vertical_mosaic
-from app.utils.scripts.gee_scripts import retrieve_feature_images
-from app.utils.interfaces.property_record import RuralProperty
-from app.utils.interfaces.workflow_state import WorkflowState, WorkflowRouteEnum
+from app.services.geospatial.image import create_vertical_mosaic
+from app.services.geospatial.gee import retrieve_feature_images
+from app.schemas.property_record import RuralProperty
+from app.core.session_state import WorkflowState, WorkflowRouteEnum
 
 
 def _clear_session_state(run_context: RunContext):

@@ -9,7 +9,7 @@ from agno.media import Image
 from agno.utils.log import log_error
 
 from app.hooks.tool_hooks import validate_selected_property_hook
-from app.utils.scripts.gee_scripts import (
+from app.services.geospatial.gee import (
     retrieve_feature_images,
     retrieve_mapbiomas_biomass_image,
     retrieve_t2g_biomass_image,
@@ -17,9 +17,9 @@ from app.utils.scripts.gee_scripts import (
     query_pasture_statistics,
     query_topographic_stats,
     )
-from app.utils.scripts.pasture_classification_scripts import classify_pasture_on_the_fly
-from app.utils.interfaces.property_stats import PastureStats, TopographicStats
-from app.utils.interfaces.property_record import RuralProperty
+from app.services.geospatial.pasture_classification import classify_pasture_on_the_fly
+from app.schemas.property_stats import PastureStats, TopographicStats
+from app.schemas.property_record import RuralProperty
 import ee
 
 

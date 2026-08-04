@@ -16,7 +16,7 @@ from app.tools.property_crud_tools import (
     cancel_registration
 )
 from app.tools.tts_tools import generate_speech
-from app.utils.interfaces.property_record import RuralProperty
+from app.schemas.property_record import RuralProperty
 from app.configs.config import config
 
 

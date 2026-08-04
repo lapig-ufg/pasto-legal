@@ -4,7 +4,7 @@ from agno.agent import Agent, RunOutput
 from agno.utils.log import log_error, log_debug
 from agno.workflow import StepInput, StepOutput, Step
 
-from app.utils.interfaces.input_manager import InputManager
+from app.schemas.input_manager import InputManager
 
 
 def _input_pre_processing(

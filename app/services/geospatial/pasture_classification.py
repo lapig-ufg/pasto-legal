@@ -12,8 +12,8 @@ import xarray as xr
 
 from agno.utils.log import log_error, log_info
 
-from app.utils.scripts.gee_scripts import _FEATURE_BUFFER, _IMAGE_DIMENSION, _draw_feature_boundaries, _get_base_image
-from app.utils.scripts.pasture_cache_storage import cache_exists, load_cache, save_cache
+from app.services.geospatial.gee import _FEATURE_BUFFER, _IMAGE_DIMENSION, _draw_feature_boundaries, _get_base_image
+from app.services.geospatial.pasture_cache import cache_exists, load_cache, save_cache
 
 
 _EMBEDDING_ASSET = "GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL"

@@ -9,9 +9,9 @@ from typing import List
 
 from agno.utils.log import log_error
 
-from app.utils.scripts.image_scripts import append_discrete_legend, append_continuous_colorbar
-from app.utils.interfaces.property_stats import PropertyStats, PastureStats, TopographicStats
-from app.utils.interfaces.property_stats import (
+from app.services.geospatial.image import append_discrete_legend, append_continuous_colorbar
+from app.schemas.property_stats import PropertyStats, PastureStats, TopographicStats
+from app.schemas.property_stats import (
     Value, 
     BiomassStats,
     AgeData,
@@ -672,7 +672,7 @@ def query_pasture_statistics(coords: List[List[List[List[float]]]], year: int, m
     
 
 def query_topographic_stats(coords: List[List[List[List[float]]]]):
-    from app.utils.interfaces.property_stats import Value
+    from app.schemas.property_stats import Value
 
     roi = ee.Geometry.MultiPolygon(coords)
     

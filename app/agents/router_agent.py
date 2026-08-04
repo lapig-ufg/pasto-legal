@@ -6,7 +6,7 @@ from agno.agent import Agent
 from agno.run import RunContext
 
 from app.configs.config import config
-from app.utils.interfaces.workflow_state import WorkflowRouteEnum
+from app.core.session_state import WorkflowRouteEnum
 
 
 class RouterOutput(BaseModel):
