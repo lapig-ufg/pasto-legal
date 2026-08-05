@@ -300,6 +300,7 @@ def confirm_car_selection(run_context: RunContext):
     )
 
 
+@tool(stop_after_tool_call=True)
 def complete_registration(run_context: RunContext, name: str):
     """
     Concluir cadastro com o nome da propriedade.
@@ -311,21 +312,23 @@ def complete_registration(run_context: RunContext, name: str):
     selected_property = candidate_properties[0]
     selected_property["nickname"] = name
 
-    old_all_properties = run_context.session_state.get("all_properties", [])
-    old_all_properties.append(selected_property)  
+    all_properties = run_context.session_state.get("all_properties", [])
+    all_properties.append(selected_property)  
 
-    run_context.session_state["all_properties"] = old_all_properties
+    run_context.session_state["all_properties"] = all_properties
 
     workflow_state = WorkflowState.model_validate(run_context.session_state["workflow_state"])        
-    workflow_state.route = RouteEnum.AUTO
+    workflow_state.route = RouteEnum.DIAGNOSIS
     run_context.session_state["workflow_state"] = workflow_state.model_dump()
-
     run_context.session_state["registration_state"] = None
-
     run_context.session_state['candidate_properties'] = None
 
     return ToolResult(
-        content=f"Faça um diagnóstico inicial para a propriedade de código CAR: {selected_property["car_code"]}."
+        content=(
+            "Propriedade registrada com sucesso."
+            f"\nNome: {name}"
+            f"\nCAR: {selected_property["car_code"]}"
+        )
     )
 
 
@@ -338,9 +341,7 @@ def cancel_registration(run_context: RunContext):
     workflow_state = WorkflowState.model_validate(run_context.session_state["workflow_state"])        
     workflow_state.route = RouteEnum.AUTO
     run_context.session_state["workflow_state"] = workflow_state.model_dump()
-
     run_context.session_state["registration_state"] = None
-
     run_context.session_state['candidate_properties'] = None
 
     return ToolResult(content=("Peça desculpas por não ter encontrado a propriedade correta.\n"))
@@ -366,8 +367,6 @@ def set_property_name(run_context: RunContext, car_codes: List[str], name: str):
     all_properties.remove(selected_property)
     all_properties.append(updated_selected_property)
     run_context.session_state["all_properties"] = all_properties
-
-    _clear_session_state(run_context)
 
     return ToolResult(
         content=(

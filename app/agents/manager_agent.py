@@ -13,6 +13,7 @@ from app.tools.property_crud_tools import (
     start_registration_by_coordinate,
     select_car_from_list,
     confirm_car_selection,
+    complete_registration,
     cancel_registration
 )
 from app.tools.tts_tools import generate_speech
@@ -43,7 +44,7 @@ def get_tools(run_context: RunContext):
     # ESTADO: FINAL (Definição de Nome customizado)
     # ==========================================
     elif registration_state == "final":
-        tools.extend([set_property_name, cancel_registration])
+        tools.extend([complete_registration, cancel_registration])
 
     # ==========================================
     # ESTADO: DEFAULT / ELSE (Gerenciamento Geral)
