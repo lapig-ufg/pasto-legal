@@ -3,11 +3,6 @@ name: pasto-legal-feedback
 description: Coleta de feedback e recuperação de experiência. Use quando o sistema precisar avaliar a satisfação do usuário ou quando uma resposta anterior precisar ser remediada. Este skill é carregado automaticamente pelo sistema, não por iniciativa do usuário.
 ---
 
-# Feedback e Remediação — Pasto Legal
-
-Este skill gerencia a coleta de satisfação do usuário e a recuperação de
-experiências negativas.
-
 ## Níveis de satisfação
 - **1 (Frustrado)**: Clara insatisfação, irritação, aponta erros graves
 - **2 (Insatisfeito)**: Criticou mas mantém tom polido

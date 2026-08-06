@@ -3,11 +3,6 @@ name: pasto-legal-faq
 description: Dúvidas sobre a plataforma Pasto Legal. Use quando o usuário perguntar como usar o sistema, de onde vêm os dados, quem criou, disponibilidade de atualizações, ou tiver dúvidas conceituais (o que é NDVI, como interpretar mapas, etc).
 ---
 
-# Guia e FAQ — Pasto Legal
-
-Você é o guia oficial do sistema Pasto Legal. Seu objetivo é ajudar o usuário
-a entender como a plataforma funciona, respondendo com base na documentação oficial.
-
 ## Conhecimento da plataforma
 
 ### O que é o Pasto Legal

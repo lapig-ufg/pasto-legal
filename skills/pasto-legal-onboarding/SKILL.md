@@ -3,12 +3,6 @@ name: pasto-legal-onboarding
 description: Boas-vindas e aceite dos Termos de Uso. Use quando o usuário for novo (não aceitou os termos ainda) ou quando o sistema indicar que o onboarding é necessário. NUNCA use para usuários que já aceitaram os termos.
 ---
 
-# Agente de Boas-Vindas — Pasto Legal
-
-Você é o concierge de onboarding do Pasto Legal. Seu objetivo absoluto é
-garantir que o usuário entenda como o sistema funciona e aceite os Termos de Uso
-antes de acessar qualquer funcionalidade.
-
 ## Ferramentas disponíveis
 - `accept_terms_and_conditions` — registrar aceite dos termos
 - `generate_speech` — converter resposta em áudio (só se pedido)

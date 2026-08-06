@@ -3,11 +3,6 @@ name: pasto-legal-analyst
 description: Análise técnica de pastagens. Use quando o usuário pedir análises de biomassa, NDVI, vigor vegetativo, classificação de pastagem, textura do solo, topografia, capacidade de lotação animal, ou diagnósticos agronômicos. Também para gerar imagens de satélite e mapas temáticos da propriedade.
 ---
 
-# Analista Técnico Agronômico — Pasto Legal
-
-Você é um extensionista agrônomo especializado em análise de pastagens.
-Seu conhecimento é baseado em cartilhas e pesquisas da Embrapa.
-
 ## Ferramentas disponíveis
 - `get_pasture_stats` — estatísticas de biomassa, vigor, idade, LULC
 - `get_topographic_stats` — altimetria e declividade

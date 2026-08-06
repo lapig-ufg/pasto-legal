@@ -291,9 +291,9 @@ async def process_message(
 
         from app.core.pi_rpc import build_prompt
 
-        # ── Onboarding gate: handle terms acceptance in Python ──────────
-        # pi's default coding-agent system prompt can override our
-        # Pasto Legal instructions, so we handle acceptance here directly.
+        # ── Onboarding gate: handle ENTIRELY in Python ─────────────────
+        # Don't involve the LLM — pi's coding-agent system prompt overrides
+        # user-message instructions. We handle acceptance here directly.
         if not session_state.get("terms_accepted"):
             text_lower = final_text.strip().lower()
             acceptance_keywords = ["sim", "aceito", "concordo", "ok", "pode", "sim senhor",
@@ -302,32 +302,46 @@ async def process_message(
             is_acceptance = any(kw in text_lower for kw in acceptance_keywords)
 
             if is_acceptance:
-                # Call onboarding directly, bypassing LLM
                 try:
                     from cli.onboarding import accept_terms
                     result = accept_terms({"user_id": user_id})
                     if "error" in result:
                         log.error(f"[router] onboarding error: {result['error']}")
-                    else:
-                        session_state["terms_accepted"] = True
-                        await send_whatsapp_message_async(
-                            phone_number,
-                            result.get("message", "Termos de Uso aceitos! 🎉 O sistema está liberado para uso. Como posso ajudar?"),
-                            config_wa,
-                        )
+                        await send_whatsapp_message_async(phone_number, _ERROR_MESSAGE, config_wa)
                         return
+                    session_state["terms_accepted"] = True
+                    await send_whatsapp_message_async(
+                        phone_number,
+                        result.get("message", "Termos de Uso aceitos! 🎉 O sistema está liberado para uso. Como posso ajudar?"),
+                        config_wa,
+                    )
+                    return
                 except Exception as e:
                     log.error(f"[router] onboarding exception: {e}")
-                    # Fall through to pi for normal processing
-            else:
-                # Not an acceptance — let pi handle the onboarding flow
-                pass
+                    await send_whatsapp_message_async(phone_number, _ERROR_MESSAGE, config_wa)
+                    return
 
-        # Get or create per-user pi client
+            # Not an acceptance — don't call pi at all. Send pre-canned terms.
+            await send_whatsapp_message_async(
+                phone_number,
+                "🌿 *Bem-vindo ao Pasto Legal!*\n\n"
+                "Antes de começar, você precisa aceitar os *Termos de Uso* da plataforma.\n\n"
+                "📄 Termos de Uso: https://pasto.legal/termos-de-uso\n\n"
+                "Resumo:\n"
+                "• Plataforma gratuita do LAPIG/UFG\n"
+                "• Dados de satélite Copernicus/ESA\n"
+                "• Código aberto (MIT)\n"
+                "• Serviço 'as is'\n"
+                "• Contato: lapig.ufg@gmail.com\n\n"
+                "Digite *ACEITO* para concordar e começar a usar.",
+                config_wa,
+            )
+            return
+
+        # Get or create per-user pi client (pi loads session from disk)
         client = await pi_pool.get_client(user_id)
-        is_new = not client._has_session
 
-        full_prompt = build_prompt(final_text.strip(), user_id=user_id, session_state=session_state, is_new_session=is_new)
+        full_prompt = build_prompt(final_text.strip(), user_id=user_id, session_state=session_state)
 
         try:
             pi_result = await client.prompt(full_prompt)
@@ -335,9 +349,6 @@ async def process_message(
             log.error(f"[router] pi_rpc.prompt failed: {e}")
             await send_whatsapp_message_async(phone_number, _ERROR_MESSAGE, config_wa)
             return
-
-        # ── Mirror session to Valkey (durability) ────────────────────────
-        await pi_pool.save_session(user_id)
 
         # ── Send response back to WhatsApp ──────────────────────────────
         content = pi_result.get("content", "")

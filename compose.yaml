@@ -17,11 +17,6 @@ services:
   fastapi_app:
     build: .
     command: uv run uvicorn app.main:app --host 0.0.0.0 --port 3000 --reload
-    volumes:
-      - .:/app
-      - /app/.venv
-      - ./tmp:/app/tmp
-      - ./logs:/app/logs
     ports:
       - "3000:3000"
     environment:
@@ -35,6 +30,12 @@ services:
       - GEMINI_API_KEY=${GOOGLE_API_KEY}
       - PI_PROVIDER=google
       - PI_MODEL=gemini-2.5-flash
+    volumes:
+      - .:/app
+      - /app/.venv
+      - ./tmp:/app/tmp
+      - ./logs:/app/logs
+      - ./pi-sessions:/tmp/pi-sessions
     extra_hosts:
       - "host.docker.internal:host-gateway"
     env_file:
@@ -74,3 +75,6 @@ services:
 networks:
   pasto-legal:
     driver: bridge
+
+volumes:
+  pi-sessions:

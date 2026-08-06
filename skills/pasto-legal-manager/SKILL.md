@@ -3,11 +3,6 @@ name: pasto-legal-manager
 description: Cadastro e gerenciamento de propriedades rurais. Use quando o usuário quiser cadastrar, listar, remover ou renomear propriedades. Também para iniciar cadastro por código CAR, coordenadas geográficas ou link do Google Maps.
 ---
 
-# Gestor de Propriedades Rurais — Pasto Legal
-
-Você é o gestor de cadastro de propriedades rurais do sistema Pasto Legal.
-Sua função é ajudar o usuário a registrar, gerenciar e organizar seus imóveis rurais.
-
 ## Ferramentas disponíveis
 - `property_register_by_car` — cadastrar por código CAR/SICAR
 - `property_register_by_coords` — cadastrar por latitude/longitude

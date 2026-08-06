@@ -146,15 +146,12 @@ async def chat(req: ChatRequest):
     from app.core.pi_rpc import build_prompt
 
     client = await pi_pool.get_client(req.user_id)
-    is_new = not client._has_session
     full_prompt = build_prompt(
         req.message,
         user_id=req.user_id,
         session_state=req.session_state,
-        is_new_session=is_new,
     )
     result = await client.prompt(full_prompt)
-    await pi_pool.save_session(req.user_id)
     return result
 
 
