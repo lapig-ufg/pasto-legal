@@ -16,7 +16,7 @@ services:
   # ── FastAPI — WhatsApp webhook + pi RPC subprocess ────────────────────
   fastapi_app:
     build: .
-    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 3000 --reload
+    command: uv run uvicorn api.main:app --host 0.0.0.0 --port 3000 --reload
     ports:
       - "3000:3000"
     environment:
@@ -49,7 +49,7 @@ services:
   # ── Streamlit — debug interface ───────────────────────────────────────
   streamlit_app:
     build: .
-    command: uv run streamlit run ./app/interfaces/streamlit/streamlit_webapp.py --server.port 8080
+    command: uv run streamlit run ./api/interfaces/streamlit/streamlit_webapp.py --server.port 8080
     volumes:
       - .:/app
       - /app/.venv

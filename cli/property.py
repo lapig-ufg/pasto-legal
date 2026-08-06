@@ -34,10 +34,10 @@ def _set_state(user_id: str, state: dict) -> None:
 
 
 def register_by_car(args: dict) -> dict:
-    from app.services.geospatial.sicar import fetch_property_by_car, clean_car_code
-    from app.services.geospatial.gee import retrieve_feature_images
-    from app.services.geospatial.image import create_vertical_mosaic
-    from app.schemas.rural_property import RuralProperty
+    from api.services.geospatial.sicar import fetch_property_by_car, clean_car_code
+    from api.services.geospatial.gee import retrieve_feature_images
+    from api.services.geospatial.image import create_vertical_mosaic
+    from api.schemas.rural_property import RuralProperty
     from io import BytesIO
     import base64 as b64
 
@@ -74,10 +74,10 @@ def register_by_car(args: dict) -> dict:
 
 
 def register_by_coords(args: dict) -> dict:
-    from app.services.geospatial.sicar import fetch_property_by_coordinates
-    from app.services.geospatial.gee import retrieve_feature_images
-    from app.services.geospatial.image import create_vertical_mosaic
-    from app.schemas.rural_property import RuralProperty
+    from api.services.geospatial.sicar import fetch_property_by_coordinates
+    from api.services.geospatial.gee import retrieve_feature_images
+    from api.services.geospatial.image import create_vertical_mosaic
+    from api.schemas.rural_property import RuralProperty
     from io import BytesIO
     import base64 as b64
 
@@ -116,9 +116,9 @@ def register_by_coords(args: dict) -> dict:
 
 
 def register_by_url(args: dict) -> dict:
-    from app.services.geospatial.sicar import fetch_coordinates_by_url, fetch_property_by_coordinates
-    from app.services.geospatial.gee import retrieve_feature_images
-    from app.services.geospatial.image import create_vertical_mosaic
+    from api.services.geospatial.sicar import fetch_coordinates_by_url, fetch_property_by_coordinates
+    from api.services.geospatial.gee import retrieve_feature_images
+    from api.services.geospatial.image import create_vertical_mosaic
     from io import BytesIO
     import base64 as b64
 
@@ -168,7 +168,7 @@ def select_from_list(args: dict) -> dict:
 
 
 def complete_registration(args: dict) -> dict:
-    from app.schemas.rural_property import RuralProperty
+    from api.schemas.rural_property import RuralProperty
 
     user_id = args["user_id"]
     name = args["name"]

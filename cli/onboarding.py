@@ -16,8 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
 def accept_terms(args: dict) -> dict:
-    from app.database.session import SessionLocal, engine
-    from app.database.models import UserTermsAcceptance
+    from api.database.session import SessionLocal, engine
+    from api.database.models import UserTermsAcceptance
 
     user_id = args["user_id"]
     UserTermsAcceptance.metadata.create_all(bind=engine)

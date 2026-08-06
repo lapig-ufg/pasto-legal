@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
 def generate(args: dict) -> dict:
-    from app.services.audio.tts import generate_speech
+    from api.services.audio.tts import generate_speech
     audio = generate_speech(args["text"], user_id=args.get("user_id", "default"))
     if audio and audio.filepath:
         return {"audio_path": audio.filepath}

@@ -35,27 +35,27 @@ def _get_property_coords(car_codes: list) -> list:
         state = json.loads(raw)
         for prop in state.get("all_properties", []):
             if prop.get("car_code") == car_str:
-                from app.schemas.rural_property import RuralProperty
+                from api.schemas.rural_property import RuralProperty
                 return RuralProperty.model_validate(prop).get_coords()
     raise ValueError(f"Property not found for CAR: {car_str}")
 
 
 def pasture_stats(args: dict) -> dict:
-    from app.services.geospatial.gee import query_pasture_statistics
+    from api.services.geospatial.gee import query_pasture_statistics
     coords = _get_property_coords(args["car_codes"])
     stats = query_pasture_statistics(coords, args.get("year", 2026), args.get("month", 5))
     return {"stats_text": str(stats), "stats": stats.model_dump()}
 
 
 def topographic_stats(args: dict) -> dict:
-    from app.services.geospatial.gee import query_topographic_stats
+    from api.services.geospatial.gee import query_topographic_stats
     coords = _get_property_coords(args["car_codes"])
     stats = query_topographic_stats(coords)
     return {"stats_text": str(stats), "stats": stats.model_dump()}
 
 
 def property_image(args: dict) -> dict:
-    from app.services.geospatial.gee import retrieve_feature_images
+    from api.services.geospatial.gee import retrieve_feature_images
     import base64 as b64
     coords = _get_property_coords(args["car_codes"])
     imgs = retrieve_feature_images(coords)
@@ -65,7 +65,7 @@ def property_image(args: dict) -> dict:
 
 
 def biomass_image(args: dict) -> dict:
-    from app.services.geospatial.gee import retrieve_t2g_biomass_image, retrieve_mapbiomas_biomass_image
+    from api.services.geospatial.gee import retrieve_t2g_biomass_image, retrieve_mapbiomas_biomass_image
     import datetime, base64 as b64
     coords = _get_property_coords(args["car_codes"])
     today = datetime.date.today()
@@ -78,7 +78,7 @@ def biomass_image(args: dict) -> dict:
 
 
 def soil_texture_image(args: dict) -> dict:
-    from app.services.geospatial.gee import retrieve_feature_soil_texture_image
+    from api.services.geospatial.gee import retrieve_feature_soil_texture_image
     import base64 as b64
     coords = _get_property_coords(args["car_codes"])
     img = retrieve_feature_soil_texture_image(coords)
@@ -88,8 +88,8 @@ def soil_texture_image(args: dict) -> dict:
 
 
 def pasture_classification_image(args: dict) -> dict:
-    from app.services.geospatial.pasture_classification import classify_pasture_on_the_fly
-    from app.schemas.rural_property import RuralProperty
+    from api.services.geospatial.pasture_classification import classify_pasture_on_the_fly
+    from api.schemas.rural_property import RuralProperty
     import ee, base64 as b64, redis, json as _json
 
     car_codes = args["car_codes"]
