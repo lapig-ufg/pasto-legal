@@ -3,7 +3,7 @@ CLI wrapper for version/update notes.
 Called by pi's bash tool via the pi subprocess extension.
 
 Usage:
-  python cli/version.py '<base64-json-args>'
+  python agent/tools/version.py '<base64-json-args>'
 """
 import sys
 import json

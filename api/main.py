@@ -28,7 +28,7 @@ from agent.pi_rpc import PiRpcPool
 log = logging.getLogger("pasto-legal.main")
 logging.basicConfig(level=logging.DEBUG, format="%(levelname)s | %(name)s | %(message)s")
 
-CLI_DIR = Path(__file__).resolve().parent.parent / "cli"
+CLI_DIR = Path(__file__).resolve().parent.parent / "agent" / "tools"
 
 # ── pi RPC pool (per-user processes, started at startup) ──────────────
 pi_pool: PiRpcPool = None
@@ -144,12 +144,16 @@ class ChatRequest(BaseModel):
 async def chat(req: ChatRequest):
     """Chat endpoint for Streamlit debug UI."""
     from agent.pi_rpc import build_prompt
+    from agent.tool_rag import search_tools
+
+    relevant_tools = search_tools(req.message, top_k=5)
 
     client = await pi_pool.get_client(req.user_id)
     full_prompt = build_prompt(
         req.message,
         user_id=req.user_id,
         session_state=req.session_state,
+        relevant_tools=relevant_tools,
     )
     result = await client.prompt(full_prompt)
     return result

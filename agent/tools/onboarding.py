@@ -3,7 +3,7 @@ CLI wrapper for onboarding (terms acceptance).
 Called by pi's bash tool via the pi subprocess extension.
 
 Usage:
-  python cli/onboarding.py '<base64-json-args>'
+  python agent/tools/onboarding.py '<base64-json-args>'
 """
 import sys
 import json

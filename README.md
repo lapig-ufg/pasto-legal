@@ -8,7 +8,7 @@
 
 ## About
 
-Pasto Legal is an open-science platform that brings advanced satellite analytics and agronomic expertise directly to farmers' phones through WhatsApp. Behind a simple chat interface, a team of specialized AI agents connects to official databases (SICAR — Brazil's Rural Environmental Registry) and global satellites (Google Earth Engine, MapBiomas) to transform complex geospatial data into fast answers, clear maps, and precise diagnostics for rural properties.
+Pasto Legal is an open-science platform that brings advanced satellite analytics and agronomic expertise directly to farmers' phones through WhatsApp. Behind a simple chat interface, an AI assistant connects to official databases (SICAR — Brazil's Rural Environmental Registry) and global satellites (Google Earth Engine, MapBiomas) to transform complex geospatial data into fast answers, clear maps, and precise diagnostics for rural properties.
 
 The system is designed to be as natural as talking to a trusted agronomist — no menus, no complex navigation. Farmers can send text, audio (while standing in the field), or photos of their pasture and get actionable insights in return.
 
@@ -52,7 +52,7 @@ Pasto Legal aligns with the directives of the Desafio IA Natureza & Clima:
 
 ## Overview
 
-Pasto Legal is a WhatsApp-based AI assistant for Brazilian ranchers. It uses the **pi coding agent** via JSON-RPC (`--mode rpc`) as a local subprocess — **zero Node.js code in the project**. Python handles WhatsApp webhooks, domain services (GEE, SICAR, TTS), and tool execution.
+Pasto Legal uses a **Host-Side [Tool-RAG](https://next.redhat.com/2025/11/26/tool-rag-the-next-breakthrough-in-scalable-ai-agents/#:~:text=Imagine%20this%3A%20you're%20building%20an%20AI%20assistant,only%20handle%20so%20much%20context%20at%20once.) Router** combined with **pi RPC** (JSON-RPC subprocess). Python owns everything: the WhatsApp webhook, tool selection via FAISS vector search, and all domain services (GEE, SICAR, TTS). pi runs as a local subprocess — zero Node.js code in the project.
 
 ---
 
@@ -68,48 +68,49 @@ Pasto Legal is a WhatsApp-based AI assistant for Brazilian ranchers. It uses the
 │                     fastapi_app  (Python :3000)                      │
 │                                                                      │
 │  ┌──────────────────┐   ┌──────────────┐   ┌──────────────────────┐ │
-│  │  WhatsApp Router  │   │  /tool endpoint│   │  /chat endpoint     │ │
-│  │  - verify webhook │   │  - calls CLI   │   │  (Streamlit debug)  │ │
-│  │  - receive msgs   │   │    scripts     │   │                      │ │
-│  │  - send responses │   │                │   │                      │ │
-│  └────────┬─────────┘   └───────┬────────┘   └──────────┬──────────┘ │
-│           │                     │                        │           │
-│  ┌────────┴─────────────────────┴────────────────────────┴─────────┐ │
-│  │                        Shared Services                            │ │
-│  │  ┌─────────────┐  ┌──────────┐  ┌───────┐  ┌──────────────────┐ │ │
-│  │  │ Valkey/Redis │  │ Database │  │  GEE  │  │ SICAR + TTS +    │ │ │
-│  │  │ (session    │  │ (SQLite/ │  │       │  │ Pasture Classif. │ │ │
-│  │  │  state,     │  │  PG)     │  │       │  │                  │ │ │
-│  │  │  debounce,  │  │          │  │       │  │                  │ │ │
-│  │  │  history)   │  │          │  │       │  │                  │ │ │
-│  │  └─────────────┘  └──────────┘  └───────┘  └──────────────────┘ │ │
+│  │  WhatsApp Router │   │  /tool endpoint│   │  /chat endpoint     │ │
+│  │  - verify webhook│   │  - dispatches  │   │  (Streamlit debug)  │ │
+│  │  - receive msgs  │   │   to agent/    │   │                     │ │
+│  │  - send responses│   │   tools/*.py   │   │                     │ │
+│  └────────┬─────────┘   └───────┬────────┘   └──────────┬──────────┘  │
+│           │                     │                        │            │
+│  ┌────────┴─────────────────────┴────────────────────────┴─────────┐  │
+│  │                    Tool-RAG Router                               │ │
+│  │                    (agent/tool_rag.py)                           │ │
+│  │  Embeds tool schemas → FAISS index                               │ │
+│  │  Cosine similarity search on user message + last 3 queries       │ │
+│  │  Returns top-5 relevant tools → injected into pi prompt          │ │
 │  └──────────────────────────────────────────────────────────────────┘ │
-│                                                                      │
+│                                                                       │
 │  ┌──────────────────────────────────────────────────────────────────┐ │
-│  │                    pi RPC subprocess                              │ │
-│  │                    (one per user, spawned on demand)              │ │
-│  │                                                                   │ │
-│  │  pi --mode rpc --no-session --provider google --model ...         │ │
-│  │       -e .pi/extensions/pasto-legal-tools.js                      │ │
-│  │                                                                   │ │
-│  │  ┌────────────┐  ┌──────────────┐  ┌─────────────────────────┐  │ │
-│  │  │ AGENTS.md   │  │ 6 Skills     │  │ 19 Custom Tools          │  │ │
-│  │  │ (system     │  │ (auto-       │  │ (extension:              │  │ │
-│  │  │  prompt)    │  │  discovered  │  │  .pi/extensions/         │  │ │
-│  │  │             │  │  from        │  │  pasto-legal-tools.js)   │  │ │
-│  │  │             │  │  .pi/skills/) │  │                         │  │ │
-│  │  └────────────┘  └──────────────┘  └──────────┬──────────────┘  │ │
-│  │                                                │                 │ │
-│  │  Tools call back to FastAPI via HTTP            │                 │ │
-│  │  POST http://localhost:3000/tool                │                 │ │
-│  └────────────────────────────────────────────────┘                 │ │
+│  │                    pi RPC subprocess                             │ │
+│  │                    (one per user, spawned on demand)             │ │
+│  │                                                                  │ │
+│  │  pi --mode rpc --session /tmp/pi-sessions/{user}/session.jsonl   │ │
+│  │       -e agent/extensions/pasto-legal-tools.js                   │ │
+│  │                                                                  │ │
+│  │  Session file on disk — pi manages context + compaction natively │ │
+│  │  Only RAG-selected tools described in prompt (zero prompt bloat) │ │
+│  └──────────────────────────────────────────────────────────────────┘ │
+│                                                                       │
+│  ┌──────────────────────────────────────────────────────────────────┐ │
+│  │                        Shared Services                           │ │
+│  │  ┌─────────────┐  ┌──────────┐  ┌───────┐  ┌──────────────────┐  │ │
+│  │  │ Valkey/Redis│  │ Database │  │  GEE  │  │ SICAR + TTS +    │  │ │
+│  │  │ (session    │  │ (SQLite/ │  │       │  │ Pasture Classif. │  │ │
+│  │  │  state,     │  │  PG)     │  │       │  │                  │  │ │
+│  │  │  debounce,  │  │          │  │       │  │                  │  │ │
+│  │  │  recent     │  │          │  │       │  │                  │  │ │
+│  │  │  queries)   │  │          │  │       │  │                  │  │ │
+│  │  └─────────────┘  └──────────┘  └───────┘  └──────────────────┘  │ │
+│  └──────────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────┐
 │                      valkey  (Redis-compatible :6379)                │
 │  - Message debouncing (5s window)                                    │
-│  - Session state persistence                                         │
-│  - pi session mirror (entries saved after each prompt)               │
+│  - Session state (properties, persona, terms_accepted)               │
+│  - Recent queries for RAG context (last 3 per user)                  │
 │  - PII hashing cache                                                 │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -124,104 +125,104 @@ WhatsApp ──► fastapi_app/whatsapp/webhook
                 ├── PII guardrail check
                 ├── Media download (images, audio, docs)
                 ├── Message debouncing (Valkey, 5s)
-                ├── Load session state (Valkey + DB)
-                │   └── Check terms_accepted from DB
+                ├── Onboarding gate (Python — no LLM)
+                │   !terms_accepted → pre-canned terms message
+                │   user says "aceito" → accept_terms() → DB
                 │
                 ▼
-            Onboarding gate (Python)
-            If !terms_accepted and user says "aceito" → accept directly
-                │
-                ▼
-            PiRpcPool.get_client(user_id)
-            One pi process per user, restored from Valkey if returning
+            Tool-RAG Router (agent/tool_rag.py)
+            Embeds [last 3 queries + current message] → FAISS cosine similarity
+            Returns top-5 relevant tools from agent/registry.py
                 │
                 ▼
             build_prompt()
-            Session state + user message (system prompt via AGENTS.md)
+            RAG-selected tool descriptions + skill instructions + session state
                 │
                 ▼
-            pi_rpc.prompt(full_prompt)
-            JSON-RPC over stdin/stdout
+            PiRpcPool.get_client(user_id)
+            One pi process per user — session loaded from /tmp/pi-sessions/{user}/session.jsonl
                 │
-                ├── pi processes message with LLM
-                ├── LLM may call custom tools
-                │   └── Extension calls POST /tool on localhost:3000
-                │       └── Python CLI scripts execute
-                │           ├── cli/property.py
-                │           ├── cli/gee.py
-                │           ├── cli/tts.py
-                │           ├── cli/onboarding.py
-                │           └── cli/version.py
+                ▼
+            pi_rpc.prompt(full_prompt)  — JSON-RPC over stdin/stdout
+                │
+                ├── LLM processes message (only sees relevant tools)
+                ├── LLM calls a tool → extension POST /tool → agent/tools/*.py
+                ├── pi writes conversation to session file (native persistence)
                 ├── Returns text + base64 images + audio paths
                 │
                 ▼
-            pi_rpc response
-            { content, images[], audio[] }
-                │
-                ├── Mirror session to Valkey (get_entries)
-                ├── Send text to WhatsApp
-                ├── Upload images to WhatsApp Media API
-                └── Upload audio to WhatsApp Media API
+            Send to WhatsApp (text + images + audio)
 ```
 
 ---
 
-## Key Design Decisions
+## How It Works
 
-### JSON-RPC Subprocess (zero Node.js in project)
+### Host-Side Tool-RAG Router
 
-The pi coding agent is a Node.js CLI. Instead of embedding its SDK in a custom Express server, we run `pi --mode rpc` as a local subprocess and communicate via JSON-RPC over stdin/stdout. **Zero Node.js code in the Pasto Legal project.**
+Instead of loading all 19 tool descriptions into every LLM prompt, the Tool-RAG Router embeds all tool schemas into an in-memory FAISS index at startup. For each user message:
 
-- pi is installed globally in the Docker image (`npm install -g @earendil-works/pi-coding-agent`)
-- Python spawns pi on demand via `asyncio.create_subprocess_exec`
-- All communication is JSON-Line protocol (one JSON object per line)
-- `PiRpcPool` manages per-user pi processes with TTL-based cleanup (30 min idle)
+1. The current message **plus the last 3 user queries** (stored in Valkey) are concatenated for context
+2. A cosine similarity search finds the top-5 most relevant tools
+3. Only those 5 tool descriptions and their skill instructions are injected into the prompt
+4. Tools like `accept_terms_and_conditions` and `consult_update_notes` are always available regardless of similarity score
 
-### Per-User pi Processes (Option 2a)
+This means the LLM sees a lean, focused prompt every time — not a wall of 19 tool descriptions.
 
-Each user gets their own pi process with an in-memory session. pi manages conversation context and compaction. After each prompt, the session tree is mirrored to Valkey via `get_entries` for durability.
+### Tool/Skill Registry
 
-- **New user**: `--no-session` → fresh in-memory session
-- **Returning user**: session entries loaded from Valkey → written to temp JSONL → `--session <file>` → pi restores full tree including compaction state
-- **Cleanup**: idle processes saved to Valkey and terminated after 30 min TTL
+All 19 tools are defined in a single file: `agent/registry.py`. Each entry has:
 
-### System Prompt via AGENTS.md
+- **name** — the tool identifier (e.g., `register_property_by_car`)
+- **description** — what the tool does (used for FAISS embedding)
+- **category** — grouping (property, analysis, utility, onboarding)
+- **skill** — optional skill instructions injected into the prompt when the tool is RAG-selected
 
-pi reads `AGENTS.md` from its working directory and includes it in the system prompt context. This gives our Pasto Legal instructions higher priority than user-message injection.
+The tool implementations live in `agent/tools/` (property.py, gee.py, tts.py, onboarding.py, version.py). The `/tool` endpoint dispatches to these files based on the action name.
 
-### Onboarding Gate (Terms of Service)
+### Isolated Sessions (one pi process per user)
 
-New users must accept terms before any interaction. Enforced at two levels:
+Every user gets their own pi subprocess with its own session file at `/tmp/pi-sessions/{user_id}/session.jsonl`. pi manages the session natively:
 
-1. **Python layer** (`router.py`): when `terms_accepted` is false and the user's message matches acceptance keywords (`sim`, `aceito`, `concordo`, etc.), calls `accept_terms()` directly — bypassing the LLM entirely
-2. **LLM fallback**: the `accept_terms_and_conditions` tool is still available for edge cases
+- **Conversation history** — stored in the JSONL file, loaded when the process starts
+- **Compaction** — pi summarizes old context when the window fills, preserving the compacted state in the file
+- **Persistence** — the file survives process restarts and container restarts (Docker volume `pi-sessions`)
+- **Isolation** — User A's conversation never touches User B's context
 
-### Single Agent + Skills (replacing Multi-Agent)
+A `PiRpcPool` manages the lifecycle: spawn on first message, reuse for subsequent messages, stop after 30 minutes idle. A per-user `asyncio.Lock` prevents race conditions when two messages arrive simultaneously for the same user.
 
-AGNO used a router agent dispatching to 7 specialized agents. pi uses a **single agent** with **6 skills** auto-discovered from `.pi/skills/`:
+### Onboarding Gate
 
-| Skill | Purpose |
-|-------|---------|
-| `pasto-legal-analyst` | Pasture analysis, GEE stats, satellite imagery |
-| `pasto-legal-manager` | Property registration, CRUD operations |
-| `pasto-legal-faq` | Platform questions, data sources |
-| `pasto-legal-onboarding` | Terms of service, first-access gate |
-| `pasto-legal-smalltalk` | Greetings, casual conversation |
-| `pasto-legal-feedback` | User satisfaction, issue reporting |
+New users must accept the Terms of Use before using the system. This is handled entirely in Python — no LLM involved:
 
-### Custom Tools (Extension)
+1. First message → `_get_session_state()` checks the database → `terms_accepted: false`
+2. Python sends a pre-canned terms message directly to WhatsApp
+3. User responds "aceito" → Python calls `accept_terms()` → writes to database
+4. All subsequent messages → `terms_accepted: true` → normal LLM flow
 
-19 custom tools defined in `.pi/extensions/pasto-legal-tools.js`. Each tool calls `POST /tool` on `localhost:3000` (same container). The extension is loaded explicitly via `-e` flag to bypass auto-discovery issues.
+---
 
-### Session State Management
+## Main Advantages
 
-| Concern | Storage | Accessed by |
-|---------|---------|-------------|
-| Conversation context + compaction | pi in-memory session | pi subprocess |
-| Session durability (backup) | Valkey (`pi_session:{user_id}`) | PiRpcPool |
-| User properties, registration state | Valkey (`session:{user_id}`) | Python CLI scripts + router |
-| Terms acceptance | SQLite/PostgreSQL | Python DB layer |
-| Message debouncing | Valkey | WhatsApp router |
+- **Zero prompt bloat** — only 5 relevant tool descriptions per prompt, not 19
+- **Deterministic tool selection** — same message + context → same FAISS results → same tools, every time
+- **Fail-safe** — always-available tools included regardless of similarity; if RAG returns nothing, a fallback message is sent
+- **Context-aware RAG** — last 3 user queries are included in the embedding, so the router doesn't lose the thread in medium-sized conversations
+- **Native session management** — pi handles compaction, branching, and persistence. No custom mirror/restore code
+- **Full isolation** — each user has a separate pi process and session file. No cross-user context leakage
+- **Zero Node.js code** — pi is installed globally as a CLI tool. The project is 100% Python
+- **Unified registry** — all tool names, descriptions, and skill instructions in one file (`agent/registry.py`)
+
+---
+
+## Possible Disadvantages
+
+- **Memory per user** — each pi subprocess consumes ~50–100 MB of RAM. 100 concurrent users = ~5–10 GB. The 30-minute TTL helps, but bursts can be expensive
+- **Cold start latency** — first message for a user spawns a new pi process (~2–5 seconds). Subsequent messages reuse the running process
+- **FAISS index is in-memory** — rebuilt on every container restart. For 19 tools this is instant, but wouldn't scale to thousands of tools without a persistent index
+- **No streaming to WhatsApp** — the full response is collected before sending. Users wait for the complete message instead of seeing it stream in
+- **pi system prompt is not overridable in RPC mode** — pi's default coding-agent prompt is always present. Our instructions are injected via `AGENTS.md` and per-prompt context, but the LLM still sees both
+- **Single container for everything** — if FastAPI restarts, all pi subprocesses die. Session files survive on the Docker volume, but users experience a cold start on their next message
 
 ---
 
@@ -229,27 +230,16 @@ AGNO used a router agent dispatching to 7 specialized agents. pi uses a **single
 
 ```yaml
 services:
-  valkey:        # Redis-compatible, session state + debouncing + pi session mirror
-  fastapi_app:   # Python + Node.js (pi), WhatsApp webhook + /tool + /chat, :3000
+  valkey:        # Redis-compatible, session state + debouncing + recent queries
+  fastapi_app:   # Python + pi subprocesses, WhatsApp webhook + /tool + /chat, :3000
   streamlit_app: # Python, debug UI → calls FastAPI /chat, :8080
+
+volumes:
+  pi-sessions:   # /tmp/pi-sessions — survives container restarts
+  valkey-data:   # /data — Valkey persistence (RDB + AOF)
 ```
 
-pi runs as a subprocess inside `fastapi_app` — no separate bridge container. Streamlit is a thin UI that calls FastAPI's `/chat` endpoint via HTTP.
-
 ---
-
-## Comparison: AGNO → pi SDK bridge → pi RPC
-
-| Aspect | AGNO | pi SDK bridge | pi RPC (current) |
-|--------|------|---------------|-------------------|
-| **Node.js code in project** | None | ~300 lines (bridge/) | **Zero** |
-| **Agent model** | Router → 7 agents | Single agent + 6 skills | Single agent + 6 skills |
-| **Communication** | Python in-process | HTTP (bridge:3001) | JSON-RPC stdin/stdout |
-| **System prompt** | AGNO config | SDK override | AGENTS.md + per-prompt injection |
-| **Session history** | AGNO sessions | pi SDK in-memory | pi in-memory + Valkey mirror |
-| **Tool execution** | Python in-process | HTTP POST /tool | HTTP POST /tool (localhost) |
-| **Deployment** | 3 containers | 4 containers | **3 containers** |
-| **Onboarding gate** | Workflow step | System prompt + DB check | Python keyword match + LLM fallback |
 
 ## Getting Started
 
@@ -262,58 +252,53 @@ pi runs as a subprocess inside `fastapi_app` — no separate bridge container. S
 ### Installation
 
 ```bash
-# Clone the repository
 git clone https://github.com/lapig-ufg/pasto-legal.git
 cd pasto-legal
+cp .env.example .env  # Fill in your credentials
+docker compose up --build
 ```
 
-### Configuration
-
-Copy the environment template and fill in your credentials:
-
-```bash
-cp .env.example .env
-```
-
-Key environment variables (see [`.env.example`](.env.example) for the full list):
+### Key Environment Variables
 
 | Variable | Description |
 |---|---|
-| `APP_ENV` | `development`, `staging`, or `production` |
-| `DATABASE_TYPE` | `sqlite` (dev) or `postgres` (prod) |
+| `GOOGLE_API_KEY` | Google Gemini API key (mapped to `GEMINI_API_KEY` for pi) |
 | `GEE_PROJECT` | Google Earth Engine project ID |
 | `GEE_SERVICE_ACCOUNT` | GEE service account email |
 | `GEE_KEY_FILE` | Path to GEE service account JSON key |
-| `MODEL_PROVIDER` | `google` (Gemini) or `ollama` (local) |
-| `MODEL_ID` | Model identifier (default: `gemini-2.5-flash`) |
-| `GOOGLE_API_KEY` | Google Gemini API key (mapped to `GEMINI_API_KEY` for pi) |
 | `PI_PROVIDER` | pi RPC provider (default: `google`) |
 | `PI_MODEL` | pi RPC model (default: `gemini-2.5-flash`) |
 | `PI_SESSION_TTL` | Idle pi process TTL in seconds (default: `1800`) |
 
-> **Production also requires:** PostgreSQL connection vars, WhatsApp Business API credentials (`WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_WEBHOOK_URL`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_APP_SECRET`), and Redis/Valkey connection vars.
-
-### Running Locally (Docker)
-
-```bash
-docker compose up --build
-```
+> **Production also requires:** PostgreSQL connection vars, WhatsApp Business API credentials, and Redis/Valkey connection vars. See [`.env.example`](.env.example) for the full list.
 
 ---
 
 ## Project Structure
 
 ```
-app/
-├── main.py                          # FastAPI app + /tool + /chat endpoints
-├── core/
-│   └── pi_rpc.py                   # PiRpcClient + PiRpcPool + build_prompt()
+agent/                              # pi-related code (zero Node.js in project)
+├── registry.py                     # All 19 tool/skill definitions (name, description, category, skill instructions)
+├── tool_rag.py                     # FAISS index + fastembed + cosine similarity search
+├── pi_rpc.py                       # PiRpcClient + PiRpcPool + build_prompt()
+├── AGENTS.md                       # System prompt for pi (read from cwd)
+├── extensions/
+│   └── pasto-legal-tools.js        # JS extension — 19 custom tools, calls POST /tool
+└── tools/                          # Tool implementations (called by /tool endpoint)
+    ├── property.py                 # Property registration/removal
+    ├── gee.py                      # GEE analysis + image generation
+    ├── tts.py                      # TTS synthesis
+    ├── onboarding.py               # Terms acceptance
+    └── version.py                  # Changelog reader
+
+api/                                # FastAPI application
+├── main.py                         # FastAPI app + /tool + /chat endpoints + lifespan
 ├── configs/
-│   ├── config.py                    # Settings
-│   └── logging_config.py            # Logging
+│   ├── config.py                   # Settings
+│   └── logging_config.py           # Logging
 ├── interfaces/
 │   ├── whatsapp/
-│   │   ├── router.py                # Webhook → pi_rpc.prompt()
+│   │   ├── router.py               # Webhook → onboarding gate → RAG → pi_rpc.prompt()
 │   │   ├── helpers.py               # WhatsApp message sending
 │   │   └── security.py              # Webhook signature validation
 │   └── streamlit/
@@ -325,39 +310,17 @@ app/
 │   └── models.py                    # UserTermsAcceptance model
 ├── guardrails/
 │   └── pii_gate.py                  # PII detection + hashing
-├── schemas/                         # Pydantic models (unchanged)
-├── services/
-│   ├── audio/tts.py                 # TTS synthesis
-│   └── geospatial/
-│       ├── gee.py                   # Google Earth Engine
-│       ├── sicar.py                 # SICAR API client
-│       ├── pasture_classification.py # Pasture classification
-│       ├── image.py                 # Map rendering
-│       └── pasture_cache.py         # Cache layer
-└── utils/
+├── schemas/                         # Pydantic models
+└── services/
+    ├── audio/tts.py                 # TTS synthesis
+    └── geospatial/
+        ├── gee.py                   # Google Earth Engine
+        ├── sicar.py                 # SICAR API client
+        ├── pasture_classification.py
+        ├── image.py                 # Map rendering
+        └── pasture_cache.py         # Cache layer
 
-cli/                                 # Python tool wrappers (called by /tool endpoint)
-├── property.py                      # Property registration/removal
-├── gee.py                           # GEE analysis + image generation
-├── tts.py                           # TTS synthesis
-├── onboarding.py                    # Terms acceptance
-└── version.py                       # Changelog reader
-
-.pi/                                 # pi auto-discovery (zero Node.js code in project)
-├── extensions/
-│   └── pasto-legal-tools.js         # 19 custom tool definitions
-└── skills/                          # Symlinks → ../../skills/*/
-
-skills/                              # Skill SKILL.md files
-├── pasto-legal-analyst/
-├── pasto-legal-manager/
-├── pasto-legal-faq/
-├── pasto-legal-onboarding/
-├── pasto-legal-smalltalk/
-└── pasto-legal-feedback/
-
-AGENTS.md                            # System prompt for pi (read from cwd)
-dead_agno/                           # Original AGNO code (reference only)
+DELETE_ME/                          # Unused files (old AGNO code, etc.)
 ```
 
 ---

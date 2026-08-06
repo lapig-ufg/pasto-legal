@@ -69,6 +69,8 @@ class PiRpcClient:
         if "TOOL_BACKEND_URL" not in env:
             env["TOOL_BACKEND_URL"] = "http://localhost:3000"
 
+        log.info(env)
+
         cmd = [
             "pi", "--mode", "rpc",
             "--session", str(session_file),
@@ -323,15 +325,48 @@ def build_prompt(
     user_message: str,
     user_id: str = "",
     session_state: dict = None,
+    relevant_tools: list[str] | None = None,
 ) -> str:
     """Build the prompt for pi.
 
     - System prompt: handled by AGENTS.md (pi reads it from cwd).
     - Session state: injected every message (changes after tool calls).
     - user_id: injected so the LLM can pass it to tools.
+    - relevant_tools: if provided, only these tools are suggested to the LLM
+      (Zero Prompt Bloat — RAG-selected tools only).
     - History: NOT injected — pi manages it in its session file.
     """
     parts = []
+
+    # ── Tool-RAG: only suggest relevant tools + inject skills ─────────
+    if relevant_tools:
+        from agent.registry import TOOLS as _REGISTRY
+        name_to_tool = {t["name"]: t for t in _REGISTRY}
+
+        # Tool descriptions
+        lines = []
+        for name in relevant_tools:
+            t = name_to_tool.get(name)
+            if t:
+                lines.append(f"- `{name}`: {t['description']}")
+        parts.append(
+            "## Ferramentas disponíveis para esta consulta\n"
+            "Use APENAS as ferramentas listadas abaixo para responder ao usuário.\n"
+            "Não invente ferramentas que não estão nesta lista.\n\n"
+            + "\n".join(lines) + "\n"
+        )
+
+        # Skill instructions (only for tools that have them)
+        skill_lines = []
+        for name in relevant_tools:
+            t = name_to_tool.get(name)
+            if t and t.get("skill"):
+                skill_lines.append(f"## Skill: {name}\n{t['skill']}")
+        if skill_lines:
+            parts.append(
+                "## Instruções específicas (skills)\n"
+                + "\n\n".join(skill_lines) + "\n"
+            )
 
     parts.append("\n<session-state>")
     parts.append(f"<user-id>{user_id}</user-id>")

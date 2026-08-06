@@ -241,3 +241,4 @@ node_modules/*
 **/__pycache__/
 
 .pi-sessions
+docker-vols

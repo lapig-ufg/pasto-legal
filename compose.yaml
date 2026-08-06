@@ -2,9 +2,11 @@ services:
   # ── Valkey/Redis — debouncing + session state ─────────────────────────
   valkey:
     image: valkey/valkey:8-alpine
-    command: valkey-server --save "" --appendonly no
+    command: valkey-server --save 900 1 --appendonly yes
     ports:
       - "6379:6379"
+    volumes:
+      - ./docker-vols/valkey-data:/data
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]
       interval: 5s
@@ -28,14 +30,17 @@ services:
       - VALKEY_DB=0
       - TOOL_BACKEND_URL=http://localhost:3000
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GEE_PROJECT=${GEE_PROJECT}
+      - GEE_SERVICE_ACCOUNT=${GEE_SERVICE_ACCOUNT}
+      - GEE_KEY_FILE=${GEE_KEY_FILE}
       - PI_PROVIDER=google
       - PI_MODEL=gemini-2.5-flash
     volumes:
       - .:/app
       - /app/.venv
-      - ./tmp:/app/tmp
-      - ./logs:/app/logs
-      - ./pi-sessions:/tmp/pi-sessions
+      - ./docker-vols/tmp:/app/tmp
+      - ./docker-vols/logs:/app/logs
+      - ./docker-vols/pi-sessions:/tmp/pi-sessions
     extra_hosts:
       - "host.docker.internal:host-gateway"
     env_file:
@@ -53,8 +58,8 @@ services:
     volumes:
       - .:/app
       - /app/.venv
-      - ./tmp:/app/tmp
-      - ./logs:/app/logs
+      - ./docker-vols/tmp:/app/tmp
+      - ./docker-vols/logs:/app/logs
     ports:
       - "8080:8080"
     environment:
@@ -78,3 +83,4 @@ networks:
 
 volumes:
   pi-sessions:
+  valkey-data:

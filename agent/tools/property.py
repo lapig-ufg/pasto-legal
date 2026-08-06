@@ -3,7 +3,7 @@ CLI wrapper for property registration tools.
 Called by pi's bash tool via the pi subprocess extension.
 
 Usage:
-  python cli/property.py '<base64-json-args>'
+  python agent/tools/property.py '<base64-json-args>'
 
 Each action reads/writes session state from Valkey/Redis.
 """

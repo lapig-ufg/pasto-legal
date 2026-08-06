@@ -105,6 +105,21 @@ def _set_session_state(user_id: str, state: dict) -> None:
     valkey_client.set(f"session:{user_id}", json.dumps(state, default=str))
 
 
+def _get_recent_queries(user_id: str) -> list[str]:
+    """Get the last 3 user queries from Valkey for RAG context."""
+    raw = valkey_client.get(f"recent_queries:{user_id}")
+    return json.loads(raw) if raw else []
+
+
+def _append_recent_query(user_id: str, query: str) -> None:
+    """Append a user query to the recent list (max 3)."""
+    recent = _get_recent_queries(user_id)
+    recent.append(query)
+    if len(recent) > 3:
+        recent = recent[-3:]
+    valkey_client.set(f"recent_queries:{user_id}", json.dumps(recent, default=str))
+
+
 def _get_history(user_id: str) -> list:
     """Load conversation history from Valkey."""
     raw = valkey_client.get(f"history:{user_id}")
@@ -290,6 +305,7 @@ async def process_message(
         session_state = _get_session_state(user_id)
 
         from agent.pi_rpc import build_prompt
+        from agent.tool_rag import search_tools
 
         # ── Onboarding gate: handle ENTIRELY in Python ─────────────────
         # Don't involve the LLM — pi's coding-agent system prompt overrides
@@ -303,7 +319,7 @@ async def process_message(
 
             if is_acceptance:
                 try:
-                    from cli.onboarding import accept_terms
+                    from agent.tools.onboarding import accept_terms
                     result = accept_terms({"user_id": user_id})
                     if "error" in result:
                         log.error(f"[router] onboarding error: {result['error']}")
@@ -338,10 +354,20 @@ async def process_message(
             )
             return
 
+        # ── Tool-RAG: find relevant tools using recent context ─────────
+        recent = _get_recent_queries(user_id)
+        relevant_tools = search_tools(final_text.strip(), top_k=5, recent_queries=recent)
+        _append_recent_query(user_id, final_text.strip())
+
         # Get or create per-user pi client (pi loads session from disk)
         client = await pi_pool.get_client(user_id)
 
-        full_prompt = build_prompt(final_text.strip(), user_id=user_id, session_state=session_state)
+        full_prompt = build_prompt(
+            final_text.strip(),
+            user_id=user_id,
+            session_state=session_state,
+            relevant_tools=relevant_tools,
+        )
 
         try:
             pi_result = await client.prompt(full_prompt)
