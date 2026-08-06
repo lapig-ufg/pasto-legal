@@ -10,7 +10,9 @@ import PIL
 import requests
 import xarray as xr
 
-from agno.utils.log import log_error, log_info
+import logging
+
+log = logging.getLogger("pasto-legal.services.geospatial")
 
 from app.services.geospatial.gee import _FEATURE_BUFFER, _IMAGE_DIMENSION, _draw_feature_boundaries, _get_base_image
 from app.services.geospatial.pasture_cache import cache_exists, load_cache, save_cache
@@ -155,7 +157,7 @@ def classify_pasture_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int 
             dataset, image = load_cache(car_code, pred_year)
             pasto = dataset["pasto"].isel(time=0)
             area_ha = _area_ha_from_pasto(pasto)
-            log_info(f"[{car_code}] pasture cache hit ({pred_year}): {area_ha} ha")
+            log.info(f"[{car_code}] pasture cache hit ({pred_year}): {area_ha} ha")
             return {
                 "area_pasto_ha": round(area_ha, 4),
                 "pred_year": pred_year, "train_year": train_year,
@@ -190,7 +192,7 @@ def classify_pasture_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int 
         image = _render_classification_image(roi=roi, classified=classified, base_year=pred_year)
         save_cache(car_code, pred_year, dataset, image)
 
-        log_info(f"[{car_code}] classify_pasture_on_the_fly {pred_year}: {area_ha} ha em {time.perf_counter() - start:.2f}s")
+        log.info(f"[{car_code}] classify_pasture_on_the_fly {pred_year}: {area_ha} ha em {time.perf_counter() - start:.2f}s")
 
         return {
             "area_pasto_ha": round(area_ha, 4),
@@ -199,11 +201,11 @@ def classify_pasture_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int 
         }
 
     except ValueError as error:
-        log_error(traceback.format_exc())
+        log.error(traceback.format_exc())
         raise RuntimeError(f"[{car_code}] {error}")
     except ee.EEException as error:
-        log_error(traceback.format_exc())
+        log.error(traceback.format_exc())
         raise RuntimeError(f"[{car_code}] Falha no Earth Engine ao classificar pastagem: {error}")
     except Exception as error:
-        log_error(traceback.format_exc())
+        log.error(traceback.format_exc())
         raise RuntimeError(f"[{car_code}] Erro inesperado ao classificar pastagem: {error}")

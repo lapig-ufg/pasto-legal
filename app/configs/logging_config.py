@@ -4,8 +4,6 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Optional
 
-from agno.utils.log import agent_logger, team_logger, workflow_logger
-
 LOG_DIR = Path(__file__).resolve().parents[2] / "logs"
 
 _ERROR_FORMATTER = logging.Formatter(
@@ -13,15 +11,19 @@ _ERROR_FORMATTER = logging.Formatter(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
-_AGNO_LOGGERS: tuple[logging.Logger, ...] = (
-    agent_logger,
-    team_logger,
-    workflow_logger,
+# App-level loggers (replaces agno.utils.log)
+app_logger = logging.getLogger("pasto-legal")
+service_logger = logging.getLogger("pasto-legal.services")
+bridge_logger = logging.getLogger("pasto-legal.bridge")
+
+_APP_LOGGERS: tuple[logging.Logger, ...] = (
+    app_logger,
+    service_logger,
+    bridge_logger,
 )
 
 
 def _build_error_file_handler() -> Optional[RotatingFileHandler]:
-    """Build the rotating error file handler, or None if the log dir is not writable."""
     try:
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         handler = RotatingFileHandler(
@@ -31,8 +33,6 @@ def _build_error_file_handler() -> Optional[RotatingFileHandler]:
             encoding="utf-8",
         )
     except OSError as exc:
-        # Log dir not writable (e.g. host-mounted logs/ owned by root from a
-        # prior Docker run). Don't crash the app; emit a warning to stderr.
         print(
             f"[logging_config] WARNING: cannot write error log to {LOG_DIR}/errors.log "
             f"({exc}); error file logging disabled.",
@@ -45,11 +45,11 @@ def _build_error_file_handler() -> Optional[RotatingFileHandler]:
 
 
 def setup_logging(config: Any) -> None:
-    """Configure agno's loggers for the Pasto Legal app.
+    """Configure app loggers for Pasto Legal.
 
-    - Errors -> /app/logs/errors.log (rotating 5MB x 3) in every environment.
+    - Errors -> logs/errors.log (rotating 5MB x 3).
     - Info -> terminal in every environment.
-    - Debug -> terminal only when config.DEBUG_MODE is True (dev/staging).
+    - Debug -> terminal only when config.DEBUG_MODE is True.
     """
     debug_mode = bool(getattr(config, "DEBUG_MODE", False))
     console_level = logging.DEBUG if debug_mode else logging.INFO
@@ -57,17 +57,27 @@ def setup_logging(config: Any) -> None:
     error_handler = _build_error_file_handler()
     error_path = getattr(error_handler, "baseFilename", None)
 
-    for logger in _AGNO_LOGGERS:
-        # Attach the error file handler once (idempotent across re-imports).
+    for logger in _APP_LOGGERS:
+        logger.setLevel(logging.DEBUG)
+
         if error_handler is not None and not any(
             getattr(h, "baseFilename", None) == error_path
             for h in logger.handlers
         ):
             logger.addHandler(error_handler)
 
-        # Adjust the existing Rich console handlers' threshold.
-        for handler in logger.handlers:
-            if isinstance(handler, RotatingFileHandler):
-                continue
-            # Any non-file handler is treated as a console handler.
-            handler.setLevel(console_level)
+        # Ensure a console handler exists
+        has_console = any(
+            not isinstance(h, RotatingFileHandler) for h in logger.handlers
+        )
+        if not has_console:
+            console = logging.StreamHandler(sys.stderr)
+            console.setLevel(console_level)
+            console.setFormatter(
+                logging.Formatter("%(levelname)s | %(name)s | %(message)s")
+            )
+            logger.addHandler(console)
+        else:
+            for handler in logger.handlers:
+                if not isinstance(handler, RotatingFileHandler):
+                    handler.setLevel(console_level)

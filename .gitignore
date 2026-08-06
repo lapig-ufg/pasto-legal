@@ -233,3 +233,9 @@ COMANDOS.md
 ai_project_memory.md
 EXPLICACAO.md
 RESPOSTA_ISSUE.md
+
+**/.ipynb_checkpoints
+node_modules/*
+./node_modules/**
+**/node_modules/**
+**/__pycache__/

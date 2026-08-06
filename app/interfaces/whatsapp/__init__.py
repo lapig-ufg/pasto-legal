@@ -1,3 +1,1 @@
-from app.interfaces.whatsapp.whatsapp import Whatsapp
-
-__all__ = ["Whatsapp"]
+# WhatsApp interface — bridge mode (pi SDK)

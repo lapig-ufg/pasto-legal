@@ -7,7 +7,9 @@ import traceback
 from io import BytesIO
 from typing import List
 
-from agno.utils.log import log_error
+import logging
+
+log = logging.getLogger("pasto-legal.services.geospatial")
 
 from app.services.geospatial.image import append_discrete_legend, append_continuous_colorbar
 from app.schemas.property_stats import PropertyStats, PastureStats, TopographicStats
@@ -36,7 +38,7 @@ try:
     ee.Initialize(credentials, project=config.GEE_PROJECT, opt_url=_HIGHVOLUME_URL)
     GEE_CONNECTED_FLAG = True
 except Exception as e:
-    log_error(f"Authentication failed: {e}")
+    log.error(f"Authentication failed: {e}")
     raise ValueError("GEE_PROJECT environment variables must be set.")
 
 
@@ -110,30 +112,30 @@ def _get_base_image(roi: ee.Geometry, year: int = None) -> ee.Image:
         return image
     
     except ee.EEException as error:
-        log_error(traceback.format_exc())
+        log.error(traceback.format_exc())
         raise RuntimeError(
             f"Falha ao processar as coordenadas no satélite. "
             f"Verifique se as coordenadas da área estão corretas. Detalhes: {str(error)}"
         )
     except requests.exceptions.HTTPError as error:
-        log_error(traceback.format_exc())
+        log.error(traceback.format_exc())
         raise RuntimeError(
             f"O servidor de imagens do satélite retornou um erro. "
             f"Tente solicitar a imagem novamente em alguns instantes. Detalhes: {str(error)}"
         )
     except requests.exceptions.RequestException as error:
-        log_error(traceback.format_exc())
+        log.error(traceback.format_exc())
         raise RuntimeError(
             f"Não foi possível baixar a imagem por falha de conexão. "
             f"Pode haver instabilidade na rede. Detalhes: {str(error)}"
         )
     except PIL.UnidentifiedImageError as error:
-        log_error(traceback.format_exc())
+        log.error(traceback.format_exc())
         raise RuntimeError(
             f"O arquivo recebido do satélite está corrompido ou num formato inesperado. Detalhes: {str(error)}"
         )
     except Exception as error:
-        log_error(traceback.format_exc())
+        log.error(traceback.format_exc())
         raise RuntimeError(
             f"Ocorreu um erro inesperado ao gerar a imagem da fazenda. Detalhes: {str(error)}"
         )
@@ -180,30 +182,30 @@ def retrieve_feature_images(coords: List[List[List[List[float]]]]) -> List[PIL.I
         return result_imgs
     
     except ee.EEException as error:
-        log_error(traceback.format_exc())
+        log.error(traceback.format_exc())
         raise RuntimeError(
             f"Falha ao processar as coordenadas no satélite. "
             f"Verifique se as coordenadas da área estão corretas. Detalhes: {str(error)}"
         )
     except requests.exceptions.HTTPError as error:
-        log_error(traceback.format_exc())
+        log.error(traceback.format_exc())
         raise RuntimeError(
             f"O servidor de imagens do satélite retornou um erro. "
             f"Tente solicitar a imagem novamente em alguns instantes. Detalhes: {str(error)}"
         )
     except requests.exceptions.RequestException as error:
-        log_error(traceback.format_exc())
+        log.error(traceback.format_exc())
         raise RuntimeError(
             f"Não foi possível baixar a imagem por falha de conexão. "
             f"Pode haver instabilidade na rede. Detalhes: {str(error)}"
         )
     except PIL.UnidentifiedImageError as error:
-        log_error(traceback.format_exc())
+        log.error(traceback.format_exc())
         raise RuntimeError(
             f"O arquivo recebido do satélite está corrompido ou num formato inesperado. Detalhes: {str(error)}"
         )
     except Exception as error:
-        log_error(traceback.format_exc())
+        log.error(traceback.format_exc())
         raise RuntimeError(
             f"Ocorreu um erro inesperado ao gerar a imagem da fazenda. Detalhes: {str(error)}"
         )
@@ -283,28 +285,28 @@ def retrieve_mapbiomas_biomass_image(coords: List[List[List[List[float]]]], year
         return img
 
     except ValueError as error:
-        log_error(traceback.format_exc())
+        log.error(traceback.format_exc())
         raise error
     except ee.EEException as error:
-        log_error(traceback.format_exc())
+        log.error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve uma falha de processamento.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
     except requests.exceptions.HTTPError as error:
-        log_error(traceback.format_exc())
+        log.error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que o servidor de imagens do satélite falhou.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
     except requests.exceptions.RequestException as error:
-        log_error(traceback.format_exc())
+        log.error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve um problema de conexão ao baixar o mapa de biomassa.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
     except Exception as error:
-        log_error(traceback.format_exc())
+        log.error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve um erro inesperado.\n"
             "Peça ao usuário que tente novamente mais tarde."
@@ -445,30 +447,30 @@ def retrieve_feature_soil_texture_image(coords: List[List[List[List[float]]]]):
         return img_pil
     
     except ee.EEException as error:
-        log_error(traceback.format_exc())
+        log.error(traceback.format_exc())
         raise RuntimeError(
             f"Falha ao processar as coordenadas no satélite. "
             f"Verifique se as coordenadas da área estão corretas. Detalhes: {str(error)}"
         )
     except requests.exceptions.HTTPError as error:
-        log_error(traceback.format_exc())
+        log.error(traceback.format_exc())
         raise RuntimeError(
             f"O servidor de imagens do satélite retornou um erro. "
             f"Tente solicitar a imagem novamente em alguns instantes. Detalhes: {str(error)}"
         )
     except requests.exceptions.RequestException as error:
-        log_error(traceback.format_exc())
+        log.error(traceback.format_exc())
         raise RuntimeError(
             f"Não foi possível baixar a imagem por falha de conexão. "
             f"Pode haver instabilidade na rede. Detalhes: {str(error)}"
         )
     except PIL.UnidentifiedImageError as error:
-        log_error(traceback.format_exc())
+        log.error(traceback.format_exc())
         raise RuntimeError(
             f"O arquivo recebido do satélite está corrompido ou num formato inesperado. Detalhes: {str(error)}"
         )
     except Exception as error:
-        log_error(traceback.format_exc())
+        log.error(traceback.format_exc())
         raise RuntimeError(
             f"Ocorreu um erro inesperado ao gerar a imagem da fazenda. Detalhes: {str(error)}"
         )
@@ -640,31 +642,31 @@ def query_pasture_statistics(coords: List[List[List[List[float]]]], year: int, m
         return result
 
     except ValueError as error:
-        log_error(traceback.format_exc())
+        log.error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve um erro.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
     except ee.EEException as error:
-        log_error(traceback.format_exc())
+        log.error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve uma falha de processamento.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
     except requests.exceptions.HTTPError as error:
-        log_error(traceback.format_exc())
+        log.error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que o servidor de imagens do satélite falhou.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
     except requests.exceptions.RequestException as error:
-        log_error(traceback.format_exc())
+        log.error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve um problema de conexão ao baixar o mapa de biomassa.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
     except Exception as error:
-        log_error(traceback.format_exc())
+        log.error(traceback.format_exc())
         raise RuntimeError(
             f"Peça desculpas e informe que houve um erro inesperado.\n"
             "Peça ao usuário que tente novamente mais tarde."

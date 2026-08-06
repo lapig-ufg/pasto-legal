@@ -9,7 +9,9 @@ from pathlib import Path
 from typing import List, Dict
 from requests.adapters import HTTPAdapter
 
-from agno.utils.log import log_debug, log_error
+import logging
+
+log = logging.getLogger("pasto-legal.services.geospatial")
 
 from app.schemas.rural_property import RuralProperty, SpatialFeatures, SicarMetadata
 from app.configs.config import config
@@ -248,7 +250,7 @@ def __fetch_property_by_car_locally(car_codes: List[str]) -> List[RuralProperty]
 
     except Exception as e:
         # É recomendável pelo menos logar o erro caso 'result = None' oculte o problema
-        log_error(f"Erro ao buscar imóveis: {e}")
+        log.error(f"Erro ao buscar imóveis: {e}")
         result = []
     finally:
         cursor.close()

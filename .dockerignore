@@ -92,3 +92,5 @@ venv/
 tmp/
 data/
 debug/
+dead_agno/
+bridge/node_modules/

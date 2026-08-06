@@ -1,11 +1,12 @@
 import hashlib
 import hmac
+import logging
 import os
 from typing import Optional
 
 from fastapi import HTTPException
 
-from agno.utils.log import log_warning
+log = logging.getLogger("pasto-legal.whatsapp")
 
 
 def is_development_mode() -> bool:
@@ -31,7 +32,7 @@ def validate_webhook_signature(payload: bytes, signature_header: Optional[str]) 
     if not app_secret:
         # Explicit opt-out: operator must deliberately set this for local dev
         if os.getenv("WHATSAPP_SKIP_SIGNATURE_VALIDATION", "").lower() == "true":
-            log_warning("WHATSAPP_SKIP_SIGNATURE_VALIDATION=true — signature check disabled")
+            log.warning("WHATSAPP_SKIP_SIGNATURE_VALIDATION=true — signature check disabled")
             return True
         raise HTTPException(
             status_code=500,

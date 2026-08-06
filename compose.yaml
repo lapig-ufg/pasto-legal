@@ -1,4 +1,69 @@
 services:
+  # ── Valkey/Redis — debouncing + session state ─────────────────────────
+  valkey:
+    image: valkey/valkey:8-alpine
+    command: valkey-server --save "" --appendonly no
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - pasto-legal
+
+  # ── pi Bridge — Node.js session management + LLM orchestration ────────
+  bridge:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.bridge
+    ports:
+      - "3001:3001"
+    environment:
+      - BRIDGE_PORT=3001
+      - TOOL_BACKEND_URL=http://fastapi_app:3000
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    env_file:
+      - .env
+    depends_on:
+      valkey:
+        condition: service_healthy
+    networks:
+      - pasto-legal
+
+  # ── FastAPI — WhatsApp webhook ────────────────────────────────────────
+  fastapi_app:
+    build: .
+    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 3000 --reload
+    volumes:
+      - .:/app
+      - /app/.venv
+      - ./tmp:/app/tmp
+      - ./logs:/app/logs
+    ports:
+      - "3000:3000"
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+      - BRIDGE_URL=http://bridge:3001
+      - VALKEY_HOST=valkey
+      - VALKEY_PORT=6379
+      - VALKEY_DB=0
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - .env
+    depends_on:
+      valkey:
+        condition: service_healthy
+      bridge:
+        condition: service_started
+    networks:
+      - pasto-legal
+
+  # ── Streamlit — debug interface ───────────────────────────────────────
   streamlit_app:
     build: .
     command: uv run streamlit run ./app/interfaces/streamlit/streamlit_webapp.py --server.port 8080
@@ -13,7 +78,22 @@ services:
       - PYTHONPATH=/app
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONUNBUFFERED=1
+      - BRIDGE_URL=http://bridge:3001
+      - VALKEY_HOST=valkey
+      - VALKEY_PORT=6379
+      - VALKEY_DB=0
     extra_hosts:
       - "host.docker.internal:host-gateway"
     env_file:
       - .env
+    depends_on:
+      valkey:
+        condition: service_healthy
+      bridge:
+        condition: service_started
+    networks:
+      - pasto-legal
+
+networks:
+  pasto-legal:
+    driver: bridge

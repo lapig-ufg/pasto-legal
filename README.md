@@ -50,69 +50,214 @@ Pasto Legal aligns with the directives of the Desafio IA Natureza & Clima:
 
 ---
 
-## Architecture
+## Overview
 
-Pasto Legal uses a multi-agent architecture built on the **[Agno](https://github.com/agno-agi/agno)** framework. A central workflow orchestrates greeting detection, intent routing, feedback evaluation, and response merging.
+Pasto Legal is a WhatsApp-based AI assistant for Brazilian ranchers, providing pasture analysis, property registration, and rural insights. It originally used the **AGNO** framework (Python) for multi-agent orchestration. It now uses the **pi coding agent SDK** (Node.js) as the LLM orchestration layer, with Python retained exclusively for domain services (GEE, SICAR, TTS, database).
 
-```mermaid
-graph TD
-    User((WhatsApp User)) <--> WA[WhatsApp Interface]
-    WA <--> WF{Pasto Legal Workflow}
+---
 
-    WF --> OC{Onboarding Check}
-    OC -->|New user| Welcome[Welcoming Agent]
-    OC -->|Registered| Parallel
+## Architecture Diagram
 
-    Parallel --> FB[Feedback Workflow]
-    Parallel --> Router{Intent Router}
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                          WhatsApp Cloud API                         │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │ webhook
+                               ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                     fastapi_app  (Python :3000)                      │
+│                                                                      │
+│  ┌──────────────────┐   ┌──────────────┐   ┌──────────────────────┐  │
+│  │  WhatsApp Router  │   │  /tool endpoint│   │  Streamlit (debug)   │  │
+│  │  - verify webhook │   │  - calls CLI   │   │  (separate service)  │  │
+│  │  - receive msgs   │   │    scripts     │   │                      │  │
+│  │  - send responses │   │                │   │                      │  │
+│  └────────┬─────────┘   └───────┬────────┘   └──────────┬──────────┘  │
+│           │                     │                        │            │
+│  ┌────────┴─────────────────────┴────────────────────────┴──────────┐  │
+│  │                        Shared Services                            │  │
+│  │  ┌─────────────┐  ┌──────────┐  ┌───────┐  ┌──────────────────┐ │  │
+│  │  │ Valkey/Redis │  │ Database │  │  GEE  │  │ SICAR + TTS +    │ │  │
+│  │  │ (session    │  │ (SQLite/ │  │       │  │ Pasture Classif. │ │  │
+│  │  │  state,     │  │  PG)     │  │       │  │                  │ │  │
+│  │  │  debounce)  │  │          │  │       │  │                  │ │  │
+│  │  └─────────────┘  └──────────┘  └───────┘  └──────────────────┘ │  │
+│  └──────────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────┬───────────────────────────────────┘
+                                   │
+                      HTTP POST /prompt
+                      HTTP POST /reset
+                                   │
+                                   ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                      bridge  (Node.js :3001)                         │
+│                                                                      │
+│  ┌──────────────────────────────────────────────────────────────┐    │
+│  │                    pi SDK Agent Session                        │    │
+│  │                                                                │    │
+│  │  ┌────────────┐  ┌──────────────┐  ┌─────────────────────┐   │    │
+│  │  │ System      │  │ 6 Skills     │  │ 18 Custom Tools     │   │    │
+│  │  │ Prompt      │  │ (auto-       │  │ (extension:          │   │    │
+│  │  │ (Portuguese, │  │  discovered │  │  pasto-legal-tools)  │   │    │
+│  │  │  onboarding  │  │  from        │  │                     │   │    │
+│  │  │  gate,       │  │  .pi/skills/) │  │  Property:          │   │    │
+│  │  │  WhatsApp    │  │              │  │  register_by_car    │   │    │
+│  │  │  rules)      │  │  analyst     │  │  register_by_coords │   │    │
+│  │  │              │  │  manager     │  │  register_by_url    │   │    │
+│  │  │              │  │  faq         │  │  confirm_selection  │   │    │
+│  │  │              │  │  onboarding  │  │  select_from_list   │   │    │
+│  │  │              │  │  smalltalk   │  │  complete_registr.  │   │    │
+│  │  │              │  │  feedback    │  │  cancel_registration│   │    │
+│  │  │              │  │              │  │  remove / remove_all │   │    │
+│  │  │              │  │              │  │  set_name            │   │    │
+│  │  │              │  │              │  │                     │   │    │
+│  │  │              │  │              │  │  GEE:               │   │    │
+│  │  │              │  │              │  │  pasture_stats       │   │    │
+│  │  │              │  │              │  │  topographic_stats   │   │    │
+│  │  │              │  │              │  │  property_image      │   │    │
+│  │  │              │  │              │  │  biomass_image       │   │    │
+│  │  │              │  │              │  │  soil_texture_image  │   │    │
+│  │  │              │  │              │  │  pasture_classif.    │   │    │
+│  │  │              │  │              │  │                     │   │    │
+│  │  │              │  │              │  │  Other:             │   │    │
+│  │  │              │  │              │  │  generate_speech     │   │    │
+│  │  │              │  │              │  │  accept_terms        │   │    │
+│  │  │              │  │              │  │  consult_update_notes│   │    │
+│  │  └────────────┘  └──────────────┘  └──────────┬──────────┘   │    │
+│  │                                                │               │    │
+│  │  ┌─────────────────────────────────────────────┘               │    │
+│  │  │  Tool execution: HTTP POST to fastapi_app:3000/tool         │    │
+│  │  └─────────────────────────────────────────────────────────────┘    │
+│  └──────────────────────────────────────────────────────────────────┘  │
+│                                                                      │
+│  Model: google/gemini-2.5-flash (via ModelRuntime)                  │
+│  Sessions: in-memory Map (30min TTL, per user_id)                   │
+└──────────────────────────────────────────────────────────────────────┘
 
-    Router -->|Agronomic analysis| Analyst[Analyst Agent]
-    Router -->|Property management| Manager[Manager Agent]
-    Router -->|Platform questions| QA[Q&A Agent]
-    Router -->|Casual chat| SmallTalk[Small Talk Agent]
-
-    Analyst --> GEE[Google Earth Engine]
-    Analyst --> MapBiomas[MapBiomas Collections]
-    Manager --> SICAR[SICAR / CAR Registry]
-
-    FB --> Persona[Persona Manager]
-    FB --> Sat[User Satisfaction]
-
-    Welcome --> TermsDB[(Terms Acceptance)]
-    Analyst --> DB[(PostgreSQL / SQLite)]
-    Manager --> DB
+┌─────────────────────────────────────────────────────────────────────┐
+│                      valkey  (Redis-compatible :6379)                │
+│  - Message debouncing (5s window)                                    │
+│  - Session state persistence                                         │
+│  - PII hashing cache                                                 │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-**Key components:**
+---
 
-| Component | Description |
-|---|---|
-| **Welcoming Agent** | Onboards new users — presents terms of use and collects acceptance |
-| **Router Agent** | Classifies user intent and dispatches to the appropriate specialist |
-| **Analyst Agent** | Performs agronomic analyses — pasture stats, biomass maps, soil texture, topography |
-| **Manager Agent** | Handles property CRUD — registration by CAR code, coordinates, or Maps link |
-| **Q&A Agent** | Answers platform usage questions using the knowledge base |
-| **Small Talk Agent** | Handles greetings and casual conversation |
-| **Feedback Workflow** | Evaluates user satisfaction (1–5), adapts persona, and applies remediation when needed |
+## Message Flow
+
+```
+WhatsApp ──► fastapi_app/whatsapp/webhook
+                │
+                ├── PII guardrail check
+                ├── Media download (images, audio, docs)
+                ├── Message debouncing (Valkey, 5s)
+                ├── Load session state (Valkey + DB)
+                │   └── Check terms_accepted from DB
+                │
+                ▼
+            bridge /prompt
+            { userId, message, sessionState }
+                │
+                ├── pi SDK session (created or reused per user)
+                │   ├── System prompt + session-state context
+                │   ├── LLM processes message
+                │   ├── Calls tools (via HTTP POST to /tool)
+                │   │   └── Python CLI scripts execute
+                │   │       ├── cli/property.py
+                │   │       ├── cli/gee.py
+                │   │       ├── cli/tts.py
+                │   │       ├── cli/onboarding.py
+                │   │       └── cli/version.py
+                │   └── Returns text + images + audio paths
+                │
+                ▼
+            bridge response
+            { content, images[], audio[] }
+                │
+                ├── Send text to WhatsApp
+                ├── Upload images to WhatsApp Media API
+                ├── Upload audio to WhatsApp Media API
+                └── Update session state (Valkey)
+```
 
 ---
 
-## Tech Stack
+## Key Design Decisions
 
-| Layer | Technology |
-|---|---|
-| **Language** | Python 3.12+ |
-| **Agent framework** | [Agno](https://github.com/agno-agi/agno) 2.6 |
-| **LLM** | Google Gemini (`gemini-3.1-flash-lite`) — configurable to Ollama for local models |
-| **TTS** | Google Gemini TTS (`gemini-3.1-flash-tts-preview`) |
-| **Satellite data** | Google Earth Engine, MapBiomas Collections (biomass, LULC, vigor, pasture age), Sentinel-2, Landsat |
-| **Property registry** | SICAR public API + DuckDB spatial queries on local Parquet files |
-| **Web framework** | FastAPI (WhatsApp webhook) + Streamlit (web UI) |
-| **Database** | PostgreSQL (prod) / SQLite (dev) via SQLAlchemy + DuckDB (geospatial) |
-| **Caching / queue** | Redis / Valkey |
-| **Data validation** | Pydantic v2 |
+### Bridge Pattern (Node.js ↔ Python)
+
+The pi SDK is a Node.js library. The WhatsApp webhook and all domain services (GEE, SICAR, TTS, database) are Python. Rather than rewriting Python services in TypeScript, we use a **bridge**:
+
+- **Node.js bridge** manages LLM sessions, skills, and tool orchestration via the pi SDK
+- **Python FastAPI** handles WhatsApp webhook, media, PII guardrails, and tool execution
+- The bridge calls Python via `HTTP POST /tool` when the LLM invokes a tool
+- CLI scripts (`cli/*.py`) are thin wrappers around the Python services, receiving base64-encoded JSON args and returning JSON on stdout
+
+### Single Agent + Skills (replacing Multi-Agent)
+
+AGNO used a **router agent** that dispatched to specialized agents (analyst, manager, FAQ, small talk, etc.). pi uses a **single agent** with **6 skills** that are auto-loaded when the task matches:
+
+| Skill | Replaces |
+|-------|----------|
+| `pasto-legal-analyst` | analyst_agent + property_analyst_tools |
+| `pasto-legal-manager` | manager_agent + property_crud_tools |
+| `pasto-legal-faq` | question_answer_agent |
+| `pasto-legal-onboarding` | welcoming_agent + accept_terms |
+| `pasto-legal-smalltalk` | small_talk_agents |
+| `pasto-legal-feedback` | feedback_agent + feedback_tools |
+
+Skills are discovered from `.pi/skills/` — a standard pi location. In Docker, the Dockerfile copies `bridge/skills/*` → `.pi/skills/`.
+
+### Onboarding Gate (Terms of Service)
+
+New users must accept terms before any interaction. This is enforced at two levels:
+
+1. **Python layer** (`router.py`): `_get_session_state()` queries `user_terms_acceptance` from the database and includes `terms_accepted: true/false` in the session state sent to the bridge
+2. **System prompt**: instructs the LLM to refuse all requests and present the terms when `terms_accepted` is false, and only call `accept_terms_and_conditions` after explicit user consent
+
+This replaces the AGNO `_needs_onboarding` workflow step that blocked all other agents until terms were accepted.
+
+### Session State Management
+
+| Concern | Storage | Accessed by |
+|---------|---------|-------------|
+| Conversation history | pi SDK in-memory session | Bridge |
+| User properties, registration state | Valkey (Redis) | Python CLI scripts + router |
+| Terms acceptance | SQLite/PostgreSQL | Python DB layer |
+| Message debouncing | Valkey | WhatsApp router |
+
+The bridge receives `sessionState` in each `/prompt` call (from `_get_session_state()`). The system prompt instructs the LLM to use this context for personalization. Tool results can also return `sessionState` updates, which the Python layer persists to Valkey.
 
 ---
+
+## Docker Compose
+
+```yaml
+services:
+  valkey:        # Redis-compatible, session state + debouncing
+  bridge:        # Node.js, pi SDK, :3001
+  fastapi_app:   # Python, WhatsApp webhook + /tool, :3000
+  streamlit_app: # Python, debug UI, :8080
+```
+
+All services share the `pasto-legal` Docker network. Internal communication uses service names (`bridge:3001`, `fastapi_app:3000`, `valkey:6379`).
+
+---
+
+## Key Differences from AGNO
+
+| Aspect | AGNO (before) | pi SDK (after) |
+|--------|---------------|----------------|
+| **Language** | Python only | Node.js (LLM) + Python (services) |
+| **Agent model** | Router → 7 specialized agents | Single agent + 6 skills |
+| **Session mgmt** | AGNO session objects | pi `createAgentSession` + in-memory Map |
+| **Tool execution** | Python in-process | HTTP POST to FastAPI `/tool` |
+| **Onboarding gate** | Workflow step `_needs_onboarding` | System prompt + DB check |
+| **Skills** | Agent prompts hardcoded in Python | SKILL.md files auto-discovered from `.pi/skills/` |
+| **Model routing** | AGNO model config | pi `ModelRuntime` with explicit model selection |
+| **State** | AGNO workflow state | Valkey (session) + SQLite (terms) |
+| **Image/audio** | AGNO media objects | File paths (bridge → FastAPI → WhatsApp upload) |
 
 ## Getting Started
 
@@ -153,33 +298,10 @@ Key environment variables (see [`.env.example`](.env.example) for the full list)
 
 > **Production also requires:** PostgreSQL connection vars, WhatsApp Business API credentials (`WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_WEBHOOK_URL`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_APP_SECRET`), and Redis/Valkey connection vars.
 
-### Docker
+### Running Locally (Docker)
 
 ```bash
 docker compose up --build
-```
-
-### Running Locally
-
-```bash
-# Install dependencies
-uv sync
-```
-
-**Streamlit web app:**
-
-```bash
-PYTHONPATH=. uv run streamlit run app/interfaces/streamlit/streamlit_webapp.py --server.port 8080
-```
-
-The Streamlit interface will be available at `http://localhost:8080`.
-
-**WhatsApp bot (FastAPI server) + ngrok:**
-
-```bash
-uv run python -m app.main
-
-ngrok http --url=<your-domain> 3000
 ```
 
 ---
@@ -187,43 +309,63 @@ ngrok http --url=<your-domain> 3000
 ## Project Structure
 
 ```
-pasto-legal/
-├── app/
-│   ├── main.py                  # App entry point (AgentOS + FastAPI)
-│   ├── agents/                  # AI agent definitions
-│   │   ├── analyst_agent.py     # Agronomic analysis specialist
-│   │   ├── manager_agent.py     # Property management agent
-│   │   ├── router_agent.py      # Intent classification & routing
-│   │   ├── welcoming_agent.py   # Onboarding & terms acceptance
-│   │   ├── feedback_agent.py   # Satisfaction evaluation & remediation
-│   │   ├── persona_agent.py    # User persona tracking
-│   │   ├── question_answer_agent.py  # FAQ / knowledge base
-│   │   └── small_talk_agents.py # Casual conversation
-│   ├── workflows/
-│   │   ├── main_workflow.py     # Root orchestration workflow
-│   │   └── feedback_workflow.py # Satisfaction & persona update
-│   ├── tools/                   # Agent tools (GEE, SICAR, TTS, etc.)
-│   ├── interfaces/
-│   │   ├── whatsapp/            # WhatsApp Business API integration
-│   │   └── streamlit/          # Streamlit web UI
-│   ├── configs/                 # Environment-based configuration
-│   ├── database/                # SQLAlchemy models & sessions
-│   ├── hooks/                   # Pre/post hooks (auth, validation)
-│   ├── guardrails/              # PII detection & masking
-│   ├── skills/                  # Agent skills (UA calculator, etc.)
-│   └── utils/                   # GEE scripts, image processing, data models
-├── docs/
-│   ├── knowledge/               # Knowledge base for the Q&A agent
-│   ├── release_notes/           # Version changelogs
-│   └── workflow-diagrams.md     # Detailed Mermaid workflow diagrams
-├── tests/
-├── compose.yaml                 # Docker Compose config
-├── Dockerfile                   # Container build
-├── pyproject.toml               # Project metadata & dependencies
-└── .env.example                 # Environment variable template
+app/
+├── main.py                          # FastAPI app + /tool endpoint
+├── configs/
+│   ├── config.py                    # Settings (AGNO removed)
+│   └── logging_config.py            # Logging (AGNO removed)
+├── interfaces/
+│   ├── whatsapp/
+│   │   ├── router.py                # Webhook → bridge HTTP call
+│   │   ├── helpers.py               # WhatsApp message sending (AGNO removed)
+│   │   └── security.py              # Webhook signature validation
+│   └── streamlit/
+│       ├── streamlit_webapp.py      # Debug UI → bridge HTTP call
+│       ├── debug_panel.py           # Debug controls
+│       └── debug_helpers.py         # Bridge HTTP helpers
+├── database/
+│   ├── session.py                   # SQLAlchemy session
+│   └── models.py                    # UserTermsAcceptance model
+├── guardrails/
+│   └── pii_gate.py                  # PII detection + hashing
+├── schemas/                         # Pydantic models (unchanged)
+├── services/
+│   ├── audio/tts.py                 # TTS synthesis (AGNO removed)
+│   └── geospatial/
+│       ├── gee.py                   # Google Earth Engine (AGNO removed)
+│       ├── sicar.py                 # SICAR API client (AGNO removed)
+│       ├── pasture_classification.py # Pasture classification (AGNO removed)
+│       ├── image.py                 # Map rendering
+│       └── pasture_cache.py         # Cache layer
+└── utils/
+
+cli/                                 # Thin wrappers for bridge tool calls
+├── property.py                      # Property registration/removal
+├── gee.py                           # GEE analysis + image generation
+├── tts.py                           # TTS synthesis
+├── onboarding.py                    # Terms acceptance
+└── version.py                       # Changelog reader
+
+bridge/                              # Node.js pi SDK bridge
+├── server.mjs                       # Express server + pi session management
+├── package.json                     # Dependencies (pi-coding-agent, express)
+├── extensions/
+│   └── pasto-legal-tools.mjs        # 18 custom tool definitions
+├── skills/                          # Skill SKILL.md files
+│   ├── pasto-legal-analyst/
+│   ├── pasto-legal-manager/
+│   ├── pasto-legal-faq/
+│   ├── pasto-legal-onboarding/
+│   ├── pasto-legal-smalltalk/
+│   └── pasto-legal-feedback/
+└── .pi/skills/                      # Symlinks for local dev (auto-discovery)
+
+docker/
+└── Dockerfile.bridge                # Node.js bridge container
 ```
 
 ---
+
 
 ## Documentation
 

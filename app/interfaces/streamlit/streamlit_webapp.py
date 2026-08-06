@@ -1,37 +1,54 @@
+"""Streamlit debug webapp — bridge mode.
+
+Calls the pi bridge via HTTP instead of AGNO's pasto_legal_workflow.run().
+"""
 import os
 import uuid
 import json
 import tempfile
 import streamlit as st
+import httpx
 
 from typing import List
-from agno.media import Image, Audio
+from dataclasses import dataclass
 
 from app.configs.config import config
-from app.interfaces.streamlit.debug_helpers import extract_workflow_debug_data, extract_session_state
+from app.interfaces.streamlit.debug_helpers import extract_bridge_debug_data
 from app.interfaces.streamlit.debug_panel import render_debug_panel
-from app.workflows.pasto_legal_workflow import pasto_legal_workflow
+
+BRIDGE_URL = os.getenv("BRIDGE_URL", "http://localhost:3001")
 
 st.set_page_config(page_title="Pasto Legal", page_icon="P")
 
 DB_FILE = "users_db.json"
 
-# ==================== BANCO DE DADOS ====================
+
+# ── Simple media containers (no agno) ────────────────────────────────────
+
+@dataclass
+class Image:
+    filepath: str
+
+@dataclass
+class Audio:
+    filepath: str
+    ext: str = ""
+
+
+# ── User DB ──────────────────────────────────────────────────────────────
 
 def get_users():
     if not os.path.exists(DB_FILE):
         return []
-    
     try:
         with open(DB_FILE, "r") as file:
             return json.load(file)
-    except:
+    except Exception:
         return []
 
 def new_user(user_id, user_name):
     users = get_users()
-
-    if not any(user['id'] == user_id for user in users):
+    if not any(user["id"] == user_id for user in users):
         users.append({"id": user_id, "nickname": user_name})
         with open(DB_FILE, "w") as f:
             json.dump(users, f, indent=4)
@@ -40,10 +57,8 @@ def login_user(user_id, user_name="Anônimo"):
     st.session_state["session_id"] = user_id
     st.session_state["user_name"] = user_name
     st.session_state["logged_in"] = True
-    
     if "messages" not in st.session_state:
         st.session_state.messages = []
-    
     st.rerun()
 
 def logout():
@@ -51,58 +66,49 @@ def logout():
     st.session_state["session_id"] = None
     st.session_state["user_name"] = None
     st.session_state["messages"] = []
-
-    # Clear debug state
     st.session_state.debug_log = []
     st.session_state.debug_session_state = {}
     st.session_state.debug_agent_routing = []
     st.session_state.debug_tool_calls = []
     st.session_state.debug_metrics = []
     st.session_state.debug_messages = []
-
     st.rerun()
 
-# ==================== TELA DE LOGIN ====================
+
+# ── Login screen ────────────────────────────────────────────────────────
 
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
 if not st.session_state["logged_in"]:
     st.title("Login - Pasto Legal")
-
     col1, col2, col3 = st.columns(3)
 
-    # 1. Lista de Usuários Armazenados
     with col1:
         st.subheader("Historico")
         stored_users = get_users()
-        
         if stored_users:
             selected_obj = st.selectbox(
-                "Escolha o usuário:", 
-                stored_users, 
-                format_func=lambda x: x.get('user_name', 'Usuário')
+                "Escolha o usuário:",
+                stored_users,
+                format_func=lambda x: x.get("nickname", "Usuário"),
             )
-            
             if st.button("Entrar"):
-                login_user(selected_obj['id'], selected_obj['nickname'])
+                login_user(selected_obj["id"], selected_obj["nickname"])
         else:
             st.info("Vazio")
 
-    # 2. Criar Novo Usuário (Com Nome)
     with col2:
-        st.subheader("🆕 Novo")
+        st.subheader("Novo")
         new_name_input = st.text_input("Identificação do usuário")
-        
         if st.button("Criar"):
             if new_name_input.strip():
                 new_id = str(uuid.uuid4())
                 new_user(new_id, new_name_input)
                 login_user(new_id, new_name_input)
             else:
-                st.warning("Por favor, digite um nome para salvar.")
+                st.warning("Por favor, digite um nome.")
 
-    # 3. Entrar Anonimamente
     with col3:
         st.subheader("Anonimo")
         if st.button("Entrar Anonimamente"):
@@ -111,9 +117,8 @@ if not st.session_state["logged_in"]:
 
     st.stop()
 
-# ==========================================
-# APLICAÇÃO PRINCIPAL (CHAT)
-# ==========================================
+
+# ── Main chat ───────────────────────────────────────────────────────────
 
 with st.sidebar:
     st.sidebar.title("Configurações")
@@ -123,7 +128,6 @@ with st.sidebar:
     if st.button("Sair / Trocar Usuário"):
         logout()
 
-    # Debug panel (only available in debug mode)
     if config.DEBUG_MODE:
         st.divider()
         st.session_state.debug_mode_enabled = st.toggle(
@@ -139,37 +143,37 @@ st.title(f"Ola, {st.session_state.get('user_name', '')}")
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Debug state initialization
-if "debug_log" not in st.session_state:
-    st.session_state.debug_log = []
-if "debug_session_state" not in st.session_state:
-    st.session_state.debug_session_state = {}
-if "debug_agent_routing" not in st.session_state:
-    st.session_state.debug_agent_routing = []
-if "debug_tool_calls" not in st.session_state:
-    st.session_state.debug_tool_calls = []
-if "debug_metrics" not in st.session_state:
-    st.session_state.debug_metrics = []
-if "debug_messages" not in st.session_state:
-    st.session_state.debug_messages = []
+# Debug state init
+for key in ("debug_log", "debug_session_state", "debug_agent_routing",
+            "debug_tool_calls", "debug_metrics", "debug_messages"):
+    if key not in st.session_state:
+        st.session_state[key] = [] if key != "debug_session_state" else {}
 
-# Exibe mensagens anteriores
+# Show message history
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
         if "images" in message:
             for img in message["images"]:
+                # img may be bytes (new) or base64 string (old)
+                if isinstance(img, str):
+                    import base64 as _b64
+                    try:
+                        img = _b64.b64decode(img)
+                    except Exception:
+                        continue
                 st.image(img, use_container_width=True)
         if "audio" in message:
             for aud in message["audio"]:
-                st.audio(aud, format="audio/ogg")
+                if os.path.exists(aud):
+                    st.audio(aud, format="audio/ogg")
 
-# Inputs do usuário
-if 'file_uploader_key' not in st.session_state:
+# Input widgets
+if "file_uploader_key" not in st.session_state:
     st.session_state.file_uploader_key = 0
 
 files_uploaded = st.file_uploader(
-    "Envie imagens/áudio (png, jpg, mp3, etc)",
+    "Envie imagens/áudio",
     key=f"file_uploader_{st.session_state.file_uploader_key}",
     type=["png", "jpg", "jpeg", "webp", "wav", "mp3", "mp4"],
     accept_multiple_files=True,
@@ -181,7 +185,7 @@ if "audio_uploader_key" not in st.session_state:
 audio_input_value = st.audio_input(
     "Gravar audio",
     key=f"audio_uploader_{st.session_state.audio_uploader_key}",
-    )
+)
 
 chat_input_value = st.chat_input("Pergunte sobre pastagem...")
 
@@ -192,14 +196,14 @@ with col_btn:
 user_query = None
 
 if loc_input_value:
-    user_query = """Minhas coordenadas são Lat: -15.82994 S Long: -49.43353."""
+    user_query = "Minhas coordenadas são Lat: -15.82994 S Long: -49.43353."
 elif chat_input_value:
     user_query = chat_input_value
 elif audio_input_value:
     user_query = "[Áudio recebido]"
 
+
 def process_uploaded_files(uploaded_files) -> List[str]:
-    """Salva arquivos temporariamente e retorna os caminhos para o Agente."""
     file_paths = []
     if uploaded_files:
         for uploaded_file in uploaded_files:
@@ -207,6 +211,7 @@ def process_uploaded_files(uploaded_files) -> List[str]:
                 tmp_file.write(uploaded_file.getvalue())
                 file_paths.append(tmp_file.name)
     return file_paths
+
 
 if user_query:
     st.session_state.messages.append({"role": "user", "content": user_query})
@@ -216,49 +221,49 @@ if user_query:
             st.audio(audio_input_value)
 
     files_to_process = []
-    
     if files_uploaded:
         files_to_process.extend(files_uploaded)
     if audio_input_value:
         files_to_process.append(audio_input_value)
 
     all_file_paths = process_uploaded_files(files_to_process)
-    
-    image_path = [Image(filepath=p) for p in all_file_paths if p.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
-    audio_path = [Audio(filepath=p, ext=p[:-4]) for p in all_file_paths if p.lower().endswith(('.wav', '.mp3', '.ogg', '.mp4'))]
+
+    image_paths = [p for p in all_file_paths if p.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
+    audio_paths = [p for p in all_file_paths if p.lower().endswith(('.wav', '.mp3', '.ogg', '.mp4'))]
 
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
-        
         full_response = ""
-        response = None
-        
+        response_images = []
+        response_audio = []
+
         try:
-            run_kwargs = {
-                "input": user_query,
-                "user_id": st.session_state.session_id,
-                "session_id": st.session_state.session_id,
-                "stream": False,
-            }
-
-            if image_path:
-                run_kwargs["images"] = image_path 
-            if audio_path:
-                run_kwargs["audio"] = audio_path
-
-            # TODO: Implementar files.
             with st.spinner("Analisando dados e gerando resposta..."):
-                response = pasto_legal_workflow.run(**run_kwargs)
-            
-            if hasattr(response, 'content'):
-                full_response = response.content
-            else:
-                full_response = "Erro"#str(response)
+                # ── Call pi bridge (replaces pasto_legal_workflow.run) ──
+                async def _call_bridge():
+                    async with httpx.AsyncClient(timeout=120) as client:
+                        resp = await client.post(
+                            f"{BRIDGE_URL}/prompt",
+                            json={
+                                "userId": st.session_state.session_id,
+                                "message": user_query,
+                                "sessionState": {},
+                            },
+                        )
+                        resp.raise_for_status()
+                        return resp.json()
 
-            # Extract and store debug data
+                import asyncio
+                bridge_result = asyncio.run(_call_bridge())
+
+            full_response = bridge_result.get("content", "Erro ao processar.")
+            response_images = bridge_result.get("images", [])
+            response_audio = bridge_result.get("audio", [])
+
+            # Extract debug data
             try:
-                debug_data = extract_workflow_debug_data(
-                    response=response,
+                debug_data = extract_bridge_debug_data(
+                    bridge_result=bridge_result,
                     session_id=st.session_state.session_id,
                     user_query=user_query,
                 )
@@ -267,33 +272,27 @@ if user_query:
                 st.session_state.debug_tool_calls.extend(debug_data.get("tool_calls_log", []))
                 st.session_state.debug_metrics.append(debug_data.get("metrics_summary", {}))
                 st.session_state.debug_messages.extend(debug_data.get("message_history", []))
-
-                # Get live session state from the workflow
-                try:
-                    live_state = pasto_legal_workflow.get_session_state(
-                        session_id=st.session_state.session_id
-                    )
-                    if live_state:
-                        st.session_state.debug_session_state = extract_session_state(live_state)
-                    else:
-                        st.session_state.debug_session_state = debug_data.get("session_state", {})
-                except Exception:
-                    st.session_state.debug_session_state = debug_data.get("session_state", {})
+                st.session_state.debug_session_state = debug_data.get("session_state", {})
             except Exception:
                 import traceback
                 traceback.print_exc()
 
-            if response and response.images:
-                for img in response.images:
-                    st.image(img.content, use_container_width=True)
+            # Display images from bridge response (base64)
+            import base64 as b64
+            decoded_images = []
+            for img_b64 in response_images:
+                try:
+                    img_data = b64.b64decode(img_b64)
+                    decoded_images.append(img_data)
+                    st.image(img_data, use_container_width=True)
+                except Exception:
+                    pass
 
-            audio_to_display = []
-            if response and hasattr(response, 'audio') and response.audio:
-                audio_to_display.extend(response.audio)
-                for aud in audio_to_display:
-                    if getattr(aud, 'filepath', None):
-                        st.audio(str(aud.filepath), format="audio/ogg")
-            # Exibe a resposta final
+            # Display audio from bridge response
+            for audio_path in response_audio:
+                if os.path.exists(audio_path):
+                    st.audio(audio_path, format="audio/ogg")
+
             message_placeholder.markdown(full_response)
 
         except Exception as e:
@@ -302,27 +301,19 @@ if user_query:
             st.error(f"Erro ao processar: {e}")
             full_response = f"Desculpe, ocorreu um erro: {str(e)}"
         finally:
-            for path in image_path:
+            for path in image_paths + audio_paths:
                 try:
                     os.remove(path)
-                except:
+                except Exception:
                     pass
 
     if full_response:
         new_message = {"role": "assistant", "content": full_response}
-        if response:
-            if response.images:
-                new_message["images"] = [img.content for img in response.images]
-            if audio_to_display:
-                new_message["audio"] = [
-                    str(aud.filepath) for aud in audio_to_display if getattr(aud, 'filepath', None)
-                ]
-        
+        if decoded_images:
+            new_message["images"] = decoded_images  # raw bytes, not base64
+        if response_audio:
+            new_message["audio"] = response_audio
         st.session_state.messages.append(new_message)
-
         st.session_state.file_uploader_key += 1
         st.session_state.audio_uploader_key += 1
-
         st.rerun()
-
-        

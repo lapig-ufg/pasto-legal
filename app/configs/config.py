@@ -2,20 +2,13 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-from agno.models.google import Gemini
-from agno.models.ollama import Ollama
-
-# Define o caminho base do projeto (onde o .env geralmente fica)
 BASE_DIR = Path.cwd()
-
-# Carrega as variáveis do arquivo .env para o ambiente
 load_dotenv(dotenv_path=BASE_DIR / ".env")
+
 
 class BaseConfig:
     """Configurações comuns para todos os ambientes."""
     APP_ENV: str = os.getenv("APP_ENV", None)
-    
-    ARGO_APP_NAME: str = os.getenv("ARGO_APP_NAME", "Pasto Legal")
 
     DATABASE_TYPE: str = os.getenv("DATABASE_TYPE", None)
 
@@ -35,13 +28,7 @@ class BaseConfig:
     GEE_SERVICE_ACCOUNT: str = os.getenv("GEE_SERVICE_ACCOUNT", None)
     GEE_KEY_FILE: str = os.getenv("GEE_KEY_FILE", None)
 
-    MODEL_PROVIDER: str = os.getenv("MODEL_PROVIDER", "google")
-    MODEL_ID: str = os.getenv("MODEL_ID", "gemini-3.1-flash-lite")
-
     GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", None)
-
-    OLLAMA_HOST: str = os.getenv("OLLAMA_MODEL_ID", None)
-    OLLAMA_API_KEY: str = os.getenv("OLLAMA_API_KEY", None)
 
     S3_ENDPOINT_URL: str = os.getenv("S3_ENDPOINT_URL", None)
     S3_ACCESS_KEY: str = os.getenv("S3_ACCESS_KEY", None)
@@ -57,33 +44,16 @@ class BaseConfig:
         if self.GEE_KEY_FILE is None:
             raise ValueError("GEE_KEY_FILE environment variables must be set.")
 
-        if self.MODEL_PROVIDER == "ollama":
-            if self.OLLAMA_API_KEY is None:
-                raise ValueError("OLLAMA_API_KEY environment variables must be set.")
-
-    @property
-    def model(self) -> Gemini | Ollama:
-        match self.MODEL_PROVIDER:
-            case "google":
-                if self.GOOGLE_API_KEY is None:
-                    raise ValueError("GOOGLE_API_KEY environment variables must be set.")
-
-                return Gemini(id=self.MODEL_ID, temperature=0, api_key=self.GOOGLE_API_KEY)
-            case "ollama":
-                return Ollama(id=self.MODEL_ID, host=self.OLLAMA_HOST, api_key=self.OLLAMA_API_KEY)
-            case _:
-                raise ValueError(f"Invalid model provider: {self.MODEL_PROVIDER}")
-
 
 class DevelopmentConfig(BaseConfig):
-    """Configurações específicas para Desenvolvimento."""
     DEBUG_MODE: bool = True
 
+
 class ProductionConfig(BaseConfig):
-    """Configurações específicas para Produção."""
     DEBUG_MODE: bool = False
-    
+
     def __init__(self):
+        super().__init__()
         if self.POSTGRES_HOST is None:
             raise ValueError("POSTGRES_HOST environment variables must be set.")
         if self.POSTGRES_PORT is None:
@@ -94,7 +64,6 @@ class ProductionConfig(BaseConfig):
             raise ValueError("POSTGRES_USER environment variables must be set.")
         if self.POSTGRES_PASSWORD is None:
             raise ValueError("POSTGRES_PASSWORD environment variables must be set.")
-
         if self.WHATSAPP_ACCESS_TOKEN is None:
             raise ValueError("WHATSAPP_ACCESS_TOKEN environment variables must be set.")
         if self.WHATSAPP_VERIFY_TOKEN is None:
@@ -105,7 +74,6 @@ class ProductionConfig(BaseConfig):
             raise ValueError("WHATSAPP_PHONE_NUMBER_ID environment variables must be set.")
         if self.WHATSAPP_APP_SECRET is None:
             raise ValueError("WHATSAPP_APP_SECRET environment variables must be set.")
-
         if self.S3_ENDPOINT_URL is None:
             raise ValueError("S3_ENDPOINT_URL environment variables must be set.")
         if self.S3_ACCESS_KEY is None:
@@ -115,24 +83,22 @@ class ProductionConfig(BaseConfig):
 
 
 class StaggingConfig(ProductionConfig):
-    """Configurações específicas para Stagging."""
     DEBUG_MODE: bool = True
 
 
-# Dicionário de mapeamento dos ambientes
 config_map = {
     "production": ProductionConfig,
     "development": DevelopmentConfig,
-    "stagging": StaggingConfig
+    "stagging": StaggingConfig,
 }
 
-if (env_app := os.getenv("APP_ENV", None).lower()) is None:
-    raise("APP_ENV environment variables must be set.")
+if (env_app := os.getenv("APP_ENV", None)) is None:
+    raise ValueError("APP_ENV environment variables must be set.")
 
-if env_app not in ["production", "development", "stagging"]:
-    raise("APP_ENV has to be 'production', 'development' or 'stagging'.")
+env_app = env_app.lower()
+if env_app not in config_map:
+    raise ValueError(f"APP_ENV must be one of: {', '.join(config_map)}. Got: {env_app}")
 
-# Instancia a classe de configuração correta
 config = config_map[env_app]()
 
 from app.configs.logging_config import setup_logging  # noqa: E402
