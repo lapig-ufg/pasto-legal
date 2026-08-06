@@ -349,7 +349,12 @@ def _get_t2g_biomass_image(roi, month, year):
     grassland_asset = ee.ImageCollection("projects/global-pasture-watch/assets/ggc-30m/v1-1/grassland_c");
     grassland_mask = grassland_asset.filterBounds(roi).filterDate('2024-01-01','2024-12-31').first().gte(1)
 
-    grassland_image: ee.Image = ugpp_col.filterDate(start_date, end_date).mean() \
+    date_filtered = ugpp_col.filterDate(start_date, end_date)
+
+    if date_filtered.size().eq(0).getInfo():
+        return None
+
+    grassland_image: ee.Image = date_filtered.mean() \
         .multiply(ee.Image(n_days)).multiply(ee.Image(UGPP_SCALE_FACTOR)).multiply(DRY_BIOMASS_FACTOR) \
         .updateMask(grassland_mask).clip(roi).rename('tonC_hec')
     
