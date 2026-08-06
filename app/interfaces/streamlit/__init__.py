@@ -1,1 +1,1 @@
-# Streamlit debug interface — bridge mode
+# Streamlit debug interface — pi RPC mode

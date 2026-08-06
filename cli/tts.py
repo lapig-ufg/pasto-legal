@@ -1,6 +1,6 @@
 """
 CLI wrapper for TTS (text-to-speech) via Google Gemini.
-Called by pi's bash tool via the bridge extension.
+Called by pi's bash tool via the pi subprocess extension.
 
 Usage:
   python cli/tts.py '<base64-json-args>'

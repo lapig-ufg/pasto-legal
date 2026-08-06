@@ -1,1 +1,1 @@
-# WhatsApp interface — bridge mode (pi SDK)
+# WhatsApp interface — pi RPC mode

@@ -1,6 +1,6 @@
 """
 CLI wrapper for onboarding (terms acceptance).
-Called by pi's bash tool via the bridge extension.
+Called by pi's bash tool via the pi subprocess extension.
 
 Usage:
   python cli/onboarding.py '<base64-json-args>'

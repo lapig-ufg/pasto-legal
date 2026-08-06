@@ -1,13 +1,13 @@
 """
-WhatsApp webhook router — bridge mode (pi SDK).
+WhatsApp webhook router — pi RPC mode.
 
-Refactored to forward messages to the pi coding agent bridge instead of AGNO.
+Forwards messages to a pi coding agent subprocess via JSON-RPC (stdin/stdout).
 Valkey debouncing, media download, PII guardrails, and WhatsApp message sending
-remain unchanged. Only the agent execution path is replaced with an HTTP call
-to the Node.js bridge.
+remain unchanged. Only the agent execution path is replaced with a local
+subprocess call instead of an HTTP bridge.
 
 Usage (internal):
-    attach_routes(bridge_url=..., access_token=..., ...)
+    attach_routes(pi_rpc=..., access_token=..., ...)
 """
 import os
 import asyncio
@@ -21,7 +21,6 @@ from uuid import uuid4
 from contextlib import suppress
 
 import redis
-import httpx
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import PlainTextResponse
@@ -77,7 +76,7 @@ def _encrypt_phone(phone: str, key: bytes) -> str:
 
 
 def _get_session_state(user_id: str) -> dict:
-    """Load session state from Valkey + DB for the bridge context."""
+    """Load session state from Valkey + DB for the pi context."""
     raw = valkey_client.get(f"session:{user_id}")
     state = json.loads(raw) if raw else {}
 
@@ -102,12 +101,27 @@ def _get_session_state(user_id: str) -> dict:
 
 
 def _set_session_state(user_id: str, state: dict) -> None:
-    """Persist session state updates from bridge responses."""
+    """Persist session state updates."""
     valkey_client.set(f"session:{user_id}", json.dumps(state, default=str))
 
 
+def _get_history(user_id: str) -> list:
+    """Load conversation history from Valkey."""
+    raw = valkey_client.get(f"history:{user_id}")
+    return json.loads(raw) if raw else []
+
+
+def _append_history(user_id: str, role: str, content: str) -> None:
+    """Append a message to conversation history (max 40 messages)."""
+    history = _get_history(user_id)
+    history.append({"role": role, "content": content})
+    if len(history) > 40:
+        history = history[-40:]
+    valkey_client.set(f"history:{user_id}", json.dumps(history, default=str))
+
+
 def attach_routes(
-    bridge_url: str = "http://localhost:3001",
+    pi_pool=None,
     access_token: Optional[str] = None,
     phone_number_id: Optional[str] = None,
     verify_token: Optional[str] = None,
@@ -150,7 +164,7 @@ def attach_routes(
         for entry in body.get("entry", []):
             for change in entry.get("changes", []):
                 for message in change.get("value", {}).get("messages", []):
-                    background_tasks.add_task(process_message, message, bridge_url, config_wa, enable_encryption, encryption_key)
+                    background_tasks.add_task(process_message, message, pi_pool, config_wa, enable_encryption, encryption_key)
 
         return {"status": "processing"}
 
@@ -159,7 +173,7 @@ def attach_routes(
 
 async def process_message(
     message: dict,
-    bridge_url: str,
+    pi_pool,
     config_wa: WhatsAppConfig,
     enable_encryption: bool = False,
     encryption_key: Optional[bytes] = None,
@@ -198,6 +212,7 @@ async def process_message(
         if parsed.text.strip().lower() == "/new":
             valkey_client.delete(f"debounce_status:{user_id}", f"debounce_msgs:{user_id}")
             valkey_client.delete(f"session:{user_id}")
+            await pi_pool.delete_session(user_id)
             await send_whatsapp_message_async(phone_number, _SESSION_RESET_MESSAGE, config_wa)
             return
 
@@ -271,32 +286,63 @@ async def process_message(
         if skipped_media:
             final_text = "[Some media could not be downloaded]\n\n" + final_text
 
-        # ── Call pi bridge (replaces AGNO entity.arun) ──────────────────
+        # ── Call pi RPC (option 2a: per-user process, in-memory session) ──
         session_state = _get_session_state(user_id)
 
-        async with httpx.AsyncClient(timeout=120) as client:
-            try:
-                resp = await client.post(
-                    f"{bridge_url}/prompt",
-                    json={
-                        "userId": user_id,
-                        "message": final_text.strip(),
-                        "sessionState": session_state,
-                    },
-                )
-                resp.raise_for_status()
-                bridge_result = resp.json()
-            except httpx.HTTPError as e:
-                await send_whatsapp_message_async(phone_number, _ERROR_MESSAGE, config_wa)
-                return
+        from app.core.pi_rpc import build_prompt
 
-        # ── Update session state from bridge response ───────────────────
-        # (Bridge tools update state via Valkey directly in Python CLI)
+        # ── Onboarding gate: handle terms acceptance in Python ──────────
+        # pi's default coding-agent system prompt can override our
+        # Pasto Legal instructions, so we handle acceptance here directly.
+        if not session_state.get("terms_accepted"):
+            text_lower = final_text.strip().lower()
+            acceptance_keywords = ["sim", "aceito", "concordo", "ok", "pode", "sim senhor",
+                                   "sim senhora", "claro", "com certeza", "positivo",
+                                   "yes", "aceitar", "termos", "li e aceito"]
+            is_acceptance = any(kw in text_lower for kw in acceptance_keywords)
+
+            if is_acceptance:
+                # Call onboarding directly, bypassing LLM
+                try:
+                    from cli.onboarding import accept_terms
+                    result = accept_terms({"user_id": user_id})
+                    if "error" in result:
+                        log.error(f"[router] onboarding error: {result['error']}")
+                    else:
+                        session_state["terms_accepted"] = True
+                        await send_whatsapp_message_async(
+                            phone_number,
+                            result.get("message", "Termos de Uso aceitos! 🎉 O sistema está liberado para uso. Como posso ajudar?"),
+                            config_wa,
+                        )
+                        return
+                except Exception as e:
+                    log.error(f"[router] onboarding exception: {e}")
+                    # Fall through to pi for normal processing
+            else:
+                # Not an acceptance — let pi handle the onboarding flow
+                pass
+
+        # Get or create per-user pi client
+        client = await pi_pool.get_client(user_id)
+        is_new = not client._has_session
+
+        full_prompt = build_prompt(final_text.strip(), user_id=user_id, session_state=session_state, is_new_session=is_new)
+
+        try:
+            pi_result = await client.prompt(full_prompt)
+        except Exception as e:
+            log.error(f"[router] pi_rpc.prompt failed: {e}")
+            await send_whatsapp_message_async(phone_number, _ERROR_MESSAGE, config_wa)
+            return
+
+        # ── Mirror session to Valkey (durability) ────────────────────────
+        await pi_pool.save_session(user_id)
 
         # ── Send response back to WhatsApp ──────────────────────────────
-        content = bridge_result.get("content", "")
-        images = bridge_result.get("images", [])
-        audio_paths = bridge_result.get("audio", [])
+        content = pi_result.get("content", "")
+        images = pi_result.get("images", [])
+        audio_paths = pi_result.get("audio", [])
 
         # Send images
         for img_b64 in images:

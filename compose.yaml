@@ -13,26 +13,7 @@ services:
     networks:
       - pasto-legal
 
-  # ── pi Bridge — Node.js session management + LLM orchestration ────────
-  bridge:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.bridge
-    ports:
-      - "3001:3001"
-    environment:
-      - BRIDGE_PORT=3001
-      - TOOL_BACKEND_URL=http://fastapi_app:3000
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-    env_file:
-      - .env
-    depends_on:
-      valkey:
-        condition: service_healthy
-    networks:
-      - pasto-legal
-
-  # ── FastAPI — WhatsApp webhook ────────────────────────────────────────
+  # ── FastAPI — WhatsApp webhook + pi RPC subprocess ────────────────────
   fastapi_app:
     build: .
     command: uv run uvicorn app.main:app --host 0.0.0.0 --port 3000 --reload
@@ -47,10 +28,13 @@ services:
       - PYTHONPATH=/app
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONUNBUFFERED=1
-      - BRIDGE_URL=http://bridge:3001
       - VALKEY_HOST=valkey
       - VALKEY_PORT=6379
       - VALKEY_DB=0
+      - TOOL_BACKEND_URL=http://localhost:3000
+      - GEMINI_API_KEY=${GOOGLE_API_KEY}
+      - PI_PROVIDER=google
+      - PI_MODEL=gemini-2.5-flash
     extra_hosts:
       - "host.docker.internal:host-gateway"
     env_file:
@@ -58,8 +42,6 @@ services:
     depends_on:
       valkey:
         condition: service_healthy
-      bridge:
-        condition: service_started
     networks:
       - pasto-legal
 
@@ -78,18 +60,13 @@ services:
       - PYTHONPATH=/app
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONUNBUFFERED=1
-      - BRIDGE_URL=http://bridge:3001
-      - VALKEY_HOST=valkey
-      - VALKEY_PORT=6379
-      - VALKEY_DB=0
+      - FASTAPI_URL=http://fastapi_app:3000
     extra_hosts:
       - "host.docker.internal:host-gateway"
     env_file:
       - .env
     depends_on:
-      valkey:
-        condition: service_healthy
-      bridge:
+      fastapi_app:
         condition: service_started
     networks:
       - pasto-legal

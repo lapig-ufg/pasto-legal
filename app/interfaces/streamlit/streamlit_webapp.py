@@ -1,6 +1,6 @@
-"""Streamlit debug webapp — bridge mode.
+"""Streamlit debug webapp — calls FastAPI /chat endpoint.
 
-Calls the pi bridge via HTTP instead of AGNO's pasto_legal_workflow.run().
+Thin UI layer — all LLM processing happens in the FastAPI container.
 """
 import os
 import uuid
@@ -13,10 +13,10 @@ from typing import List
 from dataclasses import dataclass
 
 from app.configs.config import config
-from app.interfaces.streamlit.debug_helpers import extract_bridge_debug_data
+from app.interfaces.streamlit.debug_helpers import extract_pi_debug_data
 from app.interfaces.streamlit.debug_panel import render_debug_panel
 
-BRIDGE_URL = os.getenv("BRIDGE_URL", "http://localhost:3001")
+FASTAPI_URL = os.getenv("FASTAPI_URL", "http://localhost:3000")
 
 st.set_page_config(page_title="Pasto Legal", page_icon="P")
 
@@ -128,6 +128,16 @@ with st.sidebar:
     if st.button("Sair / Trocar Usuário"):
         logout()
 
+    st.divider()
+    if st.button("🔄 Reset Session"):
+        import httpx, asyncio
+        async def _reset():
+            async with httpx.AsyncClient(timeout=10) as c:
+                await c.post(f"{FASTAPI_URL}/reset", json={"user_id": st.session_state.session_id})
+        asyncio.run(_reset())
+        st.session_state.messages = []
+        st.rerun()
+
     if config.DEBUG_MODE:
         st.divider()
         st.session_state.debug_mode_enabled = st.toggle(
@@ -236,34 +246,35 @@ if user_query:
         full_response = ""
         response_images = []
         response_audio = []
+        decoded_images = []
 
         try:
             with st.spinner("Analisando dados e gerando resposta..."):
-                # ── Call pi bridge (replaces pasto_legal_workflow.run) ──
-                async def _call_bridge():
+                # ── Call FastAPI /chat endpoint ──
+                async def _call_fastapi():
                     async with httpx.AsyncClient(timeout=120) as client:
                         resp = await client.post(
-                            f"{BRIDGE_URL}/prompt",
+                            f"{FASTAPI_URL}/chat",
                             json={
-                                "userId": st.session_state.session_id,
+                                "user_id": st.session_state.session_id,
                                 "message": user_query,
-                                "sessionState": {},
+                                "session_state": {},
                             },
                         )
                         resp.raise_for_status()
                         return resp.json()
 
                 import asyncio
-                bridge_result = asyncio.run(_call_bridge())
+                pi_result = asyncio.run(_call_fastapi())
 
-            full_response = bridge_result.get("content", "Erro ao processar.")
-            response_images = bridge_result.get("images", [])
-            response_audio = bridge_result.get("audio", [])
+            full_response = pi_result.get("content", "Erro ao processar.")
+            response_images = pi_result.get("images", [])
+            response_audio = pi_result.get("audio", [])
 
             # Extract debug data
             try:
-                debug_data = extract_bridge_debug_data(
-                    bridge_result=bridge_result,
+                debug_data = extract_pi_debug_data(
+                    pi_result=pi_result,
                     session_id=st.session_state.session_id,
                     user_query=user_query,
                 )
@@ -277,9 +288,8 @@ if user_query:
                 import traceback
                 traceback.print_exc()
 
-            # Display images from bridge response (base64)
+            # Display images from pi response (base64)
             import base64 as b64
-            decoded_images = []
             for img_b64 in response_images:
                 try:
                     img_data = b64.b64decode(img_b64)
@@ -288,7 +298,7 @@ if user_query:
                 except Exception:
                     pass
 
-            # Display audio from bridge response
+            # Display audio from pi response
             for audio_path in response_audio:
                 if os.path.exists(audio_path):
                     st.audio(audio_path, format="audio/ogg")

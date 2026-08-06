@@ -1,8 +1,8 @@
-"""Streamlit debug panel — bridge mode.
+"""Streamlit debug panel — pi RPC mode.
 
 Renders a sidebar expander with tabs for inspecting session state,
 agent routing, tool calls, metrics, and message history.
-Data comes from the bridge via HTTP, stored as plain dicts.
+Data comes from the pi subprocess via HTTP, stored as plain dicts.
 """
 
 from typing import Any, Dict, List

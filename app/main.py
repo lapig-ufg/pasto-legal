@@ -1,13 +1,12 @@
 """
 Pasto Legal — FastAPI application entry point.
 
-Refactored to use pi coding agent (via Node.js bridge) instead of AGNO.
-The WhatsApp webhook forwards messages to the bridge, which manages
-conversation sessions, loads skills for each agent persona, and calls
-Python CLI tools for domain-specific work (GEE, SICAR, TTS).
+Uses pi coding agent via JSON-RPC (--mode rpc) instead of AGNO.
+The WhatsApp webhook communicates with a pi subprocess over stdin/stdout.
+Python services (GEE, SICAR, TTS) remain unchanged.
 
 Usage:
-  BRIDGE_URL=http://localhost:3001 uvicorn app.main:app --port 3000 --reload
+  uvicorn app.main:app --port 3000 --reload
 """
 import os
 import sys
@@ -16,6 +15,7 @@ import base64
 import subprocess
 import logging
 from pathlib import Path
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,17 +23,39 @@ from pydantic import BaseModel
 
 from app.interfaces.whatsapp.router import attach_routes
 from app.configs.config import config
+from app.core.pi_rpc import PiRpcPool
 
 log = logging.getLogger("pasto-legal.main")
 logging.basicConfig(level=logging.DEBUG, format="%(levelname)s | %(name)s | %(message)s")
 
-BRIDGE_URL = os.getenv("BRIDGE_URL", "http://localhost:3001")
 CLI_DIR = Path(__file__).resolve().parent.parent / "cli"
+
+# ── pi RPC pool (per-user processes, started at startup) ──────────────
+pi_pool: PiRpcPool = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global pi_pool
+    provider = os.getenv("PI_PROVIDER", "google")
+    model = os.getenv("PI_MODEL", "gemini-2.5-flash")
+    pi_pool = PiRpcPool(
+        ttl=int(os.getenv("PI_SESSION_TTL", "1800")),
+        provider=provider,
+        model=model,
+        cwd=str(Path(__file__).resolve().parent.parent),
+    )
+    await pi_pool.start()
+    log.info(f"[main] pi rpc pool started  provider={provider}  model={model}")
+    yield
+    await pi_pool.stop()
+
 
 app = FastAPI(
     title="Pasto Legal",
     description="Assistente virtual para pecuaristas brasileiros via WhatsApp",
-    version="2.0.0",
+    version="2.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -46,7 +68,7 @@ app.add_middleware(
 
 # ── WhatsApp webhook ──────────────────────────────────────────────────────
 whatsapp_router = attach_routes(
-    bridge_url=BRIDGE_URL,
+    pi_pool=pi_pool,
     access_token=config.WHATSAPP_ACCESS_TOKEN,
     phone_number_id=config.WHATSAPP_PHONE_NUMBER_ID,
     verify_token=config.WHATSAPP_VERIFY_TOKEN,
@@ -55,7 +77,7 @@ whatsapp_router = attach_routes(
 app.include_router(whatsapp_router, prefix="/whatsapp", tags=["WhatsApp"])
 
 
-# ── Tool execution endpoint (called by pi bridge) ─────────────────────────
+# ── Tool execution endpoint (called by pi custom tools) ─────────────────────────
 
 class ToolRequest(BaseModel):
     tool: str
@@ -65,8 +87,8 @@ class ToolRequest(BaseModel):
 async def execute_tool(req: ToolRequest):
     """Execute a Python CLI tool and return the result.
 
-    The pi bridge calls this endpoint instead of running Python directly
-    (the bridge is a Node.js container without Python).
+    Called by pi's custom tools (pasto-legal extension) via HTTP.
+    pi runs in the same container, so localhost works.
     """
     tool = req.tool
     args = req.args
@@ -110,7 +132,40 @@ async def execute_tool(req: ToolRequest):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "bridge_url": BRIDGE_URL}
+    return {"status": "ok", "pi_pool": pi_pool is not None, "clients": len(pi_pool._clients) if pi_pool else 0}
+
+
+class ChatRequest(BaseModel):
+    user_id: str = "streamlit-debug"
+    message: str
+    session_state: dict = {}
+
+@app.post("/chat")
+async def chat(req: ChatRequest):
+    """Chat endpoint for Streamlit debug UI."""
+    from app.core.pi_rpc import build_prompt
+
+    client = await pi_pool.get_client(req.user_id)
+    is_new = not client._has_session
+    full_prompt = build_prompt(
+        req.message,
+        user_id=req.user_id,
+        session_state=req.session_state,
+        is_new_session=is_new,
+    )
+    result = await client.prompt(full_prompt)
+    await pi_pool.save_session(req.user_id)
+    return result
+
+
+class ResetRequest(BaseModel):
+    user_id: str
+
+@app.post("/reset")
+async def reset(req: ResetRequest):
+    """Reset a user's session — kills the pi process and clears saved state."""
+    await pi_pool.delete_session(req.user_id)
+    return {"status": "reset"}
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 """
 CLI wrapper for property registration tools.
-Called by pi's bash tool via the bridge extension.
+Called by pi's bash tool via the pi subprocess extension.
 
 Usage:
   python cli/property.py '<base64-json-args>'

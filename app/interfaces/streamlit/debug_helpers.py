@@ -1,7 +1,7 @@
-"""Debug data helpers — bridge mode.
+"""Debug data helpers — pi RPC mode.
 
-Converts bridge HTTP responses into plain dicts for Streamlit session_state.
-No agno types needed.
+Converts pi RPC responses into plain dicts for Streamlit session_state.
+No agno or bridge types needed.
 """
 
 from time import time
@@ -37,20 +37,17 @@ def extract_session_state(state: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
-def extract_bridge_debug_data(
-    bridge_result: Dict[str, Any],
+def extract_pi_debug_data(
+    pi_result: Dict[str, Any],
     session_id: str,
     user_query: str,
 ) -> Dict[str, Any]:
-    """Extract debug data from a bridge HTTP response."""
+    """Extract debug data from a pi RPC response."""
     return {
         "timestamp": int(time()),
         "session_id": session_id,
         "user_query": truncate_string(user_query, 300),
-        "content": truncate_string(bridge_result.get("content", ""), 500),
-        "session_state": extract_session_state(bridge_result.get("sessionState", {})),
-        "agent_routing_trace": bridge_result.get("agentRouting", []),
-        "tool_calls_log": bridge_result.get("toolCalls", []),
-        "metrics_summary": bridge_result.get("metrics", {}),
-        "message_history": bridge_result.get("messages", []),
+        "content": truncate_string(pi_result.get("content", ""), 500),
+        "images": len(pi_result.get("images", [])),
+        "audio": len(pi_result.get("audio", [])),
     }

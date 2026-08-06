@@ -1,6 +1,6 @@
 """
 CLI wrapper for Google Earth Engine geospatial tools.
-Called by pi's bash tool via the bridge extension.
+Called by pi's bash tool via the pi subprocess extension.
 
 Usage:
   python cli/gee.py '<base64-json-args>'

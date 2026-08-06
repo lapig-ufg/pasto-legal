@@ -1,6 +1,6 @@
 """
 CLI wrapper for version/update notes.
-Called by pi's bash tool via the bridge extension.
+Called by pi's bash tool via the pi subprocess extension.
 
 Usage:
   python cli/version.py '<base64-json-args>'

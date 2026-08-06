@@ -14,12 +14,12 @@ _ERROR_FORMATTER = logging.Formatter(
 # App-level loggers (replaces agno.utils.log)
 app_logger = logging.getLogger("pasto-legal")
 service_logger = logging.getLogger("pasto-legal.services")
-bridge_logger = logging.getLogger("pasto-legal.bridge")
+pi_rpc_logger = logging.getLogger("pasto-legal.pi_rpc")
 
 _APP_LOGGERS: tuple[logging.Logger, ...] = (
     app_logger,
     service_logger,
-    bridge_logger,
+    pi_rpc_logger,
 )
 
 

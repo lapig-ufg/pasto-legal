@@ -4,7 +4,7 @@
  * Each tool calls the Python backend via HTTP (fastapi_app:3000/tool).
  * The Python backend executes the corresponding CLI script and returns results.
  *
- * Tool results carry image/audio file paths in details so the bridge
+ * Tool results carry image/audio file paths in details so the pi subprocess
  * can forward them back to the Python webhook for WhatsApp delivery.
  */
 
@@ -14,7 +14,7 @@ const TOOL_BACKEND = process.env.TOOL_BACKEND_URL || "http://localhost:3000";
 
 async function callTool(tool, args = {}) {
   const url = `${TOOL_BACKEND}/tool`;
-  console.log(`[tools] → POST ${url}  tool=${tool}  args=${JSON.stringify(args).slice(0, 200)}`);
+  console.error(`[tools] → POST ${url}  tool=${tool}  args=${JSON.stringify(args).slice(0, 200)}`);
   try {
     const resp = await fetch(url, {
       method: "POST",
@@ -23,7 +23,7 @@ async function callTool(tool, args = {}) {
       signal: AbortSignal.timeout(120_000),
     });
     const result = await resp.json();
-    console.log(`[tools] ← ${tool}  ok=${!result.error}  keys=${Object.keys(result).join(",")}`);
+    console.error(`[tools] ← ${tool}  ok=${!result.error}  keys=${Object.keys(result).join(",")}`);
     return result;
   } catch (err) {
     console.error(`[tools] ← ${tool}  FAILED: ${err.message}`);
@@ -31,12 +31,33 @@ async function callTool(tool, args = {}) {
   }
 }
 
+function makeResult(result) {
+  const content = [{ type: "text", text: result.message || "Pronto." }];
+  if (result.images && result.images.length > 0) {
+    for (const img of result.images) {
+      content.push({ type: "image", data: img, mimeType: "image/png" });
+    }
+  }
+  return {
+    content,
+    details: {
+      imagePaths: result.images || [],
+      audioPath: result.audio_path,
+      sessionState: result.session_state,
+    },
+  };
+}
+
+function errorResult(result) {
+  return { content: [{ type: "text", text: `Erro: ${result.error}` }], details: {} };
+}
+
 export default function (pi) {
   // ── Property registration ──────────────────────────────────────────────
 
   pi.registerTool({
-    name: "property_register_by_car",
-    label: "Register by CAR",
+    name: "register_property_by_car",
+    label: "Register Property by CAR",
     description: "Registra uma propriedade rural pelo código CAR/SICAR. Use quando o usuário fornecer um código CAR.",
     parameters: Type.Object({
       car_codes: Type.Array(Type.String(), { description: "Lista de códigos CAR (ex: ['GO-1234567-...'])" }),
@@ -44,7 +65,7 @@ export default function (pi) {
     }),
     async execute(_toolCallId, params) {
       const result = await callTool("property", { action: "register_by_car", car_codes: params.car_codes, user_id: params.user_id });
-      if (result.error) return { content: [{ type: "text", text: `Erro: ${result.error}` }], details: {} };
+      if (result.error) return errorResult(result);
       return {
         content: [{ type: "text", text: result.message }],
         details: { imagePaths: result.images || [], sessionState: result.session_state },
@@ -53,8 +74,8 @@ export default function (pi) {
   });
 
   pi.registerTool({
-    name: "property_register_by_coords",
-    label: "Register by Coordinates",
+    name: "register_property_by_coords",
+    label: "Register Property by Coordinates",
     description: "Registra uma propriedade rural por coordenadas geográficas (latitude, longitude).",
     parameters: Type.Object({
       latitude: Type.Number({ description: "Latitude em graus decimais" }),
@@ -63,7 +84,7 @@ export default function (pi) {
     }),
     async execute(_toolCallId, params) {
       const result = await callTool("property", { action: "register_by_coords", latitude: params.latitude, longitude: params.longitude, user_id: params.user_id });
-      if (result.error) return { content: [{ type: "text", text: `Erro: ${result.error}` }], details: {} };
+      if (result.error) return errorResult(result);
       return {
         content: [{ type: "text", text: result.message }],
         details: { imagePaths: result.images || [], sessionState: result.session_state },
@@ -72,8 +93,8 @@ export default function (pi) {
   });
 
   pi.registerTool({
-    name: "property_register_by_url",
-    label: "Register by URL",
+    name: "register_property_by_url",
+    label: "Register Property by URL",
     description: "Registra uma propriedade rural a partir de um link de compartilhamento do Google Maps.",
     parameters: Type.Object({
       url: Type.String({ description: "URL de compartilhamento do Google Maps" }),
@@ -81,7 +102,7 @@ export default function (pi) {
     }),
     async execute(_toolCallId, params) {
       const result = await callTool("property", { action: "register_by_url", url: params.url, user_id: params.user_id });
-      if (result.error) return { content: [{ type: "text", text: `Erro: ${result.error}` }], details: {} };
+      if (result.error) return errorResult(result);
       return {
         content: [{ type: "text", text: result.message }],
         details: { imagePaths: result.images || [], sessionState: result.session_state },
@@ -90,21 +111,21 @@ export default function (pi) {
   });
 
   pi.registerTool({
-    name: "property_confirm_selection",
-    label: "Confirm Property",
+    name: "confirm_property_selection",
+    label: "Confirm Property Selection",
     description: "Confirma a propriedade selecionada quando há apenas uma opção.",
     parameters: Type.Object({
       user_id: Type.String({ description: "User ID from session context" }),
     }),
     async execute(_toolCallId, params) {
       const result = await callTool("property", { action: "confirm_selection", user_id: params.user_id });
-      if (result.error) return { content: [{ type: "text", text: `Erro: ${result.error}` }], details: {} };
-      return { content: [{ type: "text", text: result.message }], details: { sessionState: result.session_state } };
+      if (result.error) return errorResult(result);
+      return makeResult(result);
     },
   });
 
   pi.registerTool({
-    name: "property_select_from_list",
+    name: "select_property_from_list",
     label: "Select Property from List",
     description: "Seleciona uma propriedade de uma lista de múltiplos resultados.",
     parameters: Type.Object({
@@ -113,14 +134,14 @@ export default function (pi) {
     }),
     async execute(_toolCallId, params) {
       const result = await callTool("property", { action: "select_from_list", selection: params.selection, user_id: params.user_id });
-      if (result.error) return { content: [{ type: "text", text: `Erro: ${result.error}` }], details: {} };
-      return { content: [{ type: "text", text: result.message }], details: { sessionState: result.session_state } };
+      if (result.error) return errorResult(result);
+      return makeResult(result);
     },
   });
 
   pi.registerTool({
-    name: "property_complete_registration",
-    label: "Complete Registration",
+    name: "complete_property_registration",
+    label: "Complete Property Registration",
     description: "Conclui o cadastro da propriedade com o nome escolhido pelo usuário.",
     parameters: Type.Object({
       name: Type.String({ description: "Nome da propriedade (ex: Fazenda Primavera)" }),
@@ -128,27 +149,27 @@ export default function (pi) {
     }),
     async execute(_toolCallId, params) {
       const result = await callTool("property", { action: "complete_registration", name: params.name, user_id: params.user_id });
-      if (result.error) return { content: [{ type: "text", text: `Erro: ${result.error}` }], details: {} };
-      return { content: [{ type: "text", text: result.message }], details: { sessionState: result.session_state } };
+      if (result.error) return errorResult(result);
+      return makeResult(result);
     },
   });
 
   pi.registerTool({
-    name: "property_cancel_registration",
-    label: "Cancel Registration",
+    name: "cancel_property_registration",
+    label: "Cancel Property Registration",
     description: "Cancela o processo de cadastro de propriedade em andamento.",
     parameters: Type.Object({
       user_id: Type.String({ description: "User ID from session context" }),
     }),
     async execute(_toolCallId, params) {
       const result = await callTool("property", { action: "cancel_registration", user_id: params.user_id });
-      if (result.error) return { content: [{ type: "text", text: `Erro: ${result.error}` }], details: {} };
-      return { content: [{ type: "text", text: result.message }], details: { sessionState: result.session_state } };
+      if (result.error) return errorResult(result);
+      return makeResult(result);
     },
   });
 
   pi.registerTool({
-    name: "property_remove",
+    name: "remove_property",
     label: "Remove Property",
     description: "Remove uma propriedade registrada do sistema.",
     parameters: Type.Object({
@@ -157,13 +178,13 @@ export default function (pi) {
     }),
     async execute(_toolCallId, params) {
       const result = await callTool("property", { action: "remove", car_code: params.car_code, user_id: params.user_id });
-      if (result.error) return { content: [{ type: "text", text: `Erro: ${result.error}` }], details: {} };
-      return { content: [{ type: "text", text: result.message }], details: { sessionState: result.session_state } };
+      if (result.error) return errorResult(result);
+      return makeResult(result);
     },
   });
 
   pi.registerTool({
-    name: "property_remove_all",
+    name: "remove_all_properties",
     label: "Remove All Properties",
     description: "Remove todas as propriedades registradas do sistema.",
     parameters: Type.Object({
@@ -171,13 +192,13 @@ export default function (pi) {
     }),
     async execute(_toolCallId, params) {
       const result = await callTool("property", { action: "remove_all", user_id: params.user_id });
-      if (result.error) return { content: [{ type: "text", text: `Erro: ${result.error}` }], details: {} };
-      return { content: [{ type: "text", text: result.message }], details: { sessionState: result.session_state } };
+      if (result.error) return errorResult(result);
+      return makeResult(result);
     },
   });
 
   pi.registerTool({
-    name: "property_set_name",
+    name: "set_property_name",
     label: "Set Property Name",
     description: "Atualiza o nome de uma propriedade já registrada.",
     parameters: Type.Object({
@@ -187,8 +208,8 @@ export default function (pi) {
     }),
     async execute(_toolCallId, params) {
       const result = await callTool("property", { action: "set_name", car_codes: params.car_codes, name: params.name, user_id: params.user_id });
-      if (result.error) return { content: [{ type: "text", text: `Erro: ${result.error}` }], details: {} };
-      return { content: [{ type: "text", text: result.message }], details: { sessionState: result.session_state } };
+      if (result.error) return errorResult(result);
+      return makeResult(result);
     },
   });
 
@@ -205,8 +226,8 @@ export default function (pi) {
     }),
     async execute(_toolCallId, params) {
       const result = await callTool("gee", { action: "pasture_stats", car_codes: params.car_codes, year: params.year || 2026, month: params.month || 5 });
-      if (result.error) return { content: [{ type: "text", text: `Erro: ${result.error}` }], details: {} };
-      return { content: [{ type: "text", text: result.stats_text || JSON.stringify(result.stats) }], details: {} };
+      if (result.error) return errorResult(result);
+      return makeResult({ message: result.stats_text || JSON.stringify(result.stats) });
     },
   });
 
@@ -219,8 +240,8 @@ export default function (pi) {
     }),
     async execute(_toolCallId, params) {
       const result = await callTool("gee", { action: "topographic_stats", car_codes: params.car_codes });
-      if (result.error) return { content: [{ type: "text", text: `Erro: ${result.error}` }], details: {} };
-      return { content: [{ type: "text", text: result.stats_text || JSON.stringify(result.stats) }], details: {} };
+      if (result.error) return errorResult(result);
+      return makeResult({ message: result.stats_text || JSON.stringify(result.stats) });
     },
   });
 
@@ -233,11 +254,8 @@ export default function (pi) {
     }),
     async execute(_toolCallId, params) {
       const result = await callTool("gee", { action: "property_image", car_codes: params.car_codes });
-      if (result.error) return { content: [{ type: "text", text: `Erro: ${result.error}` }], details: {} };
-      return {
-        content: [{ type: "text", text: result.message || "Imagem da propriedade gerada." }],
-        details: { imagePaths: result.images || [] },
-      };
+      if (result.error) return errorResult(result);
+      return makeResult(result);
     },
   });
 
@@ -250,11 +268,8 @@ export default function (pi) {
     }),
     async execute(_toolCallId, params) {
       const result = await callTool("gee", { action: "biomass_image", car_codes: params.car_codes });
-      if (result.error) return { content: [{ type: "text", text: `Erro: ${result.error}` }], details: {} };
-      return {
-        content: [{ type: "text", text: result.message || "Mapa de biomassa gerado." }],
-        details: { imagePaths: result.images || [] },
-      };
+      if (result.error) return errorResult(result);
+      return makeResult(result);
     },
   });
 
@@ -267,11 +282,8 @@ export default function (pi) {
     }),
     async execute(_toolCallId, params) {
       const result = await callTool("gee", { action: "soil_texture_image", car_codes: params.car_codes });
-      if (result.error) return { content: [{ type: "text", text: `Erro: ${result.error}` }], details: {} };
-      return {
-        content: [{ type: "text", text: result.message || "Mapa de textura do solo gerado." }],
-        details: { imagePaths: result.images || [] },
-      };
+      if (result.error) return errorResult(result);
+      return makeResult(result);
     },
   });
 
@@ -284,11 +296,8 @@ export default function (pi) {
     }),
     async execute(_toolCallId, params) {
       const result = await callTool("gee", { action: "pasture_classification_image", car_codes: params.car_codes });
-      if (result.error) return { content: [{ type: "text", text: `Erro: ${result.error}` }], details: {} };
-      return {
-        content: [{ type: "text", text: result.message || "Mapa de classificação de pastagem gerado." }],
-        details: { imagePaths: result.images || [] },
-      };
+      if (result.error) return errorResult(result);
+      return makeResult(result);
     },
   });
 
@@ -304,11 +313,8 @@ export default function (pi) {
     }),
     async execute(_toolCallId, params) {
       const result = await callTool("tts", { text: params.text, user_id: params.user_id });
-      if (result.error) return { content: [{ type: "text", text: `Erro ao gerar áudio: ${result.error}` }], details: {} };
-      return {
-        content: [{ type: "text", text: "Áudio gerado com sucesso!" }],
-        details: { audioPath: result.audio_path },
-      };
+      if (result.error) return errorResult(result);
+      return makeResult(result);
     },
   });
 
@@ -323,8 +329,8 @@ export default function (pi) {
     }),
     async execute(_toolCallId, params) {
       const result = await callTool("onboarding", { action: "accept_terms", user_id: params.user_id });
-      if (result.error) return { content: [{ type: "text", text: `Erro: ${result.error}` }], details: {} };
-      return { content: [{ type: "text", text: result.message }], details: { sessionState: result.session_state } };
+      if (result.error) return errorResult(result);
+      return makeResult(result);
     },
   });
 
@@ -337,8 +343,8 @@ export default function (pi) {
     parameters: Type.Object({}),
     async execute() {
       const result = await callTool("version", { action: "update_notes" });
-      if (result.error) return { content: [{ type: "text", text: `Erro: ${result.error}` }], details: {} };
-      return { content: [{ type: "text", text: result.notes }], details: {} };
+      if (result.error) return errorResult(result);
+      return makeResult({ message: result.notes });
     },
   });
 }
