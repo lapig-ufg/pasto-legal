@@ -74,7 +74,7 @@ class PiRpcClient:
             "--session", str(session_file),
             "--provider", self.provider,
             "--model", self.model,
-            "-e", str(Path(self.cwd) / ".pi" / "extensions" / "pasto-legal-tools.js"),
+            "-e", str(Path(self.cwd) / "extensions" / "pasto-legal-tools.js"),
         ]
 
         is_new = not session_file.exists()
