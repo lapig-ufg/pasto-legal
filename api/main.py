@@ -38,7 +38,7 @@ pi_pool: PiRpcPool = None
 async def lifespan(app: FastAPI):
     global pi_pool
     provider = os.getenv("PI_PROVIDER", "google")
-    model = os.getenv("PI_MODEL", "gemini-2.5-flash")
+    model = os.getenv("PI_MODEL", "gemini-3.5-flash-lite")
     pi_pool = PiRpcPool(
         ttl=int(os.getenv("PI_SESSION_TTL", "1800")),
         provider=provider,
@@ -143,19 +143,61 @@ class ChatRequest(BaseModel):
 @app.post("/chat")
 async def chat(req: ChatRequest):
     """Chat endpoint for Streamlit debug UI."""
-    from agent.pi_rpc import build_prompt
+    import time as _time
+    from agent.pi_rpc import build_prompt, build_onboarding_prompt
     from agent.tool_rag import search_tools
 
+    _t0 = _time.time()
+
+    # ── Onboarding gate: check terms acceptance from DB ──────────────
+    session_state = dict(req.session_state or {})
+    log.info(f"[chat] user={req.user_id} session_state={session_state}")
+    if not session_state.get("terms_accepted"):
+        try:
+            from api.database.session import SessionLocal
+            from api.database.models import UserTermsAcceptance
+            db = SessionLocal()
+            try:
+                record = db.query(UserTermsAcceptance).filter(
+                    UserTermsAcceptance.user_id == req.user_id,
+                    UserTermsAcceptance.accepted == True,
+                ).first()
+                session_state["terms_accepted"] = bool(record)
+            finally:
+                db.close()
+        except Exception:
+            session_state["terms_accepted"] = False
+
+    # First-time users → onboarding prompt (only accept_terms tool)
+    if not session_state.get("terms_accepted"):
+        client = await pi_pool.get_client(req.user_id)
+        full_prompt = build_onboarding_prompt(req.message, user_id=req.user_id)
+        result = await client.prompt(full_prompt)
+        # Persist any terms_accepted update from the tool
+        for update in result.get("session_state_updates", []):
+            if isinstance(update, dict):
+                session_state.update(update)
+        result["session_state"] = session_state
+        log.info(f"[chat] onboarding user={req.user_id} elapsed={_time.time() - _t0:.1f}s")
+        return result
+
+    # Normal flow: Tool-RAG + full prompt
     relevant_tools = search_tools(req.message, top_k=5)
 
     client = await pi_pool.get_client(req.user_id)
     full_prompt = build_prompt(
         req.message,
         user_id=req.user_id,
-        session_state=req.session_state,
+        session_state=session_state,
         relevant_tools=relevant_tools,
     )
+    log.info(f"[chat] user={req.user_id} full_prompt={full_prompt}")
     result = await client.prompt(full_prompt)
+    for update in result.get("session_state_updates", []):
+        if isinstance(update, dict):
+            session_state.update(update)
+    result["session_state"] = session_state
+    log.info(f"[chat] user={req.user_id} elapsed={_time.time() - _t0:.1f}s")
     return result
 
 

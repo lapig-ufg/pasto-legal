@@ -267,7 +267,7 @@ docker compose up --build
 | `GEE_SERVICE_ACCOUNT` | GEE service account email |
 | `GEE_KEY_FILE` | Path to GEE service account JSON key |
 | `PI_PROVIDER` | pi RPC provider (default: `google`) |
-| `PI_MODEL` | pi RPC model (default: `gemini-2.5-flash`) |
+| `PI_MODEL` | pi RPC model (default: `gemini-3.5-flash-lite`) |
 | `PI_SESSION_TTL` | Idle pi process TTL in seconds (default: `1800`) |
 
 > **Production also requires:** PostgreSQL connection vars, WhatsApp Business API credentials, and Redis/Valkey connection vars. See [`.env.example`](.env.example) for the full list.

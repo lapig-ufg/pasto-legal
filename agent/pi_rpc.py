@@ -39,7 +39,7 @@ class PiRpcClient:
         self,
         user_id: str,
         provider: str = "google",
-        model: str = "gemini-2.5-flash",
+        model: str = "gemini-3.5-flash-lite",
         cwd: Optional[str] = None,
     ):
         self.user_id = user_id
@@ -122,8 +122,12 @@ class PiRpcClient:
         self.proc.stdin.write(line.encode())
         await self.proc.stdin.drain()
 
-    async def _read_event(self) -> Optional[dict]:
-        line = await self.proc.stdout.readline()
+    async def _read_event(self, timeout: float = 600.0) -> Optional[dict]:
+        try:
+            line = await asyncio.wait_for(self.proc.stdout.readline(), timeout=timeout)
+        except asyncio.TimeoutError:
+            log.error(f"[pi-rpc:{self.user_id[:12]}] readline timed out after {timeout}s")
+            return None
         if not line:
             return None
         try:
@@ -149,7 +153,9 @@ class PiRpcClient:
 
             await self._send(cmd)
 
-            result = {"content": "", "images": [], "audio": []}
+            result = {"content": "", "images": [], "audio": [], "session_state_updates": []}
+            last_stop_reason: Optional[str] = None
+            last_error_msg: Optional[str] = None
 
             while True:
                 event = await self._read_event()
@@ -163,6 +169,10 @@ class PiRpcClient:
                     delta = event.get("assistantMessageEvent", {})
                     if delta.get("type") == "text_delta":
                         result["content"] += delta.get("delta", "")
+                    if "stopReason" in delta:
+                        last_stop_reason = delta.get("stopReason")
+                    if delta.get("errorMessage"):
+                        last_error_msg = delta.get("errorMessage")
 
                 elif t == "tool_execution_start":
                     log.info(
@@ -193,6 +203,8 @@ class PiRpcClient:
                                 log.error(f"[pi-rpc:{self.user_id[:12]}] image read failed: {path} — {e}")
                     if details.get("audioPath"):
                         result["audio"].append(details["audioPath"])
+                    if details.get("sessionState"):
+                        result["session_state_updates"].append(details["sessionState"])
 
                 elif t == "extension_error":
                     log.error(
@@ -205,6 +217,18 @@ class PiRpcClient:
                 elif t == "agent_settled":
                     log.info(f"[pi-rpc:{self.user_id[:12]}] settled  text_len={len(result['content'])}")
                     if not result["content"].strip() and not result["images"] and not result["audio"]:
+                        if last_error_msg:
+                            log.error(
+                                f"[pi-rpc:{self.user_id[:12]}] empty reply — "
+                                f"stopReason={last_stop_reason} error={last_error_msg[:500]}"
+                            )
+                        elif last_stop_reason:
+                            log.error(
+                                f"[pi-rpc:{self.user_id[:12]}] empty reply — "
+                                f"stopReason={last_stop_reason}"
+                            )
+                        else:
+                            log.error(f"[pi-rpc:{self.user_id[:12]}] empty reply — no stop reason")
                         result["content"] = "Desculpa, houve um erro ao processar sua solicitação. Tente novamente."
                     break
 
@@ -227,7 +251,7 @@ class PiRpcPool:
         self,
         ttl: int = 1800,
         provider: str = "google",
-        model: str = "gemini-2.5-flash",
+        model: str = "gemini-3.5-flash-lite",
         cwd: Optional[str] = None,
     ):
         self._clients: dict[str, PiRpcClient] = {}
@@ -395,6 +419,87 @@ def build_prompt(
         if "terms_accepted" in session_state:
             parts.append(f"<terms-accepted>{json.dumps(session_state['terms_accepted'])}</terms-accepted>")
 
+    parts.append("</session-state>")
+    parts.append(f"\n<user-message>{user_message}</user-message>")
+    return "\n".join(parts)
+
+
+# ── Onboarding prompt (first-time terms acceptance) ───────────────────────
+
+_ONBOARDING_INSTRUCTIONS = """
+INSTRUÇÃO DE SISTEMA IMPERATIVA — Modo Onboarding (Primeiro Acesso)
+
+Você é o Agente de Boas-Vindas do Pasto Legal. O usuário está acessando o sistema pela PRIMEIRA VEZ e ainda NÃO aceitou os Termos de Uso. Seu objetivo absoluto e exclusivo é garantir que o usuário entenda como o sistema funciona e dê seu aceite formal aos Termos de Uso antes de acessar qualquer funcionalidade.
+
+REQUISITO CRÍTICO: Comunique-se SEMPRE em português brasileiro, com linguagem simples e amigável ao trabalhador do campo. Use formatação do WhatsApp (*negrito* com asteriscos, sem markdown). NUNCA diga que é um robô, IA, chatbot ou modelo de linguagem. NUNCA cite termos técnicos de software.
+
+COMO AGIR:
+1. **Boas-Vindas e Envio do Link**: Apresente-se de maneira amigável. Explique brevemente que o Pasto Legal usa IA e dados de satélite para monitorar pastagens via WhatsApp. Na sua PRIMEIRA MENSAGEM, você DEVE fornecer a URL dos Termos de Uso: https://pasto.legal/termos-de-uso
+2. **NÃO Envie o Texto Completo**: Nunca copie e cole o texto completo dos termos no chat, a menos que seja explicitamente solicitado pelo usuário.
+3. **Chamada para Ação**: Nessa mesma primeira mensagem, pergunte diretamente se ele concorda com os termos (ex: "Você está de acordo com os termos do link acima para podermos começar? Basta responder 'Aceito'.").
+4. **Esclarecimento de Dúvidas**: Se o usuário fizer perguntas ou tiver dúvidas sobre os termos e condições, use a seção "TERMOS DE REFERÊNCIA" abaixo para explicar e sanar as dúvidas de forma simples e prestativa.
+5. **Registro**: Quando o usuário aceitar claramente (ex: "aceito", "sim", "concordo", "pode sim", "com certeza"), acione IMEDIATAMENTE a ferramenta `accept_terms_and_conditions` com o `user_id` da sessão. Após o registro, apresente-se brevemente e pergunte como pode ajudar com a fazenda/pasto do usuário.
+
+ATENÇÃO: Você NÃO PODE realizar diagnósticos, análises de pastagem ou cadastros de propriedades enquanto o usuário não aceitar os termos. Seu foco é estritamente coletar o aceite e tirar dúvidas sobre os termos. Use APENAS as ferramentas listadas abaixo.
+
+TERMOS DE REFERÊNCIA (Use este texto APENAS para responder às perguntas do usuário sobre os termos, nunca o envie por inteiro):
+Termos de Uso — Última atualização: 8 de março de 2026
+1. Aceitação dos Termos: Ao acessar ou utilizar a plataforma Pasto Legal, o usuário declara que leu e concorda integralmente com estes Termos de Uso.
+2. Descrição do Serviço: Plataforma de ciência aberta do LAPIG/UFG (com apoio do iCS e Solved). Oferece monitoramento da saúde de pastagens por satélite (Sentinel-2), análise de vigor vegetativo (NDVI, EVI), interação por IA via WhatsApp e acesso gratuito a dados/relatórios geoespaciais.
+3. Cadastro e Acesso: Realizado pelo número de WhatsApp. O usuário consente com o processamento do número para fins de identificação e prestação do serviço (LGPD — Lei 13.709/2018).
+4. Obrigações do Usuário: Fornecer informações verdadeiras, usar o serviço para finalidades lícitas, não fazer raspagem automatizada, respeitar limites de uso razoável, não usar dados para desmatamento ilegal.
+5. Propriedade Intelectual: Código-fonte sob licença MIT. A marca "Pasto Legal" e identidade visual são da UFG/LAPIG. Dados geoespaciais de fontes públicas (Copernicus/ESA).
+6. Limitação de Responsabilidade: Serviço "as is". UFG/LAPIG não garantem disponibilidade ininterrupta, não se responsabilizam por decisões tomadas com base exclusiva nos dados, nem garantem precisão absoluta dos dados de satélite. Recomenda-se uso como apoio à decisão.
+7. Disponibilidade e Modificações: Serviço pode ser suspenso/modificado sem aviso prévio. Termos podem ser alterados periodicamente.
+8. Lei Aplicável: Legislação brasileira (LGPD, Marco Civil da Internet, CDC). Foro de Goiânia/GO.
+9. Contato: lapig.ufg@gmail.com
+""".strip()
+
+
+def build_onboarding_prompt(user_message: str, user_id: str = "") -> str:
+    """Build the prompt for the first-time onboarding flow (terms acceptance).
+
+    Unlike the normal flow, this:
+    - Injects welcoming-agent instructions directly into the message (pi's
+      AGENTS.md system prompt is not overridable per-prompt in RPC mode).
+    - Lists ONLY onboarding tools (accept_terms_and_conditions, generate_speech).
+    - Skips Tool-RAG entirely.
+    - Marks terms_accepted as false in session-state.
+
+    Once the user accepts and the LLM calls `accept_terms_and_conditions`, the
+    tool writes to the database. The next message's session-state lookup will
+    find terms_accepted=True and route to the normal flow.
+    """
+    from agent.registry import ONBOARDING_TOOLS, TOOLS as _REGISTRY
+
+    name_to_tool = {t["name"]: t for t in _REGISTRY}
+
+    parts = [_ONBOARDING_INSTRUCTIONS]
+
+    # Onboarding tools only
+    lines = []
+    for name in ONBOARDING_TOOLS:
+        t = name_to_tool.get(name)
+        if t:
+            lines.append(f"- `{name}`: {t['description']}")
+    parts.append(
+        "## Ferramentas disponíveis (Modo Onboarding)\n"
+        "Use APENAS as ferramentas listadas abaixo. Não invente outras.\n\n"
+        + "\n".join(lines) + "\n"
+    )
+
+    # Skill instructions for onboarding tools
+    skill_lines = []
+    for name in ONBOARDING_TOOLS:
+        t = name_to_tool.get(name)
+        if t and t.get("skill"):
+            skill_lines.append(f"## Skill: {name}\n{t['skill']}")
+    if skill_lines:
+        parts.append("## Instruções específicas (skills)\n" + "\n\n".join(skill_lines) + "\n")
+
+    parts.append("\n<session-state>")
+    parts.append(f"<user-id>{user_id}</user-id>")
+    parts.append("<terms-accepted>false</terms-accepted>")
     parts.append("</session-state>")
     parts.append(f"\n<user-message>{user_message}</user-message>")
     return "\n".join(parts)

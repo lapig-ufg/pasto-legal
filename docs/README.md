@@ -128,7 +128,7 @@ graph TD
 
 O **Pasto Legal Team** (`pasto_legal_team`) deixou de ser o orquestrador central e passou a ser uma etapa interna da vertente `normal_response`, acionada quando o usuário faz uma pergunta **técnica** e já tem uma **propriedade registrada**.
 
-- **Modelo**: `gemini-2.5-flash`
+- **Modelo**: `gemini-3.5-flash-lite`
 - **Responsabilidade**:
     - Orquestrar a conversa entre o usuário e os membros da equipe (`Assistant` e `Analyst`) quando o assunto é técnico.
     - Gerenciar a memória da sessão via PostgreSQL.

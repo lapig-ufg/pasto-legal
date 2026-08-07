@@ -72,6 +72,7 @@ def logout():
     st.session_state.debug_tool_calls = []
     st.session_state.debug_metrics = []
     st.session_state.debug_messages = []
+    st.session_state.chat_session_state = {}
     st.rerun()
 
 
@@ -136,6 +137,7 @@ with st.sidebar:
                 await c.post(f"{FASTAPI_URL}/reset", json={"user_id": st.session_state.session_id})
         asyncio.run(_reset())
         st.session_state.messages = []
+        st.session_state.chat_session_state = {}
         st.rerun()
 
     if config.DEBUG_MODE:
@@ -158,6 +160,9 @@ for key in ("debug_log", "debug_session_state", "debug_agent_routing",
             "debug_tool_calls", "debug_metrics", "debug_messages"):
     if key not in st.session_state:
         st.session_state[key] = [] if key != "debug_session_state" else {}
+
+if "chat_session_state" not in st.session_state:
+    st.session_state.chat_session_state = {}
 
 # Show message history
 for message in st.session_state.messages:
@@ -252,13 +257,13 @@ if user_query:
             with st.spinner("Analisando dados e gerando resposta..."):
                 # ── Call FastAPI /chat endpoint ──
                 async def _call_fastapi():
-                    async with httpx.AsyncClient(timeout=120) as client:
+                    async with httpx.AsyncClient(timeout=300) as client:
                         resp = await client.post(
                             f"{FASTAPI_URL}/chat",
                             json={
                                 "user_id": st.session_state.session_id,
                                 "message": user_query,
-                                "session_state": {},
+                                "session_state": st.session_state.chat_session_state,
                             },
                         )
                         resp.raise_for_status()
@@ -270,6 +275,9 @@ if user_query:
             full_response = pi_result.get("content", "Erro ao processar.")
             response_images = pi_result.get("images", [])
             response_audio = pi_result.get("audio", [])
+
+            if "session_state" in pi_result and isinstance(pi_result["session_state"], dict):
+                st.session_state.chat_session_state = pi_result["session_state"]
 
             # Extract debug data
             try:

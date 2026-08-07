@@ -144,6 +144,23 @@ Use esta skill quando precisar calcular a lotação ou capacidade de suporte ani
         "description": "Gera áudio falado a partir de um texto. Use APENAS quando o usuário solicitar explicitamente uma resposta em áudio.",
         "category": "utility",
     },
+    # ═══ Onboarding ═════════════════════════════════════════════════════
+    {
+        "name": "accept_terms_and_conditions",
+        "description": "Registra a aceitação formal dos Termos de Uso do Pasto Legal pelo usuário. Chame quando o usuário concordar claramente com os termos (ex: 'aceito', 'sim', 'concordo').",
+        "category": "onboarding",
+        "skill": """
+## Aceitação de Termos de Uso
+
+Use esta skill quando o usuário concordar claramente com os Termos de Uso do Pasto Legal.
+
+### Processo
+1. Confirme que o usuário aceitou os termos (ex: "aceito", "sim", "concordo", "pode sim").
+2. Chame a ferramenta `accept_terms_and_conditions` com o `user_id` da sessão.
+3. A ferramenta registra a aceitação no banco de dados e retorna uma mensagem de sucesso.
+4. Apresente-se brevemente e pergunte como pode ajudar o usuário.
+""".strip(),
+    },
     # ═══ Version ════════════════════════════════════════════════════════
     {
         "name": "consult_update_notes",
@@ -155,6 +172,13 @@ Use esta skill quando precisar calcular a lotação ou capacidade de suporte ani
 # Tools always available regardless of RAG results
 ALWAYS_AVAILABLE = {
     "consult_update_notes",
+}
+
+# Tools available ONLY during the first-time onboarding flow (terms acceptance).
+# These are the only tools suggested to the LLM until the user accepts the terms.
+ONBOARDING_TOOLS = {
+    "accept_terms_and_conditions",
+    "generate_speech",
 }
 
 # ── Action handler mapping (for /tool endpoint) ───────────────────────────

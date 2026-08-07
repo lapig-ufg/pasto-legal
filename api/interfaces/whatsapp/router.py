@@ -14,6 +14,7 @@ import asyncio
 import hashlib
 import pickle
 import json
+import logging
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from time import time
 from typing import Optional
@@ -40,6 +41,8 @@ from api.interfaces.whatsapp.helpers import (
 from api.guardrails.pii_gate import check_pii, mensagem_bloqueio
 from api.services.audio.tts import generate_speech
 from api.configs.config import config
+
+log = logging.getLogger("pasto-legal.whatsapp")
 
 # ── Valkey (Redis) connection ────────────────────────────────────────────
 VALKEY_HOST = os.getenv("VALKEY_HOST", "localhost")
@@ -304,54 +307,55 @@ async def process_message(
         # ── Call pi RPC (option 2a: per-user process, in-memory session) ──
         session_state = _get_session_state(user_id)
 
-        from agent.pi_rpc import build_prompt
+        from agent.pi_rpc import build_prompt, build_onboarding_prompt
         from agent.tool_rag import search_tools
 
-        # ── Onboarding gate: handle ENTIRELY in Python ─────────────────
-        # Don't involve the LLM — pi's coding-agent system prompt overrides
-        # user-message instructions. We handle acceptance here directly.
+        # ── Onboarding gate (LLM-driven) ────────────────────────────────
+        # First-time users are routed to a dedicated onboarding prompt with
+        # welcoming-agent instructions and ONLY the accept_terms tool. The
+        # LLM presents the terms link, answers questions, and calls
+        # `accept_terms_and_conditions` when the user accepts. The tool
+        # writes to the database; the next message's session-state lookup
+        # finds terms_accepted=True and routes to the normal flow.
+        # Persistence across /new: /new clears only the Valkey session and
+        # the pi session file — NOT the DB record — so accepted users are
+        # never re-onboarded.
         if not session_state.get("terms_accepted"):
-            text_lower = final_text.strip().lower()
-            acceptance_keywords = ["sim", "aceito", "concordo", "ok", "pode", "sim senhor",
-                                   "sim senhora", "claro", "com certeza", "positivo",
-                                   "yes", "aceitar", "termos", "li e aceito"]
-            is_acceptance = any(kw in text_lower for kw in acceptance_keywords)
-
-            if is_acceptance:
-                try:
-                    from agent.tools.onboarding import accept_terms
-                    result = accept_terms({"user_id": user_id})
-                    if "error" in result:
-                        log.error(f"[router] onboarding error: {result['error']}")
-                        await send_whatsapp_message_async(phone_number, _ERROR_MESSAGE, config_wa)
-                        return
-                    session_state["terms_accepted"] = True
-                    await send_whatsapp_message_async(
-                        phone_number,
-                        result.get("message", "Termos de Uso aceitos! 🎉 O sistema está liberado para uso. Como posso ajudar?"),
-                        config_wa,
-                    )
-                    return
-                except Exception as e:
-                    log.error(f"[router] onboarding exception: {e}")
-                    await send_whatsapp_message_async(phone_number, _ERROR_MESSAGE, config_wa)
-                    return
-
-            # Not an acceptance — don't call pi at all. Send pre-canned terms.
-            await send_whatsapp_message_async(
-                phone_number,
-                "🌿 *Bem-vindo ao Pasto Legal!*\n\n"
-                "Antes de começar, você precisa aceitar os *Termos de Uso* da plataforma.\n\n"
-                "📄 Termos de Uso: https://pasto.legal/termos-de-uso\n\n"
-                "Resumo:\n"
-                "• Plataforma gratuita do LAPIG/UFG\n"
-                "• Dados de satélite Copernicus/ESA\n"
-                "• Código aberto (MIT)\n"
-                "• Serviço 'as is'\n"
-                "• Contato: lapig.ufg@gmail.com\n\n"
-                "Digite *ACEITO* para concordar e começar a usar.",
-                config_wa,
+            onboarding_prompt = build_onboarding_prompt(
+                final_text.strip(),
+                user_id=user_id,
             )
+
+            client = await pi_pool.get_client(user_id)
+            try:
+                pi_result = await client.prompt(onboarding_prompt)
+            except Exception as e:
+                log.error(f"[router] onboarding pi_rpc.prompt failed: {e}")
+                await send_whatsapp_message_async(phone_number, _ERROR_MESSAGE, config_wa)
+                return
+
+            # Persist any session-state updates returned by tools (e.g.
+            # terms_accepted from accept_terms_and_conditions).
+            for update in pi_result.get("session_state_updates", []):
+                if isinstance(update, dict):
+                    session_state.update(update)
+            _set_session_state(user_id, session_state)
+
+            content = pi_result.get("content", "")
+            audio_paths = pi_result.get("audio", [])
+
+            for audio_path in audio_paths:
+                try:
+                    with open(audio_path, "rb") as f:
+                        await upload_and_send_media_async(
+                            [Audio(content=f.read(), mime_type="audio/ogg")],
+                            "audio", phone_number, config_wa,
+                        )
+                except Exception as e:
+                    log.error(f"[router] onboarding audio send failed: {e}")
+
+            if content:
+                await send_whatsapp_message_async(phone_number, content, config_wa)
             return
 
         # ── Tool-RAG: find relevant tools using recent context ─────────
@@ -375,6 +379,13 @@ async def process_message(
             log.error(f"[router] pi_rpc.prompt failed: {e}")
             await send_whatsapp_message_async(phone_number, _ERROR_MESSAGE, config_wa)
             return
+
+        # Persist any session-state updates returned by tools (e.g.
+        # property registration state, terms_accepted).
+        for update in pi_result.get("session_state_updates", []):
+            if isinstance(update, dict):
+                session_state.update(update)
+        _set_session_state(user_id, session_state)
 
         # ── Send response back to WhatsApp ──────────────────────────────
         content = pi_result.get("content", "")

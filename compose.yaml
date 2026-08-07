@@ -34,7 +34,7 @@ services:
       - GEE_SERVICE_ACCOUNT=${GEE_SERVICE_ACCOUNT}
       - GEE_KEY_FILE=${GEE_KEY_FILE}
       - PI_PROVIDER=google
-      - PI_MODEL=gemini-2.5-flash
+      - PI_MODEL=gemini-3.5-flash-lite
     volumes:
       - .:/app
       - /app/.venv

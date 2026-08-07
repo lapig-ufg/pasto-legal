@@ -41,8 +41,11 @@ class BaseConfig:
             raise ValueError("GEE_PROJECT environment variables must be set.")
         if self.GEE_SERVICE_ACCOUNT is None:
             raise ValueError("GEE_SERVICE_ACCOUNT environment variables must be set.")
-        if self.GEE_KEY_FILE is None:
-            raise ValueError("GEE_KEY_FILE environment variables must be set.")
+        if self.GEE_KEY_FILE is None or not os.path.exists(self.GEE_KEY_FILE):
+            if os.path.exists("/app/global-pasture-watch-f46d09d13b4e.json"):
+                self.GEE_KEY_FILE = "/app/global-pasture-watch-f46d09d13b4e.json"
+            else:
+                raise ValueError("GEE_KEY_FILE environment variables must be set.")
 
 
 class DevelopmentConfig(BaseConfig):
