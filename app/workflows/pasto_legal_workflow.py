@@ -128,8 +128,8 @@ pasto_legal_workflow = PersistOnSuccessWorkflow(
     num_history_runs=1,
     steps=[
         input_step,
+        scope_step,
         guardrails_step,
-        scope_step, 
         Condition(
             name="Onboarding Check",
             evaluator=_needs_onboarding,

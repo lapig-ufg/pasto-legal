@@ -15,7 +15,6 @@ from app.services.audio.tts import generate_speech
 def _scope_executor(step_input: StepInput) -> StepOutput:
     """Barra conteúdo fora do escopo do Pasto Legal."""
     text = step_input.previous_step_content or step_input.get_input_as_string() or ""
-    print("DEBUG scope text:", repr(text), flush=True)
 
     contexto = ContextValidator(text)
     if contexto.dentro_do_escopo:
