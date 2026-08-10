@@ -37,6 +37,7 @@ from app.steps.guardrails_step import guardrails_step
 from app.steps.input_step import input_step
 from app.steps.summarization_step import summarization_step
 from app.workflows.feedback_workflow import feedback_workflow
+from app.steps.scope_step import scope_step
 
 
 def _route_selector(step_input: StepInput, session_state: Dict[str, Any]) -> str:
@@ -128,6 +129,7 @@ pasto_legal_workflow = PersistOnSuccessWorkflow(
     steps=[
         input_step,
         guardrails_step,
+        scope_step, 
         Condition(
             name="Onboarding Check",
             evaluator=_needs_onboarding,
