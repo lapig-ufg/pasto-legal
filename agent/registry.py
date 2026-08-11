@@ -169,9 +169,13 @@ Use esta skill quando o usuário concordar claramente com os Termos de Uso do Pa
     },
 ]
 
-# Tools always available regardless of RAG results
+# Tools always available regardless of RAG results.
+# - consult_update_notes: low-cost utility, always hand for "what's new" queries.
+# - generate_speech: obligatory every run so the model can synthesize audio
+#   whenever the user requests a spoken reply, independent of RAG similarity.
 ALWAYS_AVAILABLE = {
     "consult_update_notes",
+    "generate_speech",
 }
 
 # Tools available ONLY during the first-time onboarding flow (terms acceptance).

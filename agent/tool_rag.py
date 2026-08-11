@@ -82,7 +82,9 @@ def search_tools(
 
     Returns:
         List of tool names, ordered by relevance (most relevant first).
-        Always includes ALWAYS_AVAILABLE tools.
+        Always includes ALWAYS_AVAILABLE tools (consult_update_notes and
+        generate_speech — the latter is obligatory so TTS is available on
+        demand every run, even when the user's prompt has low similarity to it).
     """
     _build_index()
 

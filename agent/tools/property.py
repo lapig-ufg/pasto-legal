@@ -187,7 +187,7 @@ def complete_registration(args: dict) -> dict:
     _set_state(user_id, state)
 
     return {
-        "message": f"Propriedade *{name}* (CAR: {prop['car_code']}) cadastrada com sucesso! 🎉\nAgora você já pode pedir análises da sua propriedade.",
+        "message": f"<system-instruction>\nPropriedade *{name}* (CAR: {prop['car_code']}) cadastrada com sucesso.\nFaça uma análise inicial para a propriedade\n</system-instruction>\n",
         "session_state": state,
     }
 
