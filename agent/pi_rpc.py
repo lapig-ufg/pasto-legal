@@ -439,6 +439,7 @@ def build_prompt(
     user_id: str = "",
     session_state: dict = None,
     relevant_tools: list[str] | None = None,
+    audio_input: bool = False,
 ) -> str:
     """Build the prompt for pi.
 
@@ -447,9 +448,21 @@ def build_prompt(
     - user_id: injected so the LLM can pass it to tools.
     - relevant_tools: if provided, only these tools are suggested to the LLM
       (Zero Prompt Bloat — RAG-selected tools only).
+    - audio_input: when True, the user sent an audio message — instruct the
+      LLM to also call `generate_speech` so the reply comes back as audio.
     - History: NOT injected — pi manages it in its session file.
     """
     parts = []
+
+    # ── Audio-input directive: respond with speech ─────────────────────
+    if audio_input:
+        parts.append(
+            "## Resposta em áudio\n"
+            "O usuário enviou esta mensagem como áudio. Responda normalmente em "
+            "texto e DEPOIS chame a ferramenta `generate_speech` com o texto da "
+            "sua resposta e o `user_id` da sessão, para que o usuário também "
+            "receba a resposta em áudio falado.\n"
+        )
 
     # ── Tool-RAG: only suggest relevant tools + inject skills ─────────
     if relevant_tools:
@@ -547,7 +560,7 @@ Termos de Uso — Última atualização: 8 de março de 2026
 """.strip()
 
 
-def build_onboarding_prompt(user_message: str, user_id: str = "") -> str:
+def build_onboarding_prompt(user_message: str, user_id: str = "", audio_input: bool = False) -> str:
     """Build the prompt for the first-time onboarding flow (terms acceptance).
 
     Unlike the normal flow, this:
@@ -556,6 +569,8 @@ def build_onboarding_prompt(user_message: str, user_id: str = "") -> str:
     - Lists ONLY onboarding tools (accept_terms_and_conditions, generate_speech).
     - Skips Tool-RAG entirely.
     - Marks terms_accepted as false in session-state.
+    - When audio_input is True, instructs the LLM to also call generate_speech
+      so the reply comes back as audio (user sent audio).
 
     Once the user accepts and the LLM calls `accept_terms_and_conditions`, the
     tool writes to the database. The next message's session-state lookup will
@@ -566,6 +581,16 @@ def build_onboarding_prompt(user_message: str, user_id: str = "") -> str:
     name_to_tool = {t["name"]: t for t in _REGISTRY}
 
     parts = [_ONBOARDING_INSTRUCTIONS]
+
+    # ── Audio-input directive: respond with speech ─────────────────────
+    if audio_input:
+        parts.append(
+            "## Resposta em áudio\n"
+            "O usuário enviou esta mensagem como áudio. Responda normalmente em "
+            "texto e DEPOIS chame a ferramenta `generate_speech` com o texto da "
+            "sua resposta e o `user_id` da sessão, para que o usuário também "
+            "receba a resposta em áudio falado.\n"
+        )
 
     # Onboarding tools only
     lines = []

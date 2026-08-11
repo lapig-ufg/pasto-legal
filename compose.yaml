@@ -29,6 +29,7 @@ services:
       - VALKEY_PORT=6379
       - VALKEY_DB=0
       - TOOL_BACKEND_URL=http://localhost:3000
+      - CHAT_URL=http://localhost:3000
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - GEE_PROJECT=${GEE_PROJECT}
       - GEE_SERVICE_ACCOUNT=${GEE_SERVICE_ACCOUNT}

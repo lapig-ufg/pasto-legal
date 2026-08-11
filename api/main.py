@@ -68,7 +68,6 @@ app.add_middleware(
 
 # ── WhatsApp webhook ──────────────────────────────────────────────────────
 whatsapp_router = attach_routes(
-    pi_pool=pi_pool,
     access_token=config.WHATSAPP_ACCESS_TOKEN,
     phone_number_id=config.WHATSAPP_PHONE_NUMBER_ID,
     verify_token=config.WHATSAPP_VERIFY_TOKEN,
@@ -146,15 +145,18 @@ class ChatRequest(BaseModel):
     session_state: dict = {}
     images: list[MediaItem] = Field(default_factory=list)
     audio: list[MediaItem] = Field(default_factory=list)
+    recent_queries: list[str] = Field(default_factory=list)
 
 
-def _prepare_media(req: ChatRequest) -> tuple[str, list[dict]]:
+def _prepare_media(req: ChatRequest) -> tuple[str, list[dict], bool]:
     """Transcribe audio clips into text and build the pi image list.
 
-    Returns the (possibly extended) message text and a list of
-    ``{type:"image", data, mimeType}`` dicts ready for ``client.prompt``.
+    Returns ``(message, images, audio_input)`` where ``audio_input`` is True
+    when at least one audio clip was successfully transcribed — the caller
+    uses it to instruct the LLM to reply with speech too.
     """
     message = req.message
+    audio_input = False
 
     if req.audio:
         transcripts: list[str] = []
@@ -167,6 +169,7 @@ def _prepare_media(req: ChatRequest) -> tuple[str, list[dict]]:
             text = transcribe_audio(raw, mime_type=item.mime_type)
             if text:
                 transcripts.append(text)
+                audio_input = True
             else:
                 transcripts.append("[áudio não reconhecido]")
         if transcripts:
@@ -178,7 +181,7 @@ def _prepare_media(req: ChatRequest) -> tuple[str, list[dict]]:
         for img in req.images
         if img.data
     ]
-    return message, images
+    return message, images, audio_input
 
 
 @app.post("/chat")
@@ -189,7 +192,7 @@ async def chat(req: ChatRequest):
     from agent.tool_rag import search_tools
 
     _t0 = _time.time()
-    message, images = _prepare_media(req)
+    message, images, audio_input = _prepare_media(req)
 
     # ── Onboarding gate: check terms acceptance from DB ──────────────
     session_state = dict(req.session_state or {})
@@ -213,7 +216,7 @@ async def chat(req: ChatRequest):
     # First-time users → onboarding prompt (only accept_terms tool)
     if not session_state.get("terms_accepted"):
         client = await pi_pool.get_client(req.user_id)
-        full_prompt = build_onboarding_prompt(message, user_id=req.user_id)
+        full_prompt = build_onboarding_prompt(message, user_id=req.user_id, audio_input=audio_input)
         result = await client.prompt(full_prompt, images=images or None)
         # Persist any terms_accepted update from the tool
         for update in result.get("session_state_updates", []):
@@ -225,7 +228,7 @@ async def chat(req: ChatRequest):
         return result
 
     # Normal flow: Tool-RAG + full prompt
-    relevant_tools = search_tools(message, top_k=5)
+    relevant_tools = search_tools(message, top_k=5, recent_queries=req.recent_queries)
 
     client = await pi_pool.get_client(req.user_id)
     full_prompt = build_prompt(
@@ -233,6 +236,7 @@ async def chat(req: ChatRequest):
         user_id=req.user_id,
         session_state=session_state,
         relevant_tools=relevant_tools,
+        audio_input=audio_input,
     )
     log.info(f"[chat] user={req.user_id} full_prompt={full_prompt}")
     result = await client.prompt(full_prompt, images=images or None)

@@ -1,47 +1,46 @@
 """
-WhatsApp webhook router — pi RPC mode.
+WhatsApp webhook router — consumer of the /chat endpoint.
 
-Forwards messages to a pi coding agent subprocess via JSON-RPC (stdin/stdout).
-Valkey debouncing, media download, PII guardrails, and WhatsApp message sending
-remain unchanged. Only the agent execution path is replaced with a local
-subprocess call instead of an HTTP bridge.
+This router is a thin transport layer for WhatsApp: it handles webhook
+verification, Valkey debouncing, media download from Meta's CDN, PII
+guardrails, and delivery of responses back to WhatsApp. All agent logic
+(prompt building, Tool-RAG, session-state terms gate, transcription, TTS)
+lives in the /chat endpoint (api/main.py). The router calls /chat over HTTP
+exactly like the Streamlit debug webapp does — it is a consumer, not the
+server.
 
 Usage (internal):
-    attach_routes(pi_rpc=..., access_token=..., ...)
+    attach_routes(access_token=..., ...)
 """
-import os
 import asyncio
 import hashlib
-import pickle
 import json
 import logging
-from base64 import urlsafe_b64decode, urlsafe_b64encode
+import os
+import pickle
+from base64 import urlsafe_b64encode
+from contextlib import suppress
 from time import time
 from typing import Optional
-from uuid import uuid4
-from contextlib import suppress
 
+import httpx
 import redis
-
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel, Field
 
-from api.interfaces.whatsapp.security import validate_webhook_signature
+from api.guardrails.pii_gate import check_pii, mensagem_bloqueio
 from api.interfaces.whatsapp.helpers import (
+    Audio,
+    Image,
     WhatsAppConfig,
     download_event_media_async,
     extract_message_content,
     send_whatsapp_message_async,
     typing_indicator_async,
     upload_and_send_media_async,
-    Audio,
-    Image,
 )
-from api.guardrails.pii_gate import check_pii, mensagem_bloqueio
+from api.interfaces.whatsapp.security import validate_webhook_signature
 from api.services.audio.tts import generate_speech
-from api.services.audio.stt import transcribe_audio
-from api.configs.config import config
 
 log = logging.getLogger("pasto-legal.whatsapp")
 
@@ -56,6 +55,9 @@ valkey_client = redis.Redis(
     db=VALKEY_DB,
     decode_responses=True,
 )
+
+# ── /chat endpoint URL (this app's own agent endpoint) ────────────────────
+CHAT_URL = os.getenv("CHAT_URL", "http://localhost:3000")
 
 _LONG_SLEEP = 8
 _SHORT_SLEEP = 4
@@ -87,8 +89,8 @@ def _get_session_state(user_id: str) -> dict:
     # Check terms acceptance from DB (first-access gate)
     if not state.get("terms_accepted"):
         try:
-            from api.database.session import SessionLocal
             from api.database.models import UserTermsAcceptance
+            from api.database.session import SessionLocal
             db = SessionLocal()
             try:
                 record = db.query(UserTermsAcceptance).filter(
@@ -140,7 +142,6 @@ def _append_history(user_id: str, role: str, content: str) -> None:
 
 
 def attach_routes(
-    pi_pool=None,
     access_token: Optional[str] = None,
     phone_number_id: Optional[str] = None,
     verify_token: Optional[str] = None,
@@ -183,7 +184,7 @@ def attach_routes(
         for entry in body.get("entry", []):
             for change in entry.get("changes", []):
                 for message in change.get("value", {}).get("messages", []):
-                    background_tasks.add_task(process_message, message, pi_pool, config_wa, enable_encryption, encryption_key)
+                    background_tasks.add_task(process_message, message, config_wa, enable_encryption, encryption_key)
 
         return {"status": "processing"}
 
@@ -192,7 +193,6 @@ def attach_routes(
 
 async def process_message(
     message: dict,
-    pi_pool,
     config_wa: WhatsAppConfig,
     enable_encryption: bool = False,
     encryption_key: Optional[bytes] = None,
@@ -231,7 +231,13 @@ async def process_message(
         if parsed.text.strip().lower() == "/new":
             valkey_client.delete(f"debounce_status:{user_id}", f"debounce_msgs:{user_id}")
             valkey_client.delete(f"session:{user_id}")
-            await pi_pool.delete_session(user_id)
+            valkey_client.delete(f"recent_queries:{user_id}")
+            # Reset the agent-side session via the /reset endpoint
+            try:
+                async with httpx.AsyncClient(timeout=10) as http_client:
+                    await http_client.post(f"{CHAT_URL}/reset", json={"user_id": user_id})
+            except Exception as e:
+                log.warning(f"[router] /reset call failed: {e}")
             await send_whatsapp_message_async(phone_number, _SESSION_RESET_MESSAGE, config_wa)
             return
 
@@ -311,139 +317,69 @@ async def process_message(
             key=lambda x: int(x["timestamp"]),
         )
 
+        # ── Assemble /chat request body from the debounced batch ─────────
+        # The router no longer transcribes audio or builds prompts — it
+        # forwards text + base64 media to /chat, which owns all agent logic.
         final_text = ""
-        collected_images: list[dict] = []  # {"data": b64, "mimeType": str}
-        stt_failures = 0
+        images_payload: list[dict] = []   # {"data": b64, "mime_type": str}
+        audio_payload: list[dict] = []   # {"data": b64, "mime_type": str}
         for msg_item in all_msgs:
             parsed_item = msg_item.get("parsed", {})
             final_text += parsed_item.get("text", "") + "\n"
 
             media = msg_item.get("media", {}) or {}
             for img in media.get("images", []):
-                b64 = img.get("data")
-                if not b64:
-                    continue
-                collected_images.append({
-                    "type": "image",
-                    "data": b64,
-                    "mimeType": img.get("mime_type") or "image/jpeg",
-                })
+                if img.get("data"):
+                    images_payload.append({
+                        "data": img["data"],
+                        "mime_type": img.get("mime_type") or "image/jpeg",
+                    })
             for aud in media.get("audio", []):
-                raw = urlsafe_b64decode(aud.get("data", "").encode()) if aud.get("data") else b""
-                if not raw:
-                    continue
-                mime = aud.get("mime_type") or "audio/ogg"
-                transcript = transcribe_audio(raw, mime_type=mime)
-                if transcript:
-                    final_text += transcript + "\n"
-                else:
-                    stt_failures += 1
-
-        # If every message in this batch was an audio clip that failed to
-        # transcribe, surface a friendly fallback instead of sending an
-        # empty prompt to the agent.
-        if stt_failures and not final_text.strip() and not collected_images:
-            await send_whatsapp_message_async(
-                phone_number,
-                "Não consegui entender o áudio. Pode repetir em texto?",
-                config_wa,
-            )
-            return
-        if stt_failures:
-            final_text = f"[{stt_failures} áudio(s) não reconhecido(s)]\n" + final_text
+                if aud.get("data"):
+                    audio_payload.append({
+                        "data": aud["data"],
+                        "mime_type": aud.get("mime_type") or "audio/ogg",
+                    })
 
         if skipped_media:
             final_text = "[Some media could not be downloaded]\n\n" + final_text
 
-        # ── Call pi RPC (option 2a: per-user process, in-memory session) ──
+        # ── Read WhatsApp-side session state + RAG context from Valkey ────
         session_state = _get_session_state(user_id)
+        recent_queries = _get_recent_queries(user_id)
 
-        from agent.pi_rpc import build_prompt, build_onboarding_prompt
-        from agent.tool_rag import search_tools
-
-        # ── Onboarding gate (LLM-driven) ────────────────────────────────
-        # First-time users are routed to a dedicated onboarding prompt with
-        # welcoming-agent instructions and ONLY the accept_terms tool. The
-        # LLM presents the terms link, answers questions, and calls
-        # `accept_terms_and_conditions` when the user accepts. The tool
-        # writes to the database; the next message's session-state lookup
-        # finds terms_accepted=True and routes to the normal flow.
-        # Persistence across /new: /new clears only the Valkey session and
-        # the pi session file — NOT the DB record — so accepted users are
-        # never re-onboarded.
-        if not session_state.get("terms_accepted"):
-            onboarding_prompt = build_onboarding_prompt(
-                final_text.strip(),
-                user_id=user_id,
-            )
-
-            client = await pi_pool.get_client(user_id)
-            try:
-                pi_result = await client.prompt(onboarding_prompt, images=collected_images or None)
-            except Exception as e:
-                log.error(f"[router] onboarding pi_rpc.prompt failed: {e}")
-                await send_whatsapp_message_async(phone_number, _ERROR_MESSAGE, config_wa)
-                return
-
-            # Persist any session-state updates returned by tools (e.g.
-            # terms_accepted from accept_terms_and_conditions).
-            for update in pi_result.get("session_state_updates", []):
-                if isinstance(update, dict):
-                    session_state.update(update)
-            _set_session_state(user_id, session_state)
-
-            content = pi_result.get("content", "")
-            audio_paths = pi_result.get("audio", [])
-
-            for audio_path in audio_paths:
-                try:
-                    with open(audio_path, "rb") as f:
-                        await upload_and_send_media_async(
-                            [Audio(content=f.read(), mime_type="audio/ogg")],
-                            "audio", phone_number, config_wa,
-                        )
-                except Exception as e:
-                    log.error(f"[router] onboarding audio send failed: {e}")
-
-            if content:
-                await send_whatsapp_message_async(phone_number, content, config_wa)
-            return
-
-        # ── Tool-RAG: find relevant tools using recent context ─────────
-        recent = _get_recent_queries(user_id)
-        relevant_tools = search_tools(final_text.strip(), top_k=5, recent_queries=recent)
-        _append_recent_query(user_id, final_text.strip())
-
-        # Get or create per-user pi client (pi loads session from disk)
-        client = await pi_pool.get_client(user_id)
-
-        full_prompt = build_prompt(
-            final_text.strip(),
-            user_id=user_id,
-            session_state=session_state,
-            relevant_tools=relevant_tools,
-        )
-
+        # ── Call /chat (the single source of all agent logic) ────────────
         try:
-            pi_result = await client.prompt(full_prompt, images=collected_images or None)
+            async with httpx.AsyncClient(timeout=300) as http_client:
+                resp = await http_client.post(
+                    f"{CHAT_URL}/chat",
+                    json={
+                        "user_id": user_id,
+                        "message": final_text.strip(),
+                        "session_state": session_state,
+                        "images": images_payload,
+                        "audio": audio_payload,
+                        "recent_queries": recent_queries,
+                    },
+                )
+                resp.raise_for_status()
+                pi_result = resp.json()
         except Exception as e:
-            log.error(f"[router] pi_rpc.prompt failed: {e}")
+            log.error(f"[router] /chat call failed: {e}")
             await send_whatsapp_message_async(phone_number, _ERROR_MESSAGE, config_wa)
             return
 
-        # Persist any session-state updates returned by tools (e.g.
-        # property registration state, terms_accepted).
-        for update in pi_result.get("session_state_updates", []):
-            if isinstance(update, dict):
-                session_state.update(update)
-        _set_session_state(user_id, session_state)
+        # ── Persist session state + RAG context back to Valkey ───────────
+        if "session_state" in pi_result and isinstance(pi_result["session_state"], dict):
+            _set_session_state(user_id, pi_result["session_state"])
+        _append_recent_query(user_id, final_text.strip())
 
         # ── Send response back to WhatsApp ──────────────────────────────
         content = pi_result.get("content", "")
         images = pi_result.get("images", [])
         audio_paths = pi_result.get("audio", [])
 
-        # Send images
+        # Send images (first image carries the text as caption)
         for img_b64 in images:
             try:
                 import base64 as b64
@@ -455,7 +391,7 @@ async def process_message(
                 )
                 content = ""  # Only caption first image
             except Exception as e:
-                print(f"Error sending image: {e}")
+                log.error(f"[router] image send failed: {e}")
 
         # Send audio
         for audio_path in audio_paths:
@@ -466,14 +402,14 @@ async def process_message(
                         "audio", phone_number, config_wa,
                     )
             except Exception as e:
-                print(f"Error sending audio: {e}")
+                log.error(f"[router] audio send failed: {e}")
 
         # Send text (if any remaining)
         if content:
             await send_whatsapp_message_async(phone_number, content, config_wa)
 
     except Exception as e:
-        print(f"Error processing message: {e}")
+        log.error(f"[router] error processing message: {e}")
         try:
             await send_whatsapp_message_async(phone_number, _ERROR_MESSAGE, config_wa)
         except Exception:

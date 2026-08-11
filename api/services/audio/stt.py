@@ -29,7 +29,7 @@ def transcribe_audio(
             mp3, aac, amr, mpeg, ...).
         mime_type: MIME type of ``audio_bytes`` (e.g. ``"audio/ogg"``).
         model: Gemini model ID to use for transcription. Defaults to the
-            ``STT_MODEL`` env var, falling back to ``gemini-2.5-flash``.
+            ``STT_MODEL`` env var, falling back to ``gemini-flash-latest``.
 
     Returns:
         The transcribed text, stripped of surrounding whitespace, or
@@ -38,7 +38,7 @@ def transcribe_audio(
     if not audio_bytes:
         return None
 
-    model_id = model or os.getenv("STT_MODEL", "gemini-3.5-flash-lite")
+    model_id = model or os.getenv("STT_MODEL", "gemini-flash-latest")
 
     try:
         client = genai.Client()

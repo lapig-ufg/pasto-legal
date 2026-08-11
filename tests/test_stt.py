@@ -89,7 +89,8 @@ def test_transcribe_audio_exception_returns_none():
     assert result is None
 
 
-def test_transcribe_audio_default_model():
+def test_transcribe_audio_default_model(monkeypatch):
+    monkeypatch.delenv("STT_MODEL", raising=False)
     with patched_genai(transcript="oi") as fake_client:
         stt_mod.transcribe_audio(b"\x01", mime_type="audio/ogg")
     call_args = fake_client.models.generate_content.call_args
