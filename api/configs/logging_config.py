@@ -89,6 +89,7 @@ def setup_logging(config: Any) -> None:
 
     for logger in _APP_LOGGERS:
         logger.setLevel(logging.DEBUG)
+        logger.propagate = False
 
         if error_handler is not None and not any(
             getattr(h, "baseFilename", None) == error_path

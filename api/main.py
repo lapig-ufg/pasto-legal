@@ -26,7 +26,6 @@ from api.configs.config import config
 from agent.pi_rpc import PiRpcPool
 
 log = logging.getLogger("pasto-legal.main")
-logging.basicConfig(level=logging.DEBUG, format="%(levelname)s | %(name)s | %(message)s")
 
 CLI_DIR = Path(__file__).resolve().parent.parent / "agent" / "tools"
 
