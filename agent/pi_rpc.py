@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Optional
 
 log = logging.getLogger("pasto-legal.pi_rpc")
+metrics_log = logging.getLogger("pasto-legal.run_metrics")
 
 # ── Session directory ────────────────────────────────────────────────────
 
@@ -24,6 +25,53 @@ SESSIONS_DIR = Path(os.getenv("PI_SESSIONS_DIR", "/tmp/pi-sessions"))
 def _session_path(user_id: str) -> Path:
     """Path to the user's pi session JSONL file."""
     return SESSIONS_DIR / user_id / "session.jsonl"
+
+
+def _read_last_usage(session_file: Path) -> Optional[dict]:
+    """Read the most recent assistant usage block from a pi session JSONL.
+
+    pi writes one JSON object per line. Assistant turns carry a ``usage``
+    block (input/output/reasoning/totalTokens/cost). We scan the file
+    sequentially and keep the last entry that has one — cheap enough for
+    the small session files produced per user.
+    """
+    if not session_file.exists():
+        return None
+    last_usage: Optional[dict] = None
+    try:
+        with open(session_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if obj.get("type") != "message":
+                    continue
+                msg = obj.get("message") or {}
+                if msg.get("role") != "assistant":
+                    continue
+                usage = msg.get("usage")
+                if usage:
+                    last_usage = {
+                        "input_tokens": usage.get("input", 0),
+                        "output_tokens": usage.get("output", 0),
+                        "reasoning_tokens": usage.get("reasoning", 0),
+                        "cache_read_tokens": usage.get("cacheRead", 0),
+                        "cache_write_tokens": usage.get("cacheWrite", 0),
+                        "total_tokens": usage.get("totalTokens", 0),
+                        "cost_total": (usage.get("cost") or {}).get("total", 0.0),
+                        "cost_input": (usage.get("cost") or {}).get("input", 0.0),
+                        "cost_output": (usage.get("cost") or {}).get("output", 0.0),
+                        "stop_reason": msg.get("stopReason"),
+                        "model": msg.get("model"),
+                        "provider": msg.get("provider"),
+                    }
+    except OSError as e:
+        log.warning(f"[pi-rpc] failed to read usage from {session_file}: {e}")
+    return last_usage
 
 
 # ── PiRpcClient (one per user) ────────────────────────────────────────────
@@ -146,6 +194,8 @@ class PiRpcClient:
         """
         async with self._lock:
             self.last_used = time.time()
+            _t0 = time.time()
+            _tool_calls = 0
 
             cmd: dict = {"type": "prompt", "message": message}
             if images:
@@ -181,6 +231,7 @@ class PiRpcClient:
                     )
 
                 elif t == "tool_execution_end":
+                    _tool_calls += 1
                     tool_name = event.get("toolName", "?")
                     is_error = event.get("isError", False)
                     tool_result = event.get("result", {})
@@ -235,7 +286,45 @@ class PiRpcClient:
                 elif t == "response" and not event.get("success", True):
                     log.error(f"[pi-rpc:{self.user_id[:12]}] cmd error: {event.get('error')}")
 
+            self._log_run_metrics(result, _t0, _tool_calls, last_stop_reason)
             return result
+
+    def _log_run_metrics(
+        self,
+        result: dict,
+        t0: float,
+        tool_calls: int,
+        stop_reason: Optional[str],
+    ) -> None:
+        """Emit a debug log with run metrics (duration, tokens, cost, ...).
+
+        Token/cost data is read from the pi session JSONL, where pi writes
+        a ``usage`` block on every assistant turn.
+        """
+        elapsed = time.time() - t0
+        usage = _read_last_usage(_session_path(self.user_id))
+        metrics = {
+            "user_id": self.user_id,
+            "model": (usage or {}).get("model") or self.model,
+            "provider": (usage or {}).get("provider") or self.provider,
+            "elapsed_s": round(elapsed, 3),
+            "input_tokens": (usage or {}).get("input_tokens", 0),
+            "output_tokens": (usage or {}).get("output_tokens", 0),
+            "reasoning_tokens": (usage or {}).get("reasoning_tokens", 0),
+            "cache_read_tokens": (usage or {}).get("cache_read_tokens", 0),
+            "cache_write_tokens": (usage or {}).get("cache_write_tokens", 0),
+            "total_tokens": (usage or {}).get("total_tokens", 0),
+            "cost_total": (usage or {}).get("cost_total", 0.0),
+            "cost_input": (usage or {}).get("cost_input", 0.0),
+            "cost_output": (usage or {}).get("cost_output", 0.0),
+            "stop_reason": (usage or {}).get("stop_reason") or stop_reason,
+            "content_len": len(result.get("content", "")),
+            "n_images": len(result.get("images", [])),
+            "n_audio": len(result.get("audio", [])),
+            "n_tool_calls": tool_calls,
+        }
+        result["metrics"] = metrics
+        metrics_log.debug("run_metrics " + json.dumps(metrics, ensure_ascii=False))
 
 
 # ── PiRpcPool ─────────────────────────────────────────────────────────────

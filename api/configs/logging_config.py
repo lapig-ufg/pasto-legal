@@ -10,16 +10,22 @@ _ERROR_FORMATTER = logging.Formatter(
     fmt="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+_DEBUG_FORMATTER = logging.Formatter(
+    fmt="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 
 # App-level loggers (replaces agno.utils.log)
 app_logger = logging.getLogger("pasto-legal")
 service_logger = logging.getLogger("pasto-legal.services")
 pi_rpc_logger = logging.getLogger("pasto-legal.pi_rpc")
+run_metrics_logger = logging.getLogger("pasto-legal.run_metrics")
 
 _APP_LOGGERS: tuple[logging.Logger, ...] = (
     app_logger,
     service_logger,
     pi_rpc_logger,
+    run_metrics_logger,
 )
 
 
@@ -44,6 +50,27 @@ def _build_error_file_handler() -> Optional[RotatingFileHandler]:
     return handler
 
 
+def _build_debug_file_handler() -> Optional[RotatingFileHandler]:
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        handler = RotatingFileHandler(
+            filename=LOG_DIR / "debug.log",
+            maxBytes=5 * 1024 * 1024,
+            backupCount=3,
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        print(
+            f"[logging_config] WARNING: cannot write debug log to {LOG_DIR}/debug.log "
+            f"({exc}); debug file logging disabled.",
+            file=sys.stderr,
+        )
+        return None
+    handler.setLevel(logging.DEBUG)
+    handler.setFormatter(_DEBUG_FORMATTER)
+    return handler
+
+
 def setup_logging(config: Any) -> None:
     """Configure app loggers for Pasto Legal.
 
@@ -57,6 +84,9 @@ def setup_logging(config: Any) -> None:
     error_handler = _build_error_file_handler()
     error_path = getattr(error_handler, "baseFilename", None)
 
+    debug_handler = _build_debug_file_handler()
+    debug_path = getattr(debug_handler, "baseFilename", None)
+
     for logger in _APP_LOGGERS:
         logger.setLevel(logging.DEBUG)
 
@@ -65,6 +95,12 @@ def setup_logging(config: Any) -> None:
             for h in logger.handlers
         ):
             logger.addHandler(error_handler)
+
+        if debug_handler is not None and not any(
+            getattr(h, "baseFilename", None) == debug_path
+            for h in logger.handlers
+        ):
+            logger.addHandler(debug_handler)
 
         # Ensure a console handler exists
         has_console = any(
