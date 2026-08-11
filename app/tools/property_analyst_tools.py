@@ -1,4 +1,5 @@
 import datetime
+import math
 
 from io import BytesIO
 
@@ -11,13 +12,14 @@ from agno.utils.log import log_error
 from app.hooks.tool_hooks import validate_selected_property_hook
 from app.services.geospatial.gee import (
     retrieve_feature_images,
-    retrieve_mapbiomas_biomass_image,
+    retrieve_gpw_biomass_image,
     retrieve_t2g_biomass_image,
     retrieve_feature_soil_texture_image,
     query_pasture_statistics,
     query_topographic_stats,
     )
 from app.services.geospatial.pasture_classification import classify_pasture_on_the_fly
+from app.services.geospatial.pasture_biomass import estimate_pasture_biomass_history
 from app.schemas.property_stats import PastureStats, TopographicStats
 from app.schemas.rural_property import RuralProperty
 import ee
@@ -85,13 +87,13 @@ def generate_biomass_image(run_context: RunContext, car_codes: list[str]) -> Too
                 images=[Image(content=buffer.getvalue())]
             )
 
-        img = retrieve_mapbiomas_biomass_image(selected_property.get_coords(), year=2024)
+        img = retrieve_gpw_biomass_image(selected_property.get_coords())
 
         buffer = BytesIO()
         img.save(buffer, format="PNG")
 
         return ToolResult(
-            content=(f"Legenda: Azul claro (Alta concentração) a Roxo escuro (Baixa concentração). Data: ano 2024"),
+            content=(f"Legenda: Azul claro (Alta concentração) a Roxo escuro (Baixa concentração)."),
             images=[Image(content=buffer.getvalue())]
         )
                 
@@ -252,4 +254,47 @@ def get_topographic_stats(run_context: RunContext, car_codes: list[str]):
         return ToolResult(content=str(new_topographic_stats))
     except Exception as e:
         log_error(f"ERROR: {e}")
+        return ToolResult(content=str(e))
+
+
+@tool(tool_hooks=[validate_selected_property_hook])
+def get_pasture_biomass_history(run_context: RunContext, car_codes: list[str]) -> ToolResult:
+    """
+    Recupera a série histórica (2000 até o ano mais recente disponível) de biomassa seca
+    de pastagem da propriedade, estimada a partir do Global Pasture Watch (GPW), com um
+    gráfico de tendência.
+
+    Use quando o usuário perguntar sobre a evolução/tendência da biomassa da pastagem ao
+    longo dos anos, não apenas o valor mais recente.
+
+    params:
+        car_codes (list[str]): Lista de códigos CAR da propriedade.
+
+    Return:
+        ToolResult: Tabela ano -> biomassa média (t/ha) e um gráfico de tendência em PNG.
+    """
+    try:
+        all_properties = run_context.session_state['all_properties']
+        selected_property = next((prop for prop in all_properties if prop["car_code"] == ', '.join(car_codes)), None)
+        selected_property = RuralProperty.model_validate(selected_property)
+
+        roi = ee.Geometry.MultiPolygon(selected_property.get_coords())
+        result = estimate_pasture_biomass_history(roi=roi, car_code=selected_property.car_code)
+
+        lines = [
+            f"- {year}: {value} t/ha" if not math.isnan(value) else f"- {year}: sem pastagem mapeada"
+            for year, value in sorted(result["yearly_avg_t_ha"].items())
+        ]
+
+        content = (
+            f"Biomassa seca média de pastagem por ano ({result['history_start_year']}-{result['history_end_year']}):\n"
+            + "\n".join(lines)
+        )
+
+        buffer = BytesIO()
+        result["imagem"].save(buffer, format="PNG")
+
+        return ToolResult(content=content, images=[Image(content=buffer.getvalue())])
+
+    except Exception as e:
         return ToolResult(content=str(e))

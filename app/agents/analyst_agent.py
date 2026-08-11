@@ -11,7 +11,8 @@ from app.tools.property_analyst_tools import (
     generate_soil_texture_image,
     generate_pasture_classification_image,
     get_pasture_stats,
-    get_topographic_stats
+    get_topographic_stats,
+    get_pasture_biomass_history
     )
 from app.tools.tts_tools import generate_speech
 from app.schemas.rural_property import RuralProperty
@@ -85,6 +86,7 @@ analyst_agent = Agent(
         ),
         get_pasture_stats,
         get_topographic_stats,
+        get_pasture_biomass_history,
         generate_property_image,
         generate_biomass_image,
         generate_soil_texture_image,

@@ -10,6 +10,7 @@ from typing import List
 from agno.utils.log import log_error
 
 from app.services.geospatial.image import append_discrete_legend, append_continuous_colorbar
+from app.services.geospatial.pasture_biomass import DRY_BIOMASS_FACTOR, _annual_biomass_image, _latest_gpw_year
 from app.schemas.property_stats import PropertyStats, PastureStats, TopographicStats
 from app.schemas.property_stats import (
     Value, 
@@ -314,18 +315,6 @@ def retrieve_mapbiomas_biomass_image(coords: List[List[List[List[float]]]], year
 def _get_t2g_biomass_image(roi, month, year):
     UGPP_SCALE_FACTOR = 0.1
 
-    # Maximum light use efficiency (LUEmax) 
-    # Aappropriate for the dominant Urochloa brizantha cultivated pastures in Brazil (MapBiomas Brazil)
-    GRASS_LUEMAX_FACTOR = 0.50 #gC/m²/day/MJ
-
-    # Conversion of carbon to dry biomass
-    IPCC_FACTOR = 2.7
-
-    # Conversion Factor gC/m² to Ton/hec
-    CONVERSION_FACTOR = 0.01
-
-    DRY_BIOMASS_FACTOR = GRASS_LUEMAX_FACTOR * IPCC_FACTOR * CONVERSION_FACTOR
-
     TILES = [
         '36NXG', '36MVB', '36MWV', '36KUF', '35KRS', '32PRQ', '23KLQ', '21MXN',
         '18PVQ', '36MTE', '32PLU', '21HXC', '20HKH', '19NBG', '21HWE', '21HUV',
@@ -403,14 +392,73 @@ def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int
     img = PIL.Image.open(BytesIO(resposta.content))
 
     img = append_continuous_colorbar(
-        img, 
-        title=f"Biomassa\n({str(year)}) - T2G", 
+        img,
+        title=f"Biomassa\n({str(year)}) - T2G",
         vmin=round(min_bio_val),
         vmax=round(max_bio_val),
         palette=palette
     )
 
     return img
+
+
+def retrieve_gpw_biomass_image(coords: List[List[List[List[float]]]], year: int = None) -> PIL.Image.Image:
+    """
+    Mapa de biomassa seca de pastagem (Global Pasture Watch), usado como fallback
+    quando o T2G não cobre a propriedade (fora da lista fixa de tiles) — cobertura
+    nacional/global, sem essa limitação. Se `year` for omitido, usa o ano mais
+    recente disponível no GPW.
+    """
+    roi = ee.Geometry.MultiPolygon(coords)
+
+    if year is None:
+        year = _latest_gpw_year()
+
+    grassland_image = _annual_biomass_image(roi, year)
+
+    stats = grassland_image.reduceRegion(
+        reducer=ee.Reducer.minMax(),
+        geometry=roi,
+        scale=10,
+        maxPixels=1e13
+    ).getInfo()
+
+    min_key = next((k for k in stats if k.endswith('_min')), None)
+    max_key = next((k for k in stats if k.endswith('_max')), None)
+
+    if not min_key or stats[min_key] is None:
+        raise ValueError("Não foi possível calcular a biomassa. A área pode não conter pastagem mapeada.")
+
+    min_bio_val = stats[min_key]
+    max_bio_val = stats[max_key]
+
+    palette = ['#000033', '#9400D3', '#FF00FF', '#00FFFF', '#FFFFFF']
+    bioprop = grassland_image.visualize(**{"min": min_bio_val, "max": max_bio_val, "palette": palette})
+
+    base_image = _get_base_image(roi=roi, year=year)
+
+    outline = _draw_feature_boundaries(roi=roi)
+
+    final_image = base_image.blend(bioprop.clip(roi))
+    final_image = final_image.blend(outline).clip(roi.buffer(_FEATURE_BUFFER).bounds())
+
+    url = final_image.getThumbURL({"dimensions": _IMAGE_DIMENSION, "format": "png"})
+
+    resposta = requests.get(url, timeout=60)
+    resposta.raise_for_status()
+
+    img = PIL.Image.open(BytesIO(resposta.content))
+
+    img = append_continuous_colorbar(
+        img,
+        title=f"Biomassa\n({str(year)}) - GPW",
+        vmin=round(min_bio_val),
+        vmax=round(max_bio_val),
+        palette=palette
+    )
+
+    return img
+
 
 def retrieve_feature_soil_texture_image(coords: List[List[List[List[float]]]]):
     try:
@@ -482,24 +530,23 @@ def retrieve_feature_soil_texture_image(coords: List[List[List[List[float]]]]):
 def get_biomass(roi: ee.Geometry, year: int, month: int) -> 'BiomassStats':
     last_biomass = _get_t2g_biomass_image(roi, month, year)
 
-    # Fallback to mapbiomas asset if custom getter returns None
+    # Fallback pro Global Pasture Watch (cobertura nacional/global) se o T2G não cobrir a propriedade
     if last_biomass is None:
-        year = 2024
+        year = _latest_gpw_year()
 
-        biomass_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_biomass_v2')
-
-        last_biomass = biomass_asset.select(year - 2000)
+        last_biomass = _annual_biomass_image(roi, year)
 
         stats = last_biomass.reduceRegion(
             reducer=ee.Reducer.sum(),
             geometry=roi,
-            scale=30,
+            scale=30,  # resolução nativa do GPW (ggpp-30m/ggc-30m)
             maxPixels=1e13
         )
 
-        biomass_value = stats.getInfo().get(f'biomass_{year}', 0) * 0.09
+        # soma de t/ha por pixel de 30m (900m²) -> total em toneladas: x 0.09 ha/pixel
+        biomass_value = stats.getInfo().get('t_ha_year', 0) * 0.09
 
-        return BiomassStats(observation_year=2024, amount=Value(value=biomass_value, unity="tonelada(s) de matéria seca acumulada no ano"))
+        return BiomassStats(observation_year=year, amount=Value(value=biomass_value, unity="tonelada(s) de matéria seca acumulada no ano"))
     else:
         stats = last_biomass.reduceRegion(
             reducer=ee.Reducer.sum(),
@@ -512,7 +559,7 @@ def get_biomass(roi: ee.Geometry, year: int, month: int) -> 'BiomassStats':
 
         month_dict = { 1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho", 7: "Julho", 8: "Agosto", 9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro" }
 
-        return BiomassStats(observation_year=2026, amount=Value(value=biomass_value, unity=f"tonelada(s) de matéria seca acumulada no mês de {month_dict[month]}"))
+        return BiomassStats(observation_year=year, amount=Value(value=biomass_value, unity=f"tonelada(s) de matéria seca acumulada no mês de {month_dict[month]}"))
 
 
 def get_pasture_age(roi: ee.Geometry, year: int, month: int = None) -> List['AgeStats']:
