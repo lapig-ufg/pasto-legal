@@ -507,6 +507,8 @@ def build_prompt(
             parts.append("</candidate-properties>")
         if "terms_accepted" in session_state:
             parts.append(f"<terms-accepted>{json.dumps(session_state['terms_accepted'])}</terms-accepted>")
+        if session_state.get("feedback_mode"):
+            parts.append(f"<feedback-mode>{session_state['feedback_mode']}</feedback-mode>")
 
     parts.append("</session-state>")
     parts.append(f"\n<user-message>{user_message}</user-message>")

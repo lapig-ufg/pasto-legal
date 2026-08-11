@@ -167,15 +167,95 @@ Use esta skill quando o usuário concordar claramente com os Termos de Uso do Pa
         "description": "Lê e retorna as notas de atualização (patch notes) do sistema Pasto Legal.",
         "category": "utility",
     },
+    # ═══ Feedback ═════════════════════════════════════════════════════
+    {
+        "name": "request_feedback",
+        "description": "Ativa o modo de aguardo de feedback do usuário. Chame APENAS após entregar uma resposta reformulada (remediação) por frustração do usuário.",
+        "category": "feedback",
+        "skill": """
+## Coleta de Feedback — Remediação de Frustração
+
+Use esta skill quando o usuário demonstrar **frustração, insatisfação ou decepção** com a resposta anterior.
+
+### Gatilhos comuns de frustração (não exaustivo)
+- "Não gostei da resposta", "isso está errado", "não ajudou", "péssimo",
+  "que resposta ruim", "não foi isso que eu perguntei", "idiota",
+  "inútil", "vou desistir", ou similar.
+- Tom agressivo, ironia, ou negação direta da utilidade da resposta.
+
+### Processo de Remediação (uma única chamada)
+1. Peça desculpas de forma breve e humanizada (sem soar robótico).
+2. Gere uma NOVA resposta melhorada, considerando o que o usuário
+   realmente queria. Use o histórico da conversa (já na sua sessão)
+   para inferir a intenção original.
+3. Ao final da mensagem, pergunte diretamente:
+   "Ficou melhor? Responda SIM ou NÃO."
+4. Chame a ferramenta `request_feedback` com o `user_id` da sessão
+   para ativar o modo de aguardo de feedback.
+5. NÃO repita a resposta anterior nem a reformule de forma vaga.
+   Seja concreto e tente resolver o que deu errado.
+
+### Regras
+- Se o usuário NÃO demonstrar frustração, NÃO chame esta ferramenta.
+- Use APENAS uma vez por ciclo de remediação.
+- Após `request_feedback`, a próxima mensagem do usuário será
+  classificada por você (positiva/negativa) — veja a skill
+  `save_feedback` para o próximo passo.
+""".strip(),
+    },
+    {
+        "name": "save_feedback",
+        "description": "Registra o feedback do usuário (positivo ou negativo) sobre a resposta reformulada e encerra o modo de feedback.",
+        "category": "feedback",
+        "skill": """
+## Coleta de Feedback — Registro da Avaliação
+
+Use esta skill quando o `<feedback-mode>` da sessão estiver
+`awaiting_rating`. O usuário está respondendo à sua pergunta
+"Ficou melhor? Responda SIM ou NÃO."
+
+### Processo
+1. Classifique a resposta do usuário:
+   - **POSITIVE** se disser "sim", "melhorou", "ficou melhor",
+     "agora sim", "obrigado", "ajudou", "perfeito", "é isso",
+     ou similar (afirmação ou gratidão).
+   - **NEGATIVE** se disser "não", "piorou", "continua ruim",
+     "ainda não", "não ajudou", "péssimo", "continua errado",
+     ou similar (negação ou crítica).
+2. Se POSITIVE:
+   - Agradeça brevemente.
+   - Chame `save_feedback` com `verdict="positive"`,
+     `user_message` (a mensagem do usuário),
+     `assistant_response` (a resposta reformulada que foi avaliada),
+     e `reason` (opcional: justificativa curta).
+3. Se NEGATIVE:
+   - Peça desculpas novamente de forma breve e humanizada.
+   - Chame `save_feedback` com `verdict="negative"`,
+     `user_message`, `assistant_response`, `reason`.
+4. Após chamar `save_feedback`, prossiga normalmente: se o usuário
+   fez uma nova pergunta, responda-a como de costume.
+
+### Regras
+- Classifique pelo tom e palavras-chave, não pelo conteúdo literal.
+- Em caso de ambiguidade, considere o contexto da conversa.
+- APENAS uma chamada a `save_feedback` por ciclo. Após isso, o modo
+  de feedback é encerrado e o fluxo volta ao normal.
+""".strip(),
+    },
 ]
 
 # Tools always available regardless of RAG results.
 # - consult_update_notes: low-cost utility, always hand for "what's new" queries.
 # - generate_speech: obligatory every run so the model can synthesize audio
 #   whenever the user requests a spoken reply, independent of RAG similarity.
+# - request_feedback / save_feedback: the frustration-remediation loop must
+#   be reachable on any turn (frustration can arise mid-analysis, registration,
+#   etc.), so they bypass RAG selection.
 ALWAYS_AVAILABLE = {
     "consult_update_notes",
     "generate_speech",
+    "request_feedback",
+    "save_feedback",
 }
 
 # Tools available ONLY during the first-time onboarding flow (terms acceptance).
@@ -215,4 +295,7 @@ ACTION_MAP = {
     "accept_terms": ("onboarding", "accept_terms"),
     # version
     "update_notes": ("version", "update_notes"),
+    # feedback
+    "request_feedback": ("feedback", "request_feedback"),
+    "save_feedback": ("feedback", "save_feedback"),
 }

@@ -347,4 +347,45 @@ export default function (pi) {
       return makeResult({ message: result.notes });
     },
   });
+
+  // ── Feedback (frustration remediation loop) ───────────────────────────
+
+  pi.registerTool({
+    name: "request_feedback",
+    label: "Request Feedback",
+    description: "Ativa o modo de aguardo de feedback do usuário. Chame APENAS após entregar uma resposta reformulada (remediação) por frustração do usuário, junto da pergunta 'Ficou melhor? Responda SIM ou NÃO'.",
+    parameters: Type.Object({
+      user_id: Type.String({ description: "User ID from session context" }),
+    }),
+    async execute(_toolCallId, params) {
+      const result = await callTool("feedback", { action: "request_feedback", user_id: params.user_id });
+      if (result.error) return errorResult(result);
+      return makeResult(result);
+    },
+  });
+
+  pi.registerTool({
+    name: "save_feedback",
+    label: "Save Feedback",
+    description: "Registra o feedback do usuário (positivo ou negativo) sobre a resposta reformulada e encerra o modo de feedback. Chame ao classificar a resposta do usuário à pergunta 'Ficou melhor?'.",
+    parameters: Type.Object({
+      user_id: Type.String({ description: "User ID from session context" }),
+      verdict: Type.String({ description: "Avaliação do usuário: 'positive' se a resposta melhorou, 'negative' se piorou ou não resolveu" }),
+      user_message: Type.String({ description: "Mensagem do usuário que respondeu à pergunta de feedback" }),
+      assistant_response: Type.String({ description: "A resposta reformulada que foi avaliada pelo usuário" }),
+      reason: Type.Optional(Type.String({ description: "Justificativa do veredito (opcional)" })),
+    }),
+    async execute(_toolCallId, params) {
+      const result = await callTool("feedback", {
+        action: "save_feedback",
+        user_id: params.user_id,
+        verdict: params.verdict,
+        user_message: params.user_message,
+        assistant_response: params.assistant_response,
+        reason: params.reason || "",
+      });
+      if (result.error) return errorResult(result);
+      return makeResult(result);
+    },
+  });
 }
