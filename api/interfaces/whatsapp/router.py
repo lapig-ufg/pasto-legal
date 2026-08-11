@@ -40,6 +40,7 @@ from api.interfaces.whatsapp.helpers import (
 )
 from api.guardrails.pii_gate import check_pii, mensagem_bloqueio
 from api.services.audio.tts import generate_speech
+from api.services.audio.stt import transcribe_audio
 from api.configs.config import config
 
 log = logging.getLogger("pasto-legal.whatsapp")
@@ -258,11 +259,24 @@ async def process_message(
         # ── Media download ──────────────────────────────────────────────
         media_kwargs, skipped_media = await download_event_media_async(parsed, config_wa)
 
+        # Persist downloaded media bytes (base64) so they survive the debounce
+        # window and can be forwarded to the agent after batching settles.
+        # Only image and audio are consumed by the agent today; video/docs are
+        # kept for completeness but ignored downstream.
+        serialized_media: dict[str, list[dict]] = {}
+        for kind, items in media_kwargs.items():
+            serialized_media[kind] = []
+            for item in items:
+                raw = await item.aget_content_bytes() if hasattr(item, "aget_content_bytes") else getattr(item, "content", b"")
+                serialized_media[kind].append({
+                    "data": urlsafe_b64encode(raw).decode() if raw else "",
+                    "mime_type": getattr(item, "mime_type", None),
+                })
+
         msg_data = {
             "parsed": {"text": parsed.text, "image_id": parsed.image_id, "video_id": parsed.video_id,
                         "audio_id": parsed.audio_id, "doc_id": parsed.doc_id},
-            "media_kwargs": {k: [{"mime_type": getattr(v, "mime_type", None)} for v in val]
-                             for k, val in media_kwargs.items()},
+            "media": serialized_media,
             "skipped_media": skipped_media,
             "timestamp": timestamp,
         }
@@ -298,8 +312,45 @@ async def process_message(
         )
 
         final_text = ""
+        collected_images: list[dict] = []  # {"data": b64, "mimeType": str}
+        stt_failures = 0
         for msg_item in all_msgs:
-            final_text += msg_item.get("parsed", {}).get("text", "") + "\n"
+            parsed_item = msg_item.get("parsed", {})
+            final_text += parsed_item.get("text", "") + "\n"
+
+            media = msg_item.get("media", {}) or {}
+            for img in media.get("images", []):
+                b64 = img.get("data")
+                if not b64:
+                    continue
+                collected_images.append({
+                    "type": "image",
+                    "data": b64,
+                    "mimeType": img.get("mime_type") or "image/jpeg",
+                })
+            for aud in media.get("audio", []):
+                raw = urlsafe_b64decode(aud.get("data", "").encode()) if aud.get("data") else b""
+                if not raw:
+                    continue
+                mime = aud.get("mime_type") or "audio/ogg"
+                transcript = transcribe_audio(raw, mime_type=mime)
+                if transcript:
+                    final_text += transcript + "\n"
+                else:
+                    stt_failures += 1
+
+        # If every message in this batch was an audio clip that failed to
+        # transcribe, surface a friendly fallback instead of sending an
+        # empty prompt to the agent.
+        if stt_failures and not final_text.strip() and not collected_images:
+            await send_whatsapp_message_async(
+                phone_number,
+                "Não consegui entender o áudio. Pode repetir em texto?",
+                config_wa,
+            )
+            return
+        if stt_failures:
+            final_text = f"[{stt_failures} áudio(s) não reconhecido(s)]\n" + final_text
 
         if skipped_media:
             final_text = "[Some media could not be downloaded]\n\n" + final_text
@@ -328,7 +379,7 @@ async def process_message(
 
             client = await pi_pool.get_client(user_id)
             try:
-                pi_result = await client.prompt(onboarding_prompt)
+                pi_result = await client.prompt(onboarding_prompt, images=collected_images or None)
             except Exception as e:
                 log.error(f"[router] onboarding pi_rpc.prompt failed: {e}")
                 await send_whatsapp_message_async(phone_number, _ERROR_MESSAGE, config_wa)
@@ -374,7 +425,7 @@ async def process_message(
         )
 
         try:
-            pi_result = await client.prompt(full_prompt)
+            pi_result = await client.prompt(full_prompt, images=collected_images or None)
         except Exception as e:
             log.error(f"[router] pi_rpc.prompt failed: {e}")
             await send_whatsapp_message_async(phone_number, _ERROR_MESSAGE, config_wa)

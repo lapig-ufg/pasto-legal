@@ -19,10 +19,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from api.interfaces.whatsapp.router import attach_routes
 from api.configs.config import config
+from api.services.audio.stt import transcribe_audio
 from agent.pi_rpc import PiRpcPool
 
 log = logging.getLogger("pasto-legal.main")
@@ -134,10 +135,51 @@ async def health():
     return {"status": "ok", "pi_pool": pi_pool is not None, "clients": len(pi_pool._clients) if pi_pool else 0}
 
 
+class MediaItem(BaseModel):
+    data: str = Field(..., description="base64-encoded media bytes")
+    mime_type: str = Field("application/octet-stream")
+
+
 class ChatRequest(BaseModel):
     user_id: str = "streamlit-debug"
     message: str
     session_state: dict = {}
+    images: list[MediaItem] = Field(default_factory=list)
+    audio: list[MediaItem] = Field(default_factory=list)
+
+
+def _prepare_media(req: ChatRequest) -> tuple[str, list[dict]]:
+    """Transcribe audio clips into text and build the pi image list.
+
+    Returns the (possibly extended) message text and a list of
+    ``{type:"image", data, mimeType}`` dicts ready for ``client.prompt``.
+    """
+    message = req.message
+
+    if req.audio:
+        transcripts: list[str] = []
+        for item in req.audio:
+            try:
+                raw = base64.b64decode(item.data)
+            except Exception as e:
+                log.warning(f"[chat] bad audio base64: {e}")
+                continue
+            text = transcribe_audio(raw, mime_type=item.mime_type)
+            if text:
+                transcripts.append(text)
+            else:
+                transcripts.append("[áudio não reconhecido]")
+        if transcripts:
+            joined = " ".join(transcripts)
+            message = f"{joined}\n{message}".strip() if message.strip() else joined
+
+    images = [
+        {"type": "image", "data": img.data, "mimeType": img.mime_type}
+        for img in req.images
+        if img.data
+    ]
+    return message, images
+
 
 @app.post("/chat")
 async def chat(req: ChatRequest):
@@ -147,6 +189,7 @@ async def chat(req: ChatRequest):
     from agent.tool_rag import search_tools
 
     _t0 = _time.time()
+    message, images = _prepare_media(req)
 
     # ── Onboarding gate: check terms acceptance from DB ──────────────
     session_state = dict(req.session_state or {})
@@ -170,32 +213,34 @@ async def chat(req: ChatRequest):
     # First-time users → onboarding prompt (only accept_terms tool)
     if not session_state.get("terms_accepted"):
         client = await pi_pool.get_client(req.user_id)
-        full_prompt = build_onboarding_prompt(req.message, user_id=req.user_id)
-        result = await client.prompt(full_prompt)
+        full_prompt = build_onboarding_prompt(message, user_id=req.user_id)
+        result = await client.prompt(full_prompt, images=images or None)
         # Persist any terms_accepted update from the tool
         for update in result.get("session_state_updates", []):
             if isinstance(update, dict):
                 session_state.update(update)
         result["session_state"] = session_state
+        result["transcribed_message"] = message if message != req.message else None
         log.info(f"[chat] onboarding user={req.user_id} elapsed={_time.time() - _t0:.1f}s")
         return result
 
     # Normal flow: Tool-RAG + full prompt
-    relevant_tools = search_tools(req.message, top_k=5)
+    relevant_tools = search_tools(message, top_k=5)
 
     client = await pi_pool.get_client(req.user_id)
     full_prompt = build_prompt(
-        req.message,
+        message,
         user_id=req.user_id,
         session_state=session_state,
         relevant_tools=relevant_tools,
     )
     log.info(f"[chat] user={req.user_id} full_prompt={full_prompt}")
-    result = await client.prompt(full_prompt)
+    result = await client.prompt(full_prompt, images=images or None)
     for update in result.get("session_state_updates", []):
         if isinstance(update, dict):
             session_state.update(update)
     result["session_state"] = session_state
+    result["transcribed_message"] = message if message != req.message else None
     log.info(f"[chat] user={req.user_id} elapsed={_time.time() - _t0:.1f}s")
     return result
 

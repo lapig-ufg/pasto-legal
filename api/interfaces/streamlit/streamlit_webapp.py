@@ -5,6 +5,7 @@ Thin UI layer — all LLM processing happens in the FastAPI container.
 import os
 import uuid
 import json
+import base64
 import tempfile
 import streamlit as st
 import httpx
@@ -214,7 +215,12 @@ if loc_input_value:
     user_query = "Minhas coordenadas são Lat: -15.82994 S Long: -49.43353."
 elif chat_input_value:
     user_query = chat_input_value
-elif audio_input_value:
+elif audio_input_value or (files_uploaded and any(
+    f.name.lower().endswith((".wav", ".mp3", ".ogg", ".mp4", ".m4a"))
+    for f in files_uploaded
+)):
+    # Audio-only submissions are sent with a placeholder; the backend
+    # transcribes and returns the text via ``transcribed_message``.
     user_query = "[Áudio recebido]"
 
 
@@ -244,7 +250,21 @@ if user_query:
     all_file_paths = process_uploaded_files(files_to_process)
 
     image_paths = [p for p in all_file_paths if p.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
-    audio_paths = [p for p in all_file_paths if p.lower().endswith(('.wav', '.mp3', '.ogg', '.mp4'))]
+    audio_paths = [p for p in all_file_paths if p.lower().endswith(('.wav', '.mp3', '.ogg', '.mp4', '.m4a'))]
+
+    def _read_b64(path: str) -> tuple[str, str]:
+        with open(path, "rb") as f:
+            data = f.read()
+        ext = path.lower().rsplit(".", 1)[-1] if "." in path else ""
+        mime_map = {
+            "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+            "webp": "image/webp", "wav": "audio/wav", "mp3": "audio/mpeg",
+            "ogg": "audio/ogg", "mp4": "audio/mp4", "m4a": "audio/mp4",
+        }
+        return base64.b64encode(data).decode(), mime_map.get(ext, "application/octet-stream")
+
+    images_payload = [{"data": _read_b64(p)[0], "mime_type": _read_b64(p)[1]} for p in image_paths]
+    audio_payload = [{"data": _read_b64(p)[0], "mime_type": _read_b64(p)[1]} for p in audio_paths]
 
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
@@ -264,6 +284,8 @@ if user_query:
                                 "user_id": st.session_state.session_id,
                                 "message": user_query,
                                 "session_state": st.session_state.chat_session_state,
+                                "images": images_payload,
+                                "audio": audio_payload,
                             },
                         )
                         resp.raise_for_status()
@@ -275,6 +297,14 @@ if user_query:
             full_response = pi_result.get("content", "Erro ao processar.")
             response_images = pi_result.get("images", [])
             response_audio = pi_result.get("audio", [])
+
+            # If the backend transcribed audio, replace the placeholder shown
+            # to the user with the actual recognized text.
+            transcribed = pi_result.get("transcribed_message")
+            if transcribed and user_query == "[Áudio recebido]":
+                user_query = transcribed
+                st.session_state.messages[-1]["content"] = transcribed
+                message_placeholder.markdown("")  # clear placeholder, will rerun
 
             if "session_state" in pi_result and isinstance(pi_result["session_state"], dict):
                 st.session_state.chat_session_state = pi_result["session_state"]
