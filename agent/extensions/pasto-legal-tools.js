@@ -388,4 +388,188 @@ export default function (pi) {
       return makeResult(result);
     },
   });
+
+  // ── Alert Schedulers (benchmark — mocked) ───────────────────────────────
+  //
+  // Mocked alert-scheduler tools used to grow the tool registry for the
+  // single-agent benchmark (see BENCHMARK.md). Each alert type exposes a
+  // `request_*` (plans the scheduler, asks for confirmation) and a
+  // `confirm_*` (registers the scheduler when the user says yes). All calls
+  // go to the Python `benchmark` tool, which returns canned JSON without
+  // hitting any real backend. The two-step confirm flow mirrors
+  // request_feedback / save_feedback and the property registration flow.
+
+  // ── Biomass alert (dry-matter, kg/ha — all logic operators) ────────────
+
+  pi.registerTool({
+    name: "request_biomass_alert",
+    label: "Request Biomass Alert",
+    description: "Planeja um alerta via WhatsApp que dispara quando a biomassa (matéria seca, kg/ha) atinge uma condição definida por operador lógico (gt, lt, le, ge, eq, neq) e um valor de referência. Retorna o plano e pede confirmação.",
+    parameters: Type.Object({
+      operator: Type.String({ description: "Operador lógico: 'gt' (maior que), 'lt' (menor que), 'le' (menor ou igual), 'ge' (maior ou igual), 'eq' (igual), 'neq' (diferente de)" }),
+      threshold: Type.Number({ description: "Valor de referência da biomassa em kg/ha (ex: 2500)" }),
+      car_codes: Type.Optional(Type.Array(Type.String(), { description: "Lista de códigos CAR da propriedade (opcional, usa a atual se omitido)" })),
+      user_id: Type.String({ description: "User ID from session context" }),
+    }),
+    async execute(_toolCallId, params) {
+      const result = await callTool("benchmark", { action: "request_biomass_alert", operator: params.operator, threshold: params.threshold, car_codes: params.car_codes || [], user_id: params.user_id });
+      if (result.error) return errorResult(result);
+      return makeResult(result);
+    },
+  });
+
+  pi.registerTool({
+    name: "confirm_biomass_alert",
+    label: "Confirm Biomass Alert",
+    description: "Confirma o cadastro do alerta de biomassa planejado. Chame APENAS quando o usuário concordar com o plano apresentado por request_biomass_alert (ex: 'sim', 'pode sim', 'confirma'). Retorna a confirmação do agendamento e a condição definida.",
+    parameters: Type.Object({
+      user_id: Type.String({ description: "User ID from session context" }),
+    }),
+    async execute(_toolCallId, params) {
+      const result = await callTool("benchmark", { action: "confirm_biomass_alert", user_id: params.user_id });
+      if (result.error) return errorResult(result);
+      return makeResult(result);
+    },
+  });
+
+  // ── Rain alert (accumulated rainfall, mm) ──────────────────────────────
+
+  pi.registerTool({
+    name: "request_rain_alert",
+    label: "Request Rain Alert",
+    description: "Planeja um alerta via WhatsApp que dispara quando a chuva acumulada (mm) em uma janela de dias atinge uma condição definida por operador lógico (gt, lt, le, ge, eq, neq) e um valor de referência. Retorna o plano e pede confirmação.",
+    parameters: Type.Object({
+      operator: Type.String({ description: "Operador lógico: 'gt', 'lt', 'le', 'ge', 'eq', 'neq'" }),
+      threshold: Type.Number({ description: "Valor de referência de chuva acumulada em mm (ex: 80)" }),
+      window_days: Type.Optional(Type.Integer({ description: "Janela de acumulação em dias (default: 7)" })),
+      car_codes: Type.Optional(Type.Array(Type.String(), { description: "Lista de códigos CAR da propriedade (opcional)" })),
+      user_id: Type.String({ description: "User ID from session context" }),
+    }),
+    async execute(_toolCallId, params) {
+      const result = await callTool("benchmark", { action: "request_rain_alert", operator: params.operator, threshold: params.threshold, window_days: params.window_days || 7, car_codes: params.car_codes || [], user_id: params.user_id });
+      if (result.error) return errorResult(result);
+      return makeResult(result);
+    },
+  });
+
+  pi.registerTool({
+    name: "confirm_rain_alert",
+    label: "Confirm Rain Alert",
+    description: "Confirma o cadastro do alerta de chuva planejado. Chame APENAS quando o usuário concordar com o plano apresentado por request_rain_alert (ex: 'sim', 'pode sim', 'confirma'). Retorna a confirmação do agendamento e a condição definida.",
+    parameters: Type.Object({
+      user_id: Type.String({ description: "User ID from session context" }),
+    }),
+    async execute(_toolCallId, params) {
+      const result = await callTool("benchmark", { action: "confirm_rain_alert", user_id: params.user_id });
+      if (result.error) return errorResult(result);
+      return makeResult(result);
+    },
+  });
+
+  // ── Vigor alert (NDVI drop-below-threshold) ────────────────────────────
+
+  pi.registerTool({
+    name: "request_vigor_alert",
+    label: "Request Vigor Alert",
+    description: "Planeja um alerta via WhatsApp que dispara quando o vigor vegetativo (NDVI) da pastagem atinge uma condição definida por operador lógico (gt, lt, le, ge, eq, neq) e um valor de referência. Útil para detectar degradação do pasto. Retorna o plano e pede confirmação.",
+    parameters: Type.Object({
+      operator: Type.String({ description: "Operador lógico: 'gt', 'lt', 'le', 'ge', 'eq', 'neq'. Default 'lt' (queda abaixo)." }),
+      threshold: Type.Number({ description: "Valor de referência do NDVI (0 a 1, ex: 0.4)" }),
+      car_codes: Type.Optional(Type.Array(Type.String(), { description: "Lista de códigos CAR da propriedade (opcional)" })),
+      user_id: Type.String({ description: "User ID from session context" }),
+    }),
+    async execute(_toolCallId, params) {
+      const result = await callTool("benchmark", { action: "request_vigor_alert", operator: params.operator, threshold: params.threshold, car_codes: params.car_codes || [], user_id: params.user_id });
+      if (result.error) return errorResult(result);
+      return makeResult(result);
+    },
+  });
+
+  pi.registerTool({
+    name: "confirm_vigor_alert",
+    label: "Confirm Vigor Alert",
+    description: "Confirma o cadastro do alerta de vigor (NDVI) planejado. Chame APENAS quando o usuário concordar com o plano apresentado por request_vigor_alert (ex: 'sim', 'pode sim', 'confirma'). Retorna a confirmação do agendamento e a condição definida.",
+    parameters: Type.Object({
+      user_id: Type.String({ description: "User ID from session context" }),
+    }),
+    async execute(_toolCallId, params) {
+      const result = await callTool("benchmark", { action: "confirm_vigor_alert", user_id: params.user_id });
+      if (result.error) return errorResult(result);
+      return makeResult(result);
+    },
+  });
+
+  // ── Stocking-rate alert (UA/ha exceeds support capacity) ──────────────
+
+  pi.registerTool({
+    name: "request_stocking_rate_alert",
+    label: "Request Stocking Rate Alert",
+    description: "Planeja um alerta via WhatsApp que dispara quando a lotação animal (UA/ha) ultrapassa ou atinge uma condição definida por operador lógico (gt, lt, le, ge, eq, neq) e um valor de referência. Útil para evitar superlotação além da capacidade de suporte. Retorna o plano e pede confirmação.",
+    parameters: Type.Object({
+      operator: Type.String({ description: "Operador lógico: 'gt', 'lt', 'le', 'ge', 'eq', 'neq'. Default 'gt' (excede)." }),
+      threshold: Type.Number({ description: "Valor de referência de lotação em UA/ha (ex: 2.5)" }),
+      car_codes: Type.Optional(Type.Array(Type.String(), { description: "Lista de códigos CAR da propriedade (opcional)" })),
+      user_id: Type.String({ description: "User ID from session context" }),
+    }),
+    async execute(_toolCallId, params) {
+      const result = await callTool("benchmark", { action: "request_stocking_rate_alert", operator: params.operator, threshold: params.threshold, car_codes: params.car_codes || [], user_id: params.user_id });
+      if (result.error) return errorResult(result);
+      return makeResult(result);
+    },
+  });
+
+  pi.registerTool({
+    name: "confirm_stocking_rate_alert",
+    label: "Confirm Stocking Rate Alert",
+    description: "Confirma o cadastro do alerta de lotação (UA/ha) planejado. Chame APENAS quando o usuário concordar com o plano apresentado por request_stocking_rate_alert (ex: 'sim', 'pode sim', 'confirma'). Retorna a confirmação do agendamento e a condição definida.",
+    parameters: Type.Object({
+      user_id: Type.String({ description: "User ID from session context" }),
+    }),
+    async execute(_toolCallId, params) {
+      const result = await callTool("benchmark", { action: "confirm_stocking_rate_alert", user_id: params.user_id });
+      if (result.error) return errorResult(result);
+      return makeResult(result);
+    },
+  });
+
+  // ── List / delete schedulers (benchmark — mocked) ──────────────────────
+  //
+  // Mocked management tools that operate on a fixed in-memory list of
+  // already-registered alert schedulers (MOCKED_SCHEDULERS in benchmark.py).
+  // `list_schedulers` shows the list; `delete_scheduler` removes one by
+  // name or by its 1-indexed position. Used to exercise the LLM's
+  // list/update/delete flow as the tool registry grows (see BENCHMARK.md).
+
+  pi.registerTool({
+    name: "list_schedulers",
+    label: "List Schedulers",
+    description: "Lista os agendamentos de alerta já cadastrados (nome e condição de cada um). Use quando o usuário quiser revisar, listar, atualizar ou modificar seus agendamentos de alerta.",
+    parameters: Type.Object({
+      user_id: Type.String({ description: "User ID from session context" }),
+    }),
+    async execute(_toolCallId, params) {
+      const result = await callTool("benchmark", { action: "list_schedulers", user_id: params.user_id });
+      if (result.error) return errorResult(result);
+      return makeResult(result);
+    },
+  });
+
+  pi.registerTool({
+    name: "delete_scheduler",
+    label: "Delete Scheduler",
+    description: "Remove um agendamento de alerta já cadastrado. Forneça `name` (nome exato do agendamento) OU `number` (número do agendamento na lista retornada por list_schedulers, começando em 1). Use APENAS um dos dois.",
+    parameters: Type.Object({
+      name: Type.Optional(Type.String({ description: "Nome exato do agendamento a remover (ex: 'Alerta de Biomassa - Fazenda Primavera')" })),
+      number: Type.Optional(Type.Integer({ description: "Número do agendamento na lista do list_schedulers (1-indexado)" })),
+      user_id: Type.String({ description: "User ID from session context" }),
+    }),
+    async execute(_toolCallId, params) {
+      const payload = { action: "delete_scheduler", user_id: params.user_id };
+      if (params.name !== undefined && params.name !== null) payload.name = params.name;
+      if (params.number !== undefined && params.number !== null) payload.number = params.number;
+      const result = await callTool("benchmark", payload);
+      if (result.error) return errorResult(result);
+      return makeResult(result);
+    },
+  });
 }

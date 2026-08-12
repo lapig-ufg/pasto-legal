@@ -240,9 +240,276 @@ Use esta skill quando o `<feedback-mode>` da sessão estiver
 - Em caso de ambiguidade, considere o contexto da conversa.
 - APENAS uma chamada a `save_feedback` por ciclo. Após isso, o modo
   de feedback é encerrado e o fluxo volta ao normal.
+        """.strip(),
+    },
+    # ═══ Alert Schedulers (benchmark — mocked) ═══════════════════════════
+    # Mocked alert-scheduler tools used to grow the tool registry for the
+    # single-agent benchmark (see BENCHMARK.md). Each alert type exposes a
+    # `request_*` (plans the scheduler, asks for confirmation) and a
+    # `confirm_*` (registers the scheduler when the user says yes). The
+    # two-step confirm flow mirrors request_feedback / save_feedback and the
+    # property registration flow. All actions are handled by the Python
+    # `benchmark` tool (agent/tools/benchmark.py), which returns canned JSON
+    # without hitting any real backend.
+    {
+        "name": "request_biomass_alert",
+        "description": "Planeja um alerta via WhatsApp que dispara quando a biomassa (matéria seca, kg/ha) atinge uma condição definida por operador lógico (gt, lt, le, ge, eq, neq) e um valor de referência. Retorna o plano e pede confirmação.",
+        "category": "alert",
+        "skill": """
+## Alerta de Biomassa — Planejamento
+
+Use esta skill quando o usuário quiser ser avisado no WhatsApp quando a biomassa
+(matéria seca) do pasto atingir um certo nível.
+
+### Processo
+1. Identifique o operador lógico desejado a partir da fala do usuário:
+   - "maior que" / "acima de" / "no mínimo" → `gt` (ou `ge` se "no mínimo" for inclusivo)
+   - "menor que" / "abaixo de" / "no máximo" → `lt` (ou `le` se "no máximo" for inclusivo)
+   - "igual a" / "exatamente" → `eq`
+   - "diferente de" / "não for" → `neq`
+2. Identifique o valor de referência (threshold) em kg/ha.
+3. Chame `request_biomass_alert` com `operator`, `threshold` e `user_id`.
+4. A ferramenta retorna um plano em linguagem natural pedindo confirmação.
+5. NÃO cadastre o alerta ainda — aguarde o usuário confirmar.
+6. Quando o usuário disser "sim", "pode sim", "confirma", "isso mesmo",
+   chame `confirm_biomass_alert` com o `user_id`.
+7. Se o usuário disser "não", "cancela", "espera", NÃO chame a ferramenta
+   de confirmação — ajuste o plano ou desista.
+
+### Regras
+- Use APENAS uma chamada a `request_biomass_alert` por alerta planejado.
+- O `confirm_biomass_alert` deve ser chamado apenas após confirmação explícita.
 """.strip(),
     },
+    {
+        "name": "confirm_biomass_alert",
+        "description": "Confirma o cadastro do alerta de biomassa planejado. Chame APENAS quando o usuário concordar com o plano apresentado por request_biomass_alert (ex: 'sim', 'pode sim', 'confirma').",
+        "category": "alert",
+        "skill": """
+## Alerta de Biomassa — Confirmação
+
+Use esta skill quando o usuário já recebeu o plano de alerta de biomassa (via
+`request_biomass_alert`) e respondeu afirmativamente.
+
+### Processo
+1. Classifique a resposta do usuário:
+   - POSITIVA: "sim", "pode sim", "confirma", "isso mesmo", "pode criar",
+     "bom", "perfeito", "fez" → chame `confirm_biomass_alert` com `user_id`.
+   - NEGATIVA: "não", "cancela", "espera", "deixa pra lá", "ainda não",
+     "muda" → NÃO chame a confirmação. Ajuste o plano ou desista.
+2. Após `confirm_biomass_alert`, o alerta está cadastrado (mockado) e o
+   fluxo volta ao normal.
+
+### Regras
+- APENAS uma chamada a `confirm_biomass_alert` por alerta.
+- Se não houver alerta de biomassa pendente, a ferramenta avisa e não faz nada.
+""".strip(),
+    },
+    {
+        "name": "request_rain_alert",
+        "description": "Planeja um alerta via WhatsApp que dispara quando a chuva acumulada (mm) em uma janela de dias atinge uma condição definida por operador lógico (gt, lt, le, ge, eq, neq) e um valor de referência. Retorna o plano e pede confirmação.",
+        "category": "alert",
+        "skill": """
+## Alerta de Chuva — Planejamento
+
+Use esta skill quando o usuário quiser ser avisado no WhatsApp quando a chuva
+acumulada atingir um certo nível em uma janela de dias.
+
+### Processo
+1. Identifique o operador lógico a partir da fala do usuário (mesmo mapeamento
+   do alerta de biomassa: gt, lt, le, ge, eq, neq).
+2. Identifique o valor de referência (threshold) em mm e, se mencionada,
+   a janela de acumulação em dias (default: 7 dias).
+3. Chame `request_rain_alert` com `operator`, `threshold`, `window_days`
+   (opcional) e `user_id`.
+4. A ferramenta retorna o plano pedindo confirmação.
+5. Aguarde confirmação explícita do usuário antes de chamar `confirm_rain_alert`.
+
+### Regras
+- Use APENAS uma chamada a `request_rain_alert` por alerta planejado.
+""".strip(),
+    },
+    {
+        "name": "confirm_rain_alert",
+        "description": "Confirma o cadastro do alerta de chuva planejado. Chame APENAS quando o usuário concordar com o plano apresentado por request_rain_alert (ex: 'sim', 'pode sim', 'confirma').",
+        "category": "alert",
+        "skill": """
+## Alerta de Chuva — Confirmação
+
+Use esta skill quando o usuário já recebeu o plano de alerta de chuva (via
+`request_rain_alert`) e respondeu afirmativamente.
+
+### Processo
+1. Classifique a resposta do usuário (positiva vs negativa) — mesmo critério
+   do `confirm_biomass_alert`.
+2. Se positiva, chame `confirm_rain_alert` com `user_id`.
+3. Se negativa, NÃO chame a confirmação.
+
+### Regras
+- APENAS uma chamada a `confirm_rain_alert` por alerta.
+""".strip(),
+    },
+    {
+        "name": "request_vigor_alert",
+        "description": "Planeja um alerta via WhatsApp que dispara quando o vigor vegetativo (NDVI) da pastagem atinge uma condição definida por operador lógico (gt, lt, le, ge, eq, neq) e um valor de referência. Útil para detectar degradação do pasto. Retorna o plano e pede confirmação.",
+        "category": "alert",
+        "skill": """
+## Alerta de Vigor (NDVI) — Planejamento
+
+Use esta skill quando o usuário quiser ser avisado no WhatsApp quando o vigor
+vegetativo (NDVI) da pastagem atingir um certo nível — geralmente uma queda
+abaixo de um limite, indicando degradação ou seca.
+
+### Processo
+1. Identifique o operador lógico a partir da fala do usuário. Para "queda",
+   "caindo", "abaixando", "degradando", use `lt` (menor que). Outros
+   operadores (gt, le, ge, eq, neq) seguem o mesmo mapeamento das demais.
+2. Identifique o valor de referência do NDVI (0 a 1, ex: 0.4).
+3. Chame `request_vigor_alert` com `operator`, `threshold` e `user_id`.
+4. A ferramenta retorna o plano pedindo confirmação.
+5. Aguarde confirmação explícita do usuário antes de chamar `confirm_vigor_alert`.
+
+### Regras
+- Use APENAS uma chamada a `request_vigor_alert` por alerta planejado.
+""".strip(),
+    },
+    {
+        "name": "confirm_vigor_alert",
+        "description": "Confirma o cadastro do alerta de vigor (NDVI) planejado. Chame APENAS quando o usuário concordar com o plano apresentado por request_vigor_alert (ex: 'sim', 'pode sim', 'confirma').",
+        "category": "alert",
+        "skill": """
+## Alerta de Vigor (NDVI) — Confirmação
+
+Use esta skill quando o usuário já recebeu o plano de alerta de vigor (via
+`request_vigor_alert`) e respondeu afirmativamente.
+
+### Processo
+1. Classifique a resposta do usuário (positiva vs negativa) — mesmo critério
+   do `confirm_biomass_alert`.
+2. Se positiva, chame `confirm_vigor_alert` com `user_id`.
+3. Se negativa, NÃO chame a confirmação.
+
+### Regras
+- APENAS uma chamada a `confirm_vigor_alert` por alerta.
+""".strip(),
+    },
+    {
+        "name": "request_stocking_rate_alert",
+        "description": "Planeja um alerta via WhatsApp que dispara quando a lotação animal (UA/ha) ultrapassa ou atinge uma condição definida por operador lógico (gt, lt, le, ge, eq, neq) e um valor de referência. Útil para evitar superlotação além da capacidade de suporte. Retorna o plano e pede confirmação.",
+        "category": "alert",
+        "skill": """
+## Alerta de Lotação (UA/ha) — Planejamento
+
+Use esta skill quando o usuário quiser ser avisado no WhatsApp quando a lotação
+animal (UA/ha) ultrapassar a capacidade de suporte ou atingir um certo nível.
+
+### Processo
+1. Identifique o operador lógico a partir da fala do usuário. Para "ultrapassa",
+   "passa de", "acima de", "excede", use `gt` (ou `ge` se inclusivo). Outros
+   operadores (lt, le, eq, neq) seguem o mesmo mapeamento das demais.
+2. Identifique o valor de referência em UA/ha (ex: 2.5).
+3. Chame `request_stocking_rate_alert` com `operator`, `threshold` e `user_id`.
+4. A ferramenta retorna o plano pedindo confirmação.
+5. Aguarde confirmação explícita do usuário antes de chamar
+   `confirm_stocking_rate_alert`.
+
+### Regras
+- Use APENAS uma chamada a `request_stocking_rate_alert` por alerta planejado.
+""".strip(),
+    },
+    {
+        "name": "confirm_stocking_rate_alert",
+        "description": "Confirma o cadastro do alerta de lotação (UA/ha) planejado. Chame APENAS quando o usuário concordar com o plano apresentado por request_stocking_rate_alert (ex: 'sim', 'pode sim', 'confirma').",
+        "category": "alert",
+        "skill": """
+## Alerta de Lotação (UA/ha) — Confirmação
+
+Use esta skill quando o usuário já recebeu o plano de alerta de lotação (via
+`request_stocking_rate_alert`) e respondeu afirmativamente.
+
+### Processo
+1. Classifique a resposta do usuário (positiva vs negativa) — mesmo critério
+   do `confirm_biomass_alert`.
+2. Se positiva, chame `confirm_stocking_rate_alert` com `user_id`.
+3. Se negativa, NÃO chame a confirmação.
+
+### Regras
+- APENAS uma chamada a `confirm_stocking_rate_alert` por alerta.
+""".strip(),
+    },
+    # ═══ Scheduler management (benchmark — mocked) ═══════════════════════
+    # Mocked list/delete tools that operate on a fixed in-memory list of
+    # already-registered alert schedulers (MOCKED_SCHEDULERS in benchmark.py).
+    # `list_schedulers` carries the "update a scheduler" skill — the full
+    # list + delete + request permission + create + confirm flow.
+    {
+        "name": "list_schedulers",
+        "description": "Lista os agendamentos de alerta já cadastrados (nome e condição de cada um). Use quando o usuário quiser revisar, listar, atualizar ou modificar seus agendamentos de alerta.",
+        "category": "alert",
+        "skill": """
+## Agendamentos de Alerta — Listar e Atualizar
+
+Use esta skill quando o usuário quiser **listar, revisar, atualizar ou
+modificar** seus agendamentos de alerta existentes.
+
+### Listar
+1. Chame `list_schedulers` com o `user_id` da sessão.
+2. A ferramenta retorna a lista numerada de agendamentos ativos
+   (nome + condição de cada um).
+3. Apresente a lista ao usuário em linguagem natural, numerada.
+
+### Atualizar um agendamento
+Quando o usuário quiser **atualizar/modificar** um agendamento existente,
+siga exatamente esta sequência:
+
+1. Chame `list_schedulers` e mostre a lista numerada (se ainda não listou).
+2. Pergunte qual agendamento ele quer atualizar (por nome ou pelo número
+   da lista).
+3. Chame `delete_scheduler` para remover o agendamento antigo:
+   - Passe `name` (nome exato) OU `number` (número da lista, 1-indexado).
+   - Use APENAS um dos dois — nunca os dois juntos.
+4. Peça ao usuário a **nova condição** que deseja (tipo de alerta, operador,
+   valor de referência, janela de dias para chuva, propriedade).
+5. **Peça permissão explícita** antes de criar o novo agendamento.
+   Apresente o plano em linguagem natural e pergunte algo como:
+   "Posso criar esse novo alerta? Responda SIM para confirmar."
+   - NÃO chame nenhuma ferramenta de `request_*` antes da permissão.
+   - Se o usuário disser "não", "cancela", "espera", NÃO crie o novo
+     agendamento — o antigo já foi removido; ofereça recriar o antigo
+     ou ajustar o plano.
+6. Após permissão, chame a ferramenta `request_*` correspondente ao tipo
+   de alerta desejado com os novos parâmetros:
+   - biomassa        → `request_biomass_alert`    (operator, threshold, car_codes, user_id)
+   - chuva acumulada → `request_rain_alert`       (operator, threshold, window_days, car_codes, user_id)
+   - vigor (NDVI)    → `request_vigor_alert`     (operator, threshold, car_codes, user_id)
+   - lotação (UA/ha) → `request_stocking_rate_alert` (operator, threshold, car_codes, user_id)
+7. O `request_*` retorna o plano e pede confirmação. Aguarde o usuário
+   responder ("sim", "pode sim", "confirma", "isso mesmo").
+8. Quando o usuário confirmar explicitamente, chame a ferramenta
+   `confirm_*` correspondente ao **mesmo tipo** do `request_*` que você
+   acabou de chamar (ex: se chamou `request_biomass_alert`, chame
+   `confirm_biomass_alert`).
+9. Após o `confirm_*`, o novo agendamento está cadastrado (mockado) e o
+   fluxo volta ao normal.
+
+### Regras
+- Sempre chame `list_schedulers` antes de remover/atualizar, para mostrar
+  ao usuário o que existe.
+- Use APENAS uma chamada a `delete_scheduler` por atualização.
+- Nunca chame `request_*` sem permissão explícita do usuário.
+- O `confirm_*` deve corresponder ao tipo do `request_*` chamado.
+- Se o usuário quiser apenas listar (sem atualizar), não chame `delete_scheduler`.
+- Se o usuário cancelar a atualização após o `delete_scheduler`, ofereça
+  recriar o agendamento antigo — não deixe o usuário sem o alerta que tinha.
+""".strip(),
+    },
+    {
+        "name": "delete_scheduler",
+        "description": "Remove um agendamento de alerta já cadastrado. Forneça `name` (nome exato do agendamento) OU `number` (número do agendamento na lista retornada por list_schedulers, começando em 1). Use APENAS um dos dois.",
+        "category": "alert",
+    },
 ]
+
 
 # Tools always available regardless of RAG results.
 # - consult_update_notes: low-cost utility, always hand for "what's new" queries.
@@ -298,4 +565,15 @@ ACTION_MAP = {
     # feedback
     "request_feedback": ("feedback", "request_feedback"),
     "save_feedback": ("feedback", "save_feedback"),
+    # benchmark (mocked alert schedulers)
+    "request_biomass_alert": ("benchmark", "request_biomass_alert"),
+    "confirm_biomass_alert": ("benchmark", "confirm_biomass_alert"),
+    "request_rain_alert": ("benchmark", "request_rain_alert"),
+    "confirm_rain_alert": ("benchmark", "confirm_rain_alert"),
+    "request_vigor_alert": ("benchmark", "request_vigor_alert"),
+    "confirm_vigor_alert": ("benchmark", "confirm_vigor_alert"),
+    "request_stocking_rate_alert": ("benchmark", "request_stocking_rate_alert"),
+    "confirm_stocking_rate_alert": ("benchmark", "confirm_stocking_rate_alert"),
+    "list_schedulers": ("benchmark", "list_schedulers"),
+    "delete_scheduler": ("benchmark", "delete_scheduler"),
 }

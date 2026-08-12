@@ -5,8 +5,17 @@ agent routing, tool calls, metrics, and message history.
 Data comes from the pi subprocess via HTTP, stored as plain dicts.
 """
 
+import os
+from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List
 import streamlit as st
+
+
+def _resolve_prompt_dump_path(user_id: str) -> Path:
+    """Resolve the last_prompt.md path for a user, mirroring pi_rpc.py."""
+    sessions_dir = Path(os.getenv("PI_SESSIONS_DIR", "/tmp/pi-sessions"))
+    return sessions_dir / user_id / "last_prompt.md"
 
 
 def render_session_state_tab(session_state: Dict[str, Any]) -> None:
@@ -102,6 +111,29 @@ def render_messages_tab(messages: List[Dict[str, Any]]) -> None:
             else:
                 st.caption("(no content)")
 
+    # ── Full prompt dump viewer ────────────────────────────────────────
+    st.divider()
+    user_id = st.session_state.get("debug_user_id")
+    if not user_id:
+        st.caption("Send a message to enable the full prompt dump viewer.")
+        return
+    dump_path = _resolve_prompt_dump_path(user_id)
+    if not dump_path.exists():
+        st.caption(
+            "No prompt dump found. Set `PI_DUMP_PROMPT=1` on the FastAPI "
+            "container to capture `last_prompt.md` per run."
+        )
+        return
+    mtime = datetime.fromtimestamp(dump_path.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+    st.caption(f"Last dump: `{dump_path}`  ({mtime})")
+    if st.button("Show full prompt dump", key="show_full_prompt_dump"):
+        try:
+            content = dump_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            st.error(f"Failed to read prompt dump: {exc}")
+            return
+        st.code(content, language="markdown")
+
 
 def render_debug_panel() -> None:
     session_state = st.session_state.get("debug_session_state", {})
@@ -124,6 +156,7 @@ def render_debug_panel() -> None:
                 st.session_state.debug_tool_calls = []
                 st.session_state.debug_metrics = []
                 st.session_state.debug_messages = []
+                st.session_state.pop("debug_user_id", None)
                 st.rerun()
 
             st.divider()

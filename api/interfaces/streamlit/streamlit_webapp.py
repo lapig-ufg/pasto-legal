@@ -74,6 +74,7 @@ def logout():
     st.session_state.debug_metrics = []
     st.session_state.debug_messages = []
     st.session_state.chat_session_state = {}
+    st.session_state.pop("debug_user_id", None)
     st.rerun()
 
 
@@ -322,6 +323,7 @@ if user_query:
                 st.session_state.debug_metrics.append(debug_data.get("metrics_summary", {}))
                 st.session_state.debug_messages.extend(debug_data.get("message_history", []))
                 st.session_state.debug_session_state = debug_data.get("session_state", {})
+                st.session_state["debug_user_id"] = st.session_state.session_id
             except Exception:
                 import traceback
                 traceback.print_exc()

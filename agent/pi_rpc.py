@@ -117,6 +117,11 @@ class PiRpcClient:
         if "TOOL_BACKEND_URL" not in env:
             env["TOOL_BACKEND_URL"] = "http://localhost:3000"
 
+        # Prompt-dumper extension: tell it where to write last_prompt.{json,md}
+        # for this user. The extension is a no-op unless PI_DUMP_PROMPT is set.
+        env["PI_DUMP_DIR"] = str(session_file.parent)
+        env["PI_DUMP_USER_ID"] = self.user_id
+
         log.info(env)
 
         cmd = [
@@ -125,6 +130,7 @@ class PiRpcClient:
             "--provider", self.provider,
             "--model", self.model,
             "-e", str(Path(self.cwd) / "extensions" / "pasto-legal-tools.js"),
+            "-e", str(Path(self.cwd) / "extensions" / "prompt-dumper.js"),
         ]
 
         is_new = not session_file.exists()
