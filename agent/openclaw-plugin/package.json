@@ -1,0 +1,11 @@
+{
+  "name": "pasto-legal-tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "description": "Pasto Legal tool plugin for OpenClaw — every tool only forwards to the Python /tool endpoint, no domain logic lives here.",
+  "peerDependencies": {
+    "openclaw": "*"
+  }
+}

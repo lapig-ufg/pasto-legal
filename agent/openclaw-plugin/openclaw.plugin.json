@@ -1,0 +1,62 @@
+{
+  "id": "pasto-legal-tools",
+  "name": "Pasto Legal Tools",
+  "description": "Pasto Legal domain tools — each one only forwards to the Python /tool endpoint.",
+  "activation": {
+    "onStartup": true
+  },
+  "enabledByDefault": true,
+  "contracts": {
+    "tools": [
+      "register_property_by_car",
+      "register_property_by_coords",
+      "register_property_by_url",
+      "confirm_property_selection",
+      "select_property_from_list",
+      "complete_property_registration",
+      "cancel_property_registration",
+      "remove_property",
+      "remove_all_properties",
+      "set_property_name",
+      "get_pasture_stats",
+      "get_topographic_stats",
+      "generate_property_image",
+      "generate_biomass_image",
+      "generate_soil_texture_image",
+      "generate_pasture_classification_image",
+      "generate_speech",
+      "accept_terms_and_conditions",
+      "consult_update_notes",
+      "request_feedback",
+      "save_feedback"
+    ]
+  },
+  "toolMetadata": {
+    "register_property_by_car": { "optional": true },
+    "register_property_by_coords": { "optional": true },
+    "register_property_by_url": { "optional": true },
+    "confirm_property_selection": { "optional": true },
+    "select_property_from_list": { "optional": true },
+    "complete_property_registration": { "optional": true },
+    "cancel_property_registration": { "optional": true },
+    "remove_property": { "optional": true },
+    "remove_all_properties": { "optional": true },
+    "set_property_name": { "optional": true },
+    "get_pasture_stats": { "optional": true },
+    "get_topographic_stats": { "optional": true },
+    "generate_property_image": { "optional": true },
+    "generate_biomass_image": { "optional": true },
+    "generate_soil_texture_image": { "optional": true },
+    "generate_pasture_classification_image": { "optional": true },
+    "generate_speech": { "optional": true },
+    "accept_terms_and_conditions": { "optional": true },
+    "consult_update_notes": { "optional": true },
+    "request_feedback": { "optional": true },
+    "save_feedback": { "optional": true }
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

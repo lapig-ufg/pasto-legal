@@ -93,3 +93,10 @@ tmp/
 data/
 debug/
 dead_agno/
+
+# Runtime Docker volumes (openclaw profile, valkey data, logs) — generated at
+# runtime, contain npm symlinks that break the build context. Never build them.
+docker-vols/
+
+# Node modules (symlinks in .bin break the build context; installed in-image)
+**/node_modules/

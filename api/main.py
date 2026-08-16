@@ -1,9 +1,11 @@
 """
 Pasto Legal — FastAPI application entry point.
 
-Uses pi coding agent via JSON-RPC (--mode rpc) instead of AGNO.
-The WhatsApp webhook communicates with a pi subprocess over stdin/stdout.
-Python services (GEE, SICAR, TTS) remain unchanged.
+Uses the OpenClaw Gateway (POST /v1/responses) instead of AGNO. The WhatsApp
+webhook talks to one shared OpenClaw Gateway process over HTTP, with sessions
+multiplexed per WhatsApp user. Python services (GEE, SICAR, TTS) remain
+unchanged. See agent/docs/OPENCLAW_NOTES.md for the framework research behind
+this variant.
 
 Usage:
   uvicorn api.main:app --port 3000 --reload
@@ -24,31 +26,28 @@ from pydantic import BaseModel, Field
 from api.interfaces.whatsapp.router import attach_routes
 from api.configs.config import config
 from api.services.audio.stt import transcribe_audio
-from agent.pi_rpc import PiRpcPool
+from agent.openclaw_pool import OpenClawPool
 
 log = logging.getLogger("pasto-legal.main")
 
 CLI_DIR = Path(__file__).resolve().parent.parent / "agent" / "tools"
 
-# ── pi RPC pool (per-user processes, started at startup) ──────────────
-pi_pool: PiRpcPool = None
+# ── OpenClaw pool (ONE Gateway process, sessions multiplexed by user) ──────
+openclaw_pool: OpenClawPool = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global pi_pool
-    provider = os.getenv("PI_PROVIDER", "google")
-    model = os.getenv("PI_MODEL", "gemini-3.5-flash-lite")
-    pi_pool = PiRpcPool(
-        ttl=int(os.getenv("PI_SESSION_TTL", "1800")),
-        provider=provider,
+    global openclaw_pool
+    model = os.getenv("OPENCLAW_MODEL", "google/gemini-3.5-flash-lite")
+    openclaw_pool = OpenClawPool(
+        ttl=int(os.getenv("OPENCLAW_SESSION_TTL", "1800")),
         model=model,
-        cwd=str(Path(__file__).resolve().parent.parent / "agent"),
     )
-    await pi_pool.start()
-    log.info(f"[main] pi rpc pool started  provider={provider}  model={model}")
+    await openclaw_pool.start()
+    log.info(f"[main] openclaw gateway pool started  model={model}")
     yield
-    await pi_pool.stop()
+    await openclaw_pool.stop()
 
 
 app = FastAPI(
@@ -131,7 +130,11 @@ async def execute_tool(req: ToolRequest):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "pi_pool": pi_pool is not None, "clients": len(pi_pool._clients) if pi_pool else 0}
+    return {
+        "status": "ok",
+        "openclaw_pool": openclaw_pool is not None,
+        "clients": len(openclaw_pool._clients) if openclaw_pool else 0,
+    }
 
 
 class MediaItem(BaseModel):
@@ -188,7 +191,7 @@ def _prepare_media(req: ChatRequest) -> tuple[str, list[dict], bool]:
 async def chat(req: ChatRequest):
     """Chat endpoint for Streamlit debug UI."""
     import time as _time
-    from agent.pi_rpc import build_prompt, build_onboarding_prompt
+    from agent.openclaw_pool import build_prompt, build_onboarding_prompt
     from agent.tool_rag import search_tools
 
     _t0 = _time.time()
@@ -215,7 +218,7 @@ async def chat(req: ChatRequest):
 
     # First-time users → onboarding prompt (only accept_terms tool)
     if not session_state.get("terms_accepted"):
-        client = await pi_pool.get_client(req.user_id)
+        client = await openclaw_pool.get_client(req.user_id)
         full_prompt = build_onboarding_prompt(message, user_id=req.user_id, audio_input=audio_input)
         result = await client.prompt(full_prompt, images=images or None)
         # Persist any terms_accepted update from the tool
@@ -230,7 +233,7 @@ async def chat(req: ChatRequest):
     # Normal flow: Tool-RAG + full prompt
     relevant_tools = search_tools(message, top_k=5, recent_queries=req.recent_queries)
 
-    client = await pi_pool.get_client(req.user_id)
+    client = await openclaw_pool.get_client(req.user_id)
     full_prompt = build_prompt(
         message,
         user_id=req.user_id,
@@ -254,8 +257,8 @@ class ResetRequest(BaseModel):
 
 @app.post("/reset")
 async def reset(req: ResetRequest):
-    """Reset a user's session — kills the pi process and clears saved state."""
-    await pi_pool.delete_session(req.user_id)
+    """Reset a user's session — resets the OpenClaw session and clears saved state."""
+    await openclaw_pool.delete_session(req.user_id)
     return {"status": "reset"}
 
 

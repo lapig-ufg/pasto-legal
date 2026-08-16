@@ -18,13 +18,13 @@ _DEBUG_FORMATTER = logging.Formatter(
 # App-level loggers (replaces agno.utils.log)
 app_logger = logging.getLogger("pasto-legal")
 service_logger = logging.getLogger("pasto-legal.services")
-pi_rpc_logger = logging.getLogger("pasto-legal.pi_rpc")
+openclaw_pool_logger = logging.getLogger("pasto-legal.openclaw_pool")
 run_metrics_logger = logging.getLogger("pasto-legal.run_metrics")
 
 _APP_LOGGERS: tuple[logging.Logger, ...] = (
     app_logger,
     service_logger,
-    pi_rpc_logger,
+    openclaw_pool_logger,
     run_metrics_logger,
 )
 
