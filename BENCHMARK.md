@@ -11,9 +11,13 @@ tool registry grows:
    multi-agent system as runs get longer, the context window grows, and all
    tool logic is loaded at once?
 
-This document describes the benchmark **architecture and methodology** only.
-The individual mocked tools live in `agent/tools/benchmark.py` and are wired
-through `agent/extensions/pasto-legal-tools.js` and `agent/registry.py`.
+This document describes the benchmark **architecture, methodology, and
+patterns** — it is the manual read before every benchmark session. **What
+has been implemented so far** (tool lists, per-tool implementation
+decisions, deletion guide, current status) lives in the companion file
+**`BENCHMARK-LOG.md`**. The individual mocked tools live in
+`agent/tools/benchmark.py` and are wired through
+`agent/extensions/pasto-legal-tools.js` and `agent/registry.py`.
 
 ---
 
@@ -150,7 +154,7 @@ injection, and the LLM's tool-selection logic exactly as real tools would.
 The **current step** adds 8 mocked tools across three new categories:
 `pasture` (forage budget), `paddock` (paddock CRUD + per-paddock stats +
 rotation scheduling), and `herd` (vaccination calendar), bringing the
-registry from ~41 to ~49. These tools bridge pasture analysis, herd
+registry from ~41 to ~49. These tools bridge pasture analyses, herd
 management, and farm-level decision-making — they test whether the LLM
 can disambiguate between property-level stats (`get_pasture_stats`) and
 paddock-level stats (`get_paddock_pasture_stats`), and whether it can
@@ -160,6 +164,10 @@ chain multi-tool workflows (e.g. `auto_generate_paddocks` →
 and label/delete tools are skill-less. Filler batches for scales 5 and 6
 will be added in later steps; the benchmark harness is designed so they
 slot in without changing the test corpus or metric collection.
+
+> **Status:** Steps 1–4 are implemented (~49 tools). Steps 5–6 and the
+> materialized test corpus are pending. See `BENCHMARK-LOG.md` for the
+> exact tools landed and per-tool implementation decisions.
 
 ### Why per-type confirm pairs (8 tools, not 5)
 
@@ -312,7 +320,14 @@ This requires Valkey running (the tools persist `pending_alert` in
 
 ---
 
-## 7. Decisions log
+## 7. Decisions log (patterns)
+
+Pattern-level decisions that hold across every scale point and every
+mocked batch. Per-tool / per-batch implementation decisions (weather
+skill-less, shared rain-row shape, months cap, Cerrado vaccination
+calendar, paddock state mirror, no per-paddock images, forage-budget
+herd-size requirement, rotation auto-fallback, etc.) live in
+`BENCHMARK-LOG.md` §3 — not here.
 
 - **Per-type confirm pairs (8 tools, not 5).** Each alert type has its own
   `confirm_*` tool. More tools = harder retrieval = better growth signal,
@@ -327,169 +342,56 @@ This requires Valkey running (the tools persist `pending_alert` in
   "session_state": ...}`) without hitting any backend. This isolates the
   benchmark to agent behavior (retrieval, selection, confirm flow) and
   removes backend variance from cost/quality numbers.
-- **`registry.py` updates required.** The new tools are added to `TOOLS`
-  (so Tool-RAG indexes them and `build_prompt` can inject their skills) and
-  to `ACTION_MAP` (for `/tool` dispatch consistency). Without the `TOOLS`
-  entry the tools are invisible to Tool-RAG and would never be suggested to
-  the LLM — the benchmark could not run.
+- **`registry.py` updates required for every new tool.** New tools are
+  added to `TOOLS` (so Tool-RAG indexes them and `build_prompt` can inject
+  their skills) and to `ACTION_MAP` (for `/tool` dispatch consistency).
+  Without the `TOOLS` entry the tools are invisible to Tool-RAG and would
+  never be suggested to the LLM — the benchmark could not run.
 - **Alerts are NOT in `ALWAYS_AVAILABLE`.** They must go through RAG
   selection so we can measure retrieval quality. Only `generate_speech`,
   `consult_update_notes`, `request_feedback`, and `save_feedback` bypass RAG.
-- **`category: "alert"`** for all 8 tools, grouping them in the registry
-  without affecting RAG (categories are descriptive only; RAG uses the
-  `name: description` embedding).
-- **All logic operators available** for biomass (and reusable by any
-  threshold alert): `gt`, `lt`, `le`, `ge`, `eq`, `neq`. This forces the
-  LLM to map natural-language phrasing ("maior que", "no mínimo", "igual a")
-  to the right operator — a non-trivial selection task worth benchmarking.
-- **Vigor default operator `lt`, stocking-rate default `gt`.** Domain
-  convention (NDVI drops = degradation; UA/ha exceeds = overstocking), but
-  kept as explicit parameters so the LLM must still choose them.
-- **No documentation of individual tools here.** Per the task scope, this
-  file documents only the benchmark architecture and methodology. Tool
+- **`category` is descriptive only.** Grouping tools under a `category`
+  in `TOOLS` does not affect RAG (RAG uses the `name: description`
+  embedding). It serves as a registry-organization and deletion key only.
+  New mocked batches introduce new categories to keep descriptions diverse
+  and stress disambiguation.
+- **All logic operators available** for threshold alerts (`gt`, `lt`, `le`,
+  `ge`, `eq`, `neq`). This forces the LLM to map natural-language phrasing
+  ("maior que", "no mínimo", "igual a") to the right operator — a
+  non-trivial selection task worth benchmarking.
+- **Default operators follow domain convention, but stay explicit.** Vigor
+  defaults to `lt` (NDVI drops = degradation); stocking rate defaults to
+  `gt` (UA/ha exceeds = overstocking). Kept as explicit parameters so the
+  LLM must still choose them.
+- **No per-tool documentation in this manual.** This file documents only
+  the benchmark architecture, methodology, and patterns. Per-tool
   semantics live in `agent/tools/benchmark.py` (docstrings) and
-  `agent/registry.py` (skill blocks).
-- **Weather tools are skill-less read-only mocks (Step 3).** Unlike the
-  alert tools (which carry `skill` blocks for the two-step confirm flow),
-  the 9 weather tools have no skill — they are pure data-retrieval mocks.
-  This intentionally tests whether the LLM calls them correctly based only
-  on the `description` field, without step-by-step skill guidance. It also
-  keeps prompt injection lean (no extra skill text) and makes the
-  disambiguation task harder (the LLM must choose between similarly-named
-  tools from description alone).
-- **Shared 5-attribute rain-row shape.** `get_rain_forecast_15_days`,
-  `get_rain_forecast_months`, `get_rain_history`, and `get_weather_today`
-  all return rows with the same 5 attributes (date/month, precipitation_mm,
-  precipitation_max_mm, precipitation_min_mm, probability_pct). This forces
-  the LLM to distinguish them by tool name/description, not by output shape
-  — a harder retrieval task than if each had a distinct schema.
-- **`months` capped at 3 with validation.** `get_rain_forecast_months`
-  validates `1 <= months <= 3` and returns an error otherwise, exercising
-  parameter-validation logic (which the alert tools do not have).
-- **`get_rain_history` rejects future dates.** Validates that the requested
-  month/year is in the past, adding a temporal-correctness check that
-  stresses the LLM's ability to pass valid parameters.
-- **Deterministic mocked data.** Weather tools use a seed derived from the
-  date string so repeated calls within a process return stable values.
-  This makes benchmark results reproducible while still appearing
-  realistic (Cerrado wet season Oct–Mar, dry season May–Sep).
-- **`category: "weather"`** for all 9 tools, grouping them in the
-  registry without affecting RAG (categories are descriptive only; RAG
-  uses the `name: description` embedding). The category also serves as
-  the deletion key — see the deletion guide in §8.
-- **Three new categories for Step 4: `pasture`, `paddock`, `herd`.**
-  Each is semantically distinct from production categories and from each
-  other, aiding RAG disambiguation. `pasture` (forage budget) bridges
-  analysis + herd; `paddock` groups CRUD + per-paddock stats + rotation;
-  `herd` groups vaccination and future herd-health tools.
-- **Paddock state mirrors property state.** Paddocks are stored in
-  Valkey under `session:{user_id}` → `all_paddocks` (list of dicts with
-  `id`, `label`, `area_ha`, `car_code`), mirroring the property
-  `all_properties` pattern. CRUD tools (`auto_generate_paddocks`,
-  `set_paddock_label`, `delete_paddock`) read/write this key and return
-  `session_state` so the JS extension's `makeResult` plumbing works
-  unchanged.
-- **Per-paddock stats match real schema shapes.** `get_paddock_pasture_stats`
-  returns a `PastureStats.model_dump()`-shaped dict (4 optional nested
-  `*_stats` sections with `observation_year`, `amount: {value, unity}`,
-  or `data: [{..., amount}]`); `get_paddock_topographic_stats` returns
-  `{elevation: {value, unity}, slope: {value, unity}}`. Both also return
-  `stats_text` (formatted Portuguese string) — the only field the LLM
-  currently sees via `makeResult({message: result.stats_text})`.
-- **No per-paddock image tools.** Per the decision to skip mocked image
-  generation for paddocks, only the two stats tools were implemented
-  (no `get_paddock_biomass_image`, etc.). This keeps the paddock tool
-  count lean and avoids the complexity of generating mock base64 PNGs.
-- **`set_paddock_label` merges set + update.** Instead of separate
-  `set_paddock_label` and `update_paddock_label` tools (which would be
-  semantically identical), a single tool handles both creating and
-  renaming labels — identified by `paddock_id` only.
-- **`get_forage_budget` requires `herd_size_ua`.** The tool returns an
-  error if herd size is not provided. The skill instructs the LLM to
-  ask the user for herd size before calling the tool — a parameter-
-  gathering step that the alert tools do not exercise.
-- **`get_rotation_schedule` auto-falls-back.** If no paddocks exist in
-  session state, the tool mocks 4 default paddocks instead of erroring.
-  This lets the benchmark test the tool in isolation (without a prior
-  `auto_generate_paddocks` call), but the skill still recommends
-  generating paddocks first for a realistic flow.
-- **`get_vaccination_calendar` is Cerrado/Centro-Oeste focused.** The
-  mocked calendar reflects LAPIG/UFG's regional focus (Goiás): Aftosa
-  in May + November, Brucelose for females 3–8 months, annual Raiva/
-  Carbúnculo/Clostridioses/Botulismo. The skill instructs the LLM to
-  always caveat that it's a reference calendar and to consult a vet.
+  `agent/registry.py` (skill blocks); the running list of what's
+  implemented lives in `BENCHMARK-LOG.md`.
 
 ---
 
 ## 8. Tool taxonomy (categories in the registry)
 
-| Category | Tools | Origin |
-|----------|-------|--------|
-| `property` | register/remove/rename property | Production |
-| `analysis` | pasture/topographic stats, image generation, UA calculator | Production |
-| `utility` | `generate_speech`, `consult_update_notes` | Production |
-| `onboarding` | `accept_terms_and_conditions` | Production |
-| `feedback` | `request_feedback`, `save_feedback` | Production |
-| `alert` | `request_*_alert`, `confirm_*_alert` (biomass, rain, vigor, stocking rate), `list_schedulers`, `delete_scheduler` | **Benchmark (mocked)** |
-| `weather` | `get_rain_forecast_15_days`, `get_rain_forecast_months`, `get_rain_history`, `get_weather_today`, `get_temperature_forecast_15_days`, `get_drought_index`, `get_evapotranspiration`, `get_soil_moisture`, `get_climate_summary` | **Benchmark (mocked)** |
-| `pasture` | `get_forage_budget` | **Benchmark (mocked)** |
-| `paddock` | `auto_generate_paddocks`, `set_paddock_label`, `delete_paddock`, `get_paddock_pasture_stats`, `get_paddock_topographic_stats`, `get_rotation_schedule` | **Benchmark (mocked)** |
-| `herd` | `get_vaccination_calendar` | **Benchmark (mocked)** |
+The canonical category framework. For the **concrete tools currently in
+each category** (with counts and names) and the **per-category deletion
+guide**, see `BENCHMARK-LOG.md` §2 and §5.
 
-Future filler batches (scales 4–5) will introduce additional mocked
+| Category | Origin | Purpose |
+|----------|--------|---------|
+| `property` | Production | register/remove/rename property |
+| `analysis` | Production | pasture/topographic stats, image generation, UA calculator |
+| `utility` | Production | `generate_speech`, `consult_update_notes` |
+| `onboarding` | Production | `accept_terms_and_conditions` |
+| `feedback` | Production | `request_feedback`, `save_feedback` |
+| `alert` | Benchmark (mocked) | `request_*_alert`, `confirm_*_alert`, scheduler management — two-step confirm flow |
+| `weather` | Benchmark (mocked) | read-only meteorological/climatic data mocks |
+| `pasture` | Benchmark (mocked) | forage budget (bridges analysis + herd) |
+| `paddock` | Benchmark (mocked) | paddock CRUD + per-paddock stats + rotation scheduling |
+| `herd` | Benchmark (mocked) | vaccination calendar and future herd-health tools |
+
+Future filler batches (scales 5–6) will introduce additional mocked
 categories to keep descriptions diverse and stress Tool-RAG's ability to
-disambiguate.
-
-### Deletion guide — removing all benchmark mocked tools
-
-All benchmark mocked tools are organized so they can be deleted in one
-sweep per category when testing is finished. Each category is tagged with
-a comment marker (`# weather-benchmark`, `# alert (benchmark — mocked)`,
-`# pasture-benchmark`, `# paddock-benchmark`, `# herd-benchmark`) in the
-source files.
-
-**Weather tools (`category: "weather"`) — 9 tools, read-only:**
-1. `agent/registry.py` — remove the 9 entries in `TOOLS` under the
-   `# ═══ Weather (benchmark — mocked) ═══` section, and the 9 entries in
-   `ACTION_MAP` under the `# benchmark (mocked weather data tools)` comment.
-2. `agent/extensions/pasto-legal-tools.js` — remove the entire
-   `// ── Weather (benchmark — mocked) ────────────────────────` block
-   (9 `pi.registerTool` calls).
-3. `agent/tools/benchmark.py` — remove the entire `# ── Weather tools
-   (benchmark — mocked) ──` section (the `_rain_for_day`,
-   `_rain_table_message` helpers and all 9 `get_*` functions) and their
-   entries in the `ACTIONS` dict under `# weather-benchmark`.
-
-**Alert tools (`category: "alert"`) — 10 tools, two-step confirm flow:**
-1. `agent/registry.py` — remove the `# ═══ Alert Schedulers (benchmark
-   — mocked) ═══` and `# ═══ Scheduler management (benchmark — mocked)
-   ═══` sections in `TOOLS`, and the corresponding entries in
-   `ACTION_MAP` under `# benchmark (mocked alert schedulers)`.
-2. `agent/extensions/pasto-legal-tools.js` — remove the
-   `// ── Alert Schedulers (benchmark — mocked) ──` and
-   `// ── List / delete schedulers (benchmark — mocked) ──` blocks.
-3. `agent/tools/benchmark.py` — remove the alert classes (`BiomassAlert`,
-   `RainAlert`, `VigorAlert`, `StockingRateAlert`), `list_schedulers`,
-   `delete_scheduler`, `MOCKED_SCHEDULERS`, the operator helpers, and
-   their entries in `ACTIONS`.
-
-**Forage / paddock / herd tools (`pasture`, `paddock`, `herd`) — 8 tools:**
-1. `agent/registry.py` — remove the 8 entries in `TOOLS` under the
-   `# ═══ Forage budget`, `# ═══ Paddock management`, and
-   `# ═══ Vaccination calendar` sections, and the 8 entries in
-   `ACTION_MAP` under `# benchmark (mocked forage budget / paddock /
-   vaccination)`.
-2. `agent/extensions/pasto-legal-tools.js` — remove the
-   `// ── Forage budget, paddock & herd tools (benchmark — mocked) ──`
-   block (8 `pi.registerTool` calls).
-3. `agent/tools/benchmark.py` — remove the entire `# ── Paddock & herd
-   tools (benchmark — mocked) ──` section (the `_mock_pasture_stats_dict`,
-   `_mock_topographic_stats_dict`, `_PASTURE_STATS_TEMPLATE`,
-   `_find_paddock` helpers and all 8 functions) and their entries in
-   `ACTIONS` under `# pasture-benchmark / paddock-benchmark / herd-benchmark`.
-
-If all benchmark categories are removed, the entire `benchmark.py` file
-can be deleted along with all its `ACTION_MAP` entries.
-
-No production code (`property.py`, `gee.py`, `feedback.py`, `tts.py`,
-`onboarding.py`, `version.py`) is touched by any deletion.
+disambiguate. Each new category must follow the mocked-tool contract
+(§3) and be deletable as a single sweep per category (see
+`BENCHMARK-LOG.md` §5 for the established pattern).
