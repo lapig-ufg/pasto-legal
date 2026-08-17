@@ -572,4 +572,300 @@ export default function (pi) {
       return makeResult(result);
     },
   });
+
+  // ── Weather (benchmark — mocked) ────────────────────────────────────────
+  //
+  // weather-benchmark: read-only mocked weather/rain data tools. All return
+  // canned JSON tables (max 5 attributes per row) without hitting any
+  // backend. Grouped under category "weather" in registry.py so they can be
+  // removed in one sweep (see BENCHMARK.md §8). No confirm flow — these are
+  // pure data-retrieval mocks that stress Tool-RAG disambiguation between
+  // similarly-named weather concepts.
+
+  pi.registerTool({
+    name: "get_rain_forecast_15_days",
+    label: "Rain Forecast 15 Days",
+    description: "Retorna a previsão de chuva para os próximos 15 dias em forma de tabela (data, precipitação mm, máximo, mínimo, probabilidade %). Use quando o usuário quiser saber a previsão de chuva das próximas duas semanas.",
+    parameters: Type.Object({
+      car_codes: Type.Optional(Type.Array(Type.String(), { description: "Lista de códigos CAR da propriedade (opcional)" })),
+      user_id: Type.String({ description: "User ID from session context" }),
+    }),
+    async execute(_toolCallId, params) {
+      const result = await callTool("benchmark", { action: "get_rain_forecast_15_days", car_codes: params.car_codes || [], user_id: params.user_id });
+      if (result.error) return errorResult(result);
+      return makeResult(result);
+    },
+  });
+
+  pi.registerTool({
+    name: "get_rain_forecast_months",
+    label: "Rain Forecast Months",
+    description: "Retorna a previsão de chuva mensal para 1 a 3 meses à frente em forma de tabela (mês, precipitação mm, máximo, mínimo, probabilidade %). Use quando o usuário quiser saber a previsão de chuva para os próximos meses (máximo 3).",
+    parameters: Type.Object({
+      months: Type.Integer({ description: "Número de meses à frente (1 a 3)" }),
+      car_codes: Type.Optional(Type.Array(Type.String(), { description: "Lista de códigos CAR da propriedade (opcional)" })),
+      user_id: Type.String({ description: "User ID from session context" }),
+    }),
+    async execute(_toolCallId, params) {
+      const result = await callTool("benchmark", { action: "get_rain_forecast_months", months: params.months, car_codes: params.car_codes || [], user_id: params.user_id });
+      if (result.error) return errorResult(result);
+      return makeResult(result);
+    },
+  });
+
+  pi.registerTool({
+    name: "get_rain_history",
+    label: "Rain History",
+    description: "Retorna o histórico de chuva diário de um mês passado específico em forma de tabela (data, precipitação mm, máximo, mínimo, probabilidade %). Use quando o usuário quiser saber quanto choveu em um mês anterior.",
+    parameters: Type.Object({
+      month: Type.Integer({ description: "Mês (1 a 12)" }),
+      year: Type.Integer({ description: "Ano (deve ser no passado)" }),
+      car_codes: Type.Optional(Type.Array(Type.String(), { description: "Lista de códigos CAR da propriedade (opcional)" })),
+      user_id: Type.String({ description: "User ID from session context" }),
+    }),
+    async execute(_toolCallId, params) {
+      const result = await callTool("benchmark", { action: "get_rain_history", month: params.month, year: params.year, car_codes: params.car_codes || [], user_id: params.user_id });
+      if (result.error) return errorResult(result);
+      return makeResult(result);
+    },
+  });
+
+  pi.registerTool({
+    name: "get_weather_today",
+    label: "Weather Today",
+    description: "Retorna as condições climáticas atuais (hoje): precipitação, temperatura, umidade e condição (ensolarado, nublado, chuva leve/forte). Use quando o usuário quiser saber como está o tempo agora.",
+    parameters: Type.Object({
+      car_codes: Type.Optional(Type.Array(Type.String(), { description: "Lista de códigos CAR da propriedade (opcional)" })),
+      user_id: Type.String({ description: "User ID from session context" }),
+    }),
+    async execute(_toolCallId, params) {
+      const result = await callTool("benchmark", { action: "get_weather_today", car_codes: params.car_codes || [], user_id: params.user_id });
+      if (result.error) return errorResult(result);
+      return makeResult(result);
+    },
+  });
+
+  pi.registerTool({
+    name: "get_temperature_forecast_15_days",
+    label: "Temperature Forecast 15 Days",
+    description: "Retorna a previsão de temperatura para os próximos 15 dias em forma de tabela (data, máxima, mínima, média °C, condição). Use quando o usuário quiser saber a previsão de temperatura das próximas duas semanas, não de chuva.",
+    parameters: Type.Object({
+      car_codes: Type.Optional(Type.Array(Type.String(), { description: "Lista de códigos CAR da propriedade (opcional)" })),
+      user_id: Type.String({ description: "User ID from session context" }),
+    }),
+    async execute(_toolCallId, params) {
+      const result = await callTool("benchmark", { action: "get_temperature_forecast_15_days", car_codes: params.car_codes || [], user_id: params.user_id });
+      if (result.error) return errorResult(result);
+      return makeResult(result);
+    },
+  });
+
+  pi.registerTool({
+    name: "get_drought_index",
+    label: "Drought Index",
+    description: "Retorna o índice de seca (SPEI-like) para um mês/ano específico: índice (-3 a +3), categoria (severo/seco/normal/úmido), tendência e região. Use quando o usuário quiser saber o nível de seca de um período, não a chuva direta.",
+    parameters: Type.Object({
+      month: Type.Integer({ description: "Mês (1 a 12)" }),
+      year: Type.Integer({ description: "Ano" }),
+      user_id: Type.String({ description: "User ID from session context" }),
+    }),
+    async execute(_toolCallId, params) {
+      const result = await callTool("benchmark", { action: "get_drought_index", month: params.month, year: params.year, user_id: params.user_id });
+      if (result.error) return errorResult(result);
+      return makeResult(result);
+    },
+  });
+
+  pi.registerTool({
+    name: "get_evapotranspiration",
+    label: "Evapotranspiration",
+    description: "Retorna a evapotranspiração de referência (ET₀ em mm/dia) para um mês/ano: ET₀ diária, ET₀ total, temperatura média e umidade. Use quando o usuário quiser saber a evapotranspiração ou demanda hídrica do pasto.",
+    parameters: Type.Object({
+      month: Type.Integer({ description: "Mês (1 a 12)" }),
+      year: Type.Integer({ description: "Ano" }),
+      user_id: Type.String({ description: "User ID from session context" }),
+    }),
+    async execute(_toolCallId, params) {
+      const result = await callTool("benchmark", { action: "get_evapotranspiration", month: params.month, year: params.year, user_id: params.user_id });
+      if (result.error) return errorResult(result);
+      return makeResult(result);
+    },
+  });
+
+  pi.registerTool({
+    name: "get_soil_moisture",
+    label: "Soil Moisture",
+    description: "Retorna a umidade do solo atual (%) da propriedade: umidade, máxima, mínima e profundidade. Use quando o usuário quiser saber a umidade da terra/solo agora, não a chuva ou temperatura.",
+    parameters: Type.Object({
+      car_codes: Type.Optional(Type.Array(Type.String(), { description: "Lista de códigos CAR da propriedade (opcional)" })),
+      user_id: Type.String({ description: "User ID from session context" }),
+    }),
+    async execute(_toolCallId, params) {
+      const result = await callTool("benchmark", { action: "get_soil_moisture", car_codes: params.car_codes || [], user_id: params.user_id });
+      if (result.error) return errorResult(result);
+      return makeResult(result);
+    },
+  });
+
+  pi.registerTool({
+    name: "get_climate_summary",
+    label: "Climate Summary",
+    description: "Retorna o resumo climático anual de uma região: chuva total, temperatura média, meses secos e chuvosos. Use quando o usuário quiser um panorama climático do ano, não dados diários ou mensais.",
+    parameters: Type.Object({
+      year: Type.Integer({ description: "Ano" }),
+      user_id: Type.String({ description: "User ID from session context" }),
+    }),
+    async execute(_toolCallId, params) {
+      const result = await callTool("benchmark", { action: "get_climate_summary", year: params.year, user_id: params.user_id });
+      if (result.error) return errorResult(result);
+      return makeResult(result);
+    },
+  });
+
+  // ── Forage budget, paddock & herd tools (benchmark — mocked) ───────────
+  //
+  // pasture-benchmark / paddock-benchmark / herd-benchmark: mocked tools
+  // for forage budget estimation, paddock management (CRUD), per-paddock
+  // pasture/topographic stats, rotation scheduling, and vaccination
+  // calendar. All return canned JSON without hitting any backend. Grouped
+  // under categories "pasture", "paddock", and "herd" in registry.py so
+  // they can be removed in one sweep per category (see BENCHMARK.md §8).
+  // Paddock state is persisted in Valkey session_state (all_paddocks key),
+  // mirroring the property registration pattern.
+
+  pi.registerTool({
+    name: "get_forage_budget",
+    label: "Forage Budget",
+    description: "Estima quantos dias de pasto restam para o rebanho, combinando biomassa disponível com tamanho do rebanho (UA). Retorna biomassa total, consumo diário, dias restantes e recomendação de manejo.",
+    parameters: Type.Object({
+      herd_size_ua: Type.Number({ description: "Tamanho do rebanho em Unidades Animais (UA)" }),
+      car_codes: Type.Optional(Type.Array(Type.String(), { description: "Lista de códigos CAR da propriedade (opcional)" })),
+      user_id: Type.String({ description: "User ID from session context" }),
+    }),
+    async execute(_toolCallId, params) {
+      const result = await callTool("benchmark", { action: "get_forage_budget", herd_size_ua: params.herd_size_ua, car_codes: params.car_codes || [], user_id: params.user_id });
+      if (result.error) return errorResult(result);
+      return makeResult(result);
+    },
+  });
+
+  pi.registerTool({
+    name: "auto_generate_paddocks",
+    label: "Auto Generate Paddocks",
+    description: "Divide automaticamente uma propriedade em N piquetes (2 a 10) com áreas variadas e labels padrão. Os piquetes ficam disponíveis para análise individual e rotação.",
+    parameters: Type.Object({
+      car_codes: Type.Array(Type.String(), { description: "Lista de códigos CAR da propriedade" }),
+      count: Type.Optional(Type.Integer({ description: "Número de piquetes (2 a 10, padrão 4)" })),
+      user_id: Type.String({ description: "User ID from session context" }),
+    }),
+    async execute(_toolCallId, params) {
+      const payload = { action: "auto_generate_paddocks", car_codes: params.car_codes, user_id: params.user_id };
+      if (params.count !== undefined && params.count !== null) payload.count = params.count;
+      const result = await callTool("benchmark", payload);
+      if (result.error) return errorResult(result);
+      return {
+        content: [{ type: "text", text: result.message }],
+        details: { imagePaths: result.images || [], sessionState: result.session_state },
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "set_paddock_label",
+    label: "Set Paddock Label",
+    description: "Define ou atualiza o nome (label) de um piquete pelo seu ID (ex: pdk-001).",
+    parameters: Type.Object({
+      paddock_id: Type.String({ description: "ID do piquete (ex: pdk-001)" }),
+      label: Type.String({ description: "Novo nome do piquete" }),
+      user_id: Type.String({ description: "User ID from session context" }),
+    }),
+    async execute(_toolCallId, params) {
+      const result = await callTool("benchmark", { action: "set_paddock_label", paddock_id: params.paddock_id, label: params.label, user_id: params.user_id });
+      if (result.error) return errorResult(result);
+      return makeResult(result);
+    },
+  });
+
+  pi.registerTool({
+    name: "delete_paddock",
+    label: "Delete Paddock",
+    description: "Remove um piquete pelo seu ID (ex: pdk-001).",
+    parameters: Type.Object({
+      paddock_id: Type.String({ description: "ID do piquete (ex: pdk-001)" }),
+      user_id: Type.String({ description: "User ID from session context" }),
+    }),
+    async execute(_toolCallId, params) {
+      const result = await callTool("benchmark", { action: "delete_paddock", paddock_id: params.paddock_id, user_id: params.user_id });
+      if (result.error) return errorResult(result);
+      return makeResult(result);
+    },
+  });
+
+  pi.registerTool({
+    name: "get_paddock_pasture_stats",
+    label: "Paddock Pasture Stats",
+    description: "Retorna estatísticas de pastagem (biomassa, vigor, idade, uso do solo) de um piquete específico pelo seu ID, no mesmo formato de get_pasture_stats.",
+    parameters: Type.Object({
+      paddock_id: Type.String({ description: "ID do piquete (ex: pdk-001)" }),
+      user_id: Type.String({ description: "User ID from session context" }),
+    }),
+    async execute(_toolCallId, params) {
+      const result = await callTool("benchmark", { action: "get_paddock_pasture_stats", paddock_id: params.paddock_id, user_id: params.user_id });
+      if (result.error) return errorResult(result);
+      return makeResult({ message: result.stats_text || JSON.stringify(result.stats) });
+    },
+  });
+
+  pi.registerTool({
+    name: "get_paddock_topographic_stats",
+    label: "Paddock Topographic Stats",
+    description: "Retorna estatísticas de topografia (altimetria e declividade) de um piquete específico pelo seu ID.",
+    parameters: Type.Object({
+      paddock_id: Type.String({ description: "ID do piquete (ex: pdk-001)" }),
+      user_id: Type.String({ description: "User ID from session context" }),
+    }),
+    async execute(_toolCallId, params) {
+      const result = await callTool("benchmark", { action: "get_paddock_topographic_stats", paddock_id: params.paddock_id, user_id: params.user_id });
+      if (result.error) return errorResult(result);
+      return makeResult({ message: result.stats_text || JSON.stringify(result.stats) });
+    },
+  });
+
+  pi.registerTool({
+    name: "get_rotation_schedule",
+    label: "Rotation Schedule",
+    description: "Gera um plano de rotação de pastagem baseado nos piquetes cadastrados: ordena por biomassa e dias de repouso, sugere ordem de pastejo e dias de ocupação por piquete.",
+    parameters: Type.Object({
+      rest_days: Type.Optional(Type.Integer({ description: "Período de repouso desejado em dias (padrão 30)" })),
+      herd_size_ua: Type.Optional(Type.Number({ description: "Tamanho do rebanho em UA (padrão 50)" })),
+      user_id: Type.String({ description: "User ID from session context" }),
+    }),
+    async execute(_toolCallId, params) {
+      const payload = { action: "get_rotation_schedule", user_id: params.user_id };
+      if (params.rest_days !== undefined && params.rest_days !== null) payload.rest_days = params.rest_days;
+      if (params.herd_size_ua !== undefined && params.herd_size_ua !== null) payload.herd_size_ua = params.herd_size_ua;
+      const result = await callTool("benchmark", payload);
+      if (result.error) return errorResult(result);
+      return makeResult(result);
+    },
+  });
+
+  pi.registerTool({
+    name: "get_vaccination_calendar",
+    label: "Vaccination Calendar",
+    description: "Retorna o calendário anual de vacinação do rebanho (aftosa, brucelose, carbúnculo, raiva, clostridioses, botulismo) adaptado à região Centro-Oeste.",
+    parameters: Type.Object({
+      car_codes: Type.Optional(Type.Array(Type.String(), { description: "Lista de códigos CAR da propriedade (opcional, usado para derivar região)" })),
+      year: Type.Optional(Type.Integer({ description: "Ano (padrão: atual)" })),
+      user_id: Type.String({ description: "User ID from session context" }),
+    }),
+    async execute(_toolCallId, params) {
+      const payload = { action: "get_vaccination_calendar", user_id: params.user_id };
+      if (params.car_codes) payload.car_codes = params.car_codes;
+      if (params.year !== undefined && params.year !== null) payload.year = params.year;
+      const result = await callTool("benchmark", payload);
+      if (result.error) return errorResult(result);
+      return makeResult(result);
+    },
+  });
 }

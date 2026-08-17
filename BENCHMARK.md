@@ -141,15 +141,25 @@ injection, and the LLM's tool-selection logic exactly as real tools would.
 | Scale | Total tools | Added vs. baseline | Step |
 |-------|-------------|--------------------|------|
 | 1     | ~20         | 0                  | Baseline (current `refac/pi-sdk-develop`) |
-| 2     | ~28         | +8                 | Alert tools (`agent/tools/benchmark.py`) — **this step** |
-| 3     | ~60         | +~32               | Future filler batches (varied categories/descriptions) |
-| 4     | ~120        | +~60               | Future filler batches |
+| 2     | ~28         | +8                 | Alert tools (`agent/tools/benchmark.py`) |
+| 3     | ~41         | +9                 | Weather tools (`agent/tools/benchmark.py`) |
+| 4     | ~49         | +8                 | Forage budget, paddock management, vaccination (`agent/tools/benchmark.py`) — **this step** |
+| 5     | ~60         | +~11               | Future filler batches (varied categories/descriptions) |
+| 6     | ~120        | +~60               | Future filler batches |
 
-The **current step** adds the 8 alert tools (4 alert types × {request,
-confirm}) bringing the registry from ~20 to ~28. This is the first scale
-point above baseline. Filler batches for scales 3 and 4 will be added in
-later steps; the benchmark harness is designed so they slot in without
-changing the test corpus or metric collection.
+The **current step** adds 8 mocked tools across three new categories:
+`pasture` (forage budget), `paddock` (paddock CRUD + per-paddock stats +
+rotation scheduling), and `herd` (vaccination calendar), bringing the
+registry from ~41 to ~49. These tools bridge pasture analysis, herd
+management, and farm-level decision-making — they test whether the LLM
+can disambiguate between property-level stats (`get_pasture_stats`) and
+paddock-level stats (`get_paddock_pasture_stats`), and whether it can
+chain multi-tool workflows (e.g. `auto_generate_paddocks` →
+`get_rotation_schedule`). Four of the eight tools carry `skill` blocks
+(forage budget, auto-generate, rotation, vaccination); the paddock stats
+and label/delete tools are skill-less. Filler batches for scales 5 and 6
+will be added in later steps; the benchmark harness is designed so they
+slot in without changing the test corpus or metric collection.
 
 ### Why per-type confirm pairs (8 tools, not 5)
 
@@ -229,6 +239,19 @@ step; it will be added alongside the filler batches. The shape is:
 - **Negative — no alert**: "Qual a biomassa da minha fazenda?" → gold: `get_pasture_stats`, **no alert tool**.
 - **Adversarial — similar wording**: "Me avisa quando a biomassa estiver boa" (vague threshold) → gold: `request_biomass_alert` with clarification, or refusal.
 - **Adversarial — confirm mismatch**: user says "sim" after a biomass alert plan, but the corpus injects a pending rain alert → gold: `confirm_biomass_alert` (must match pending, not the latest request).
+- **Positive — rain forecast 15 days**: "Qual a previsão de chuva para os próximos 15 dias?" → gold: `get_rain_forecast_15_days`.
+- **Positive — rain forecast months**: "Como vai ser a chuva nos próximos 2 meses?" → gold: `get_rain_forecast_months` (months=2).
+- **Positive — rain history**: "Quanto choveu em março de 2024?" → gold: `get_rain_history` (month=3, year=2024).
+- **Positive — weather today**: "Como está o tempo agora?" → gold: `get_weather_today`.
+- **Adversarial — rain vs temperature**: "Qual a previsão do tempo para os próximos 15 dias?" (ambiguous: rain or temperature) → gold: `get_rain_forecast_15_days` or `get_temperature_forecast_15_days` with clarification.
+- **Adversarial — drought vs rain**: "Me fala sobre a seca de outubro de 2024" → gold: `get_drought_index` (not `get_rain_history`).
+- **Adversarial — soil moisture vs rain**: "Como está a umidade da terra?" → gold: `get_soil_moisture` (not `get_weather_today` or rain tools).
+- **Positive — forage budget**: "Tenho 80 UA. Quantos dias de pasto ainda tenho?" → gold: `get_forage_budget` (herd_size_ua=80).
+- **Adversarial — forage budget needs herd size**: "Quanto pasto me resta?" (no herd size given) → gold: LLM asks for herd size, then calls `get_forage_budget`.
+- **Positive — auto-generate paddocks**: "Divide minha fazenda em 5 piquetes" → gold: `auto_generate_paddocks` (count=5).
+- **Positive — rotation schedule**: "Qual piquete devo soltar o gado primeiro?" → gold: `get_rotation_schedule` (possibly preceded by `auto_generate_paddocks` if no paddocks exist).
+- **Adversarial — paddock vs property stats**: "Qual a biomassa do Pasto 1?" → gold: `get_paddock_pasture_stats` (not `get_pasture_stats`).
+- **Positive — vaccination calendar**: "Quando tenho que vacinar o gado?" → gold: `get_vaccination_calendar`.
 
 Each prompt is run with a fresh session and also as a continuation (to test
 session-length effects). The "sim" confirmation is always a separate turn.
@@ -326,6 +349,75 @@ This requires Valkey running (the tools persist `pending_alert` in
   file documents only the benchmark architecture and methodology. Tool
   semantics live in `agent/tools/benchmark.py` (docstrings) and
   `agent/registry.py` (skill blocks).
+- **Weather tools are skill-less read-only mocks (Step 3).** Unlike the
+  alert tools (which carry `skill` blocks for the two-step confirm flow),
+  the 9 weather tools have no skill — they are pure data-retrieval mocks.
+  This intentionally tests whether the LLM calls them correctly based only
+  on the `description` field, without step-by-step skill guidance. It also
+  keeps prompt injection lean (no extra skill text) and makes the
+  disambiguation task harder (the LLM must choose between similarly-named
+  tools from description alone).
+- **Shared 5-attribute rain-row shape.** `get_rain_forecast_15_days`,
+  `get_rain_forecast_months`, `get_rain_history`, and `get_weather_today`
+  all return rows with the same 5 attributes (date/month, precipitation_mm,
+  precipitation_max_mm, precipitation_min_mm, probability_pct). This forces
+  the LLM to distinguish them by tool name/description, not by output shape
+  — a harder retrieval task than if each had a distinct schema.
+- **`months` capped at 3 with validation.** `get_rain_forecast_months`
+  validates `1 <= months <= 3` and returns an error otherwise, exercising
+  parameter-validation logic (which the alert tools do not have).
+- **`get_rain_history` rejects future dates.** Validates that the requested
+  month/year is in the past, adding a temporal-correctness check that
+  stresses the LLM's ability to pass valid parameters.
+- **Deterministic mocked data.** Weather tools use a seed derived from the
+  date string so repeated calls within a process return stable values.
+  This makes benchmark results reproducible while still appearing
+  realistic (Cerrado wet season Oct–Mar, dry season May–Sep).
+- **`category: "weather"`** for all 9 tools, grouping them in the
+  registry without affecting RAG (categories are descriptive only; RAG
+  uses the `name: description` embedding). The category also serves as
+  the deletion key — see the deletion guide in §8.
+- **Three new categories for Step 4: `pasture`, `paddock`, `herd`.**
+  Each is semantically distinct from production categories and from each
+  other, aiding RAG disambiguation. `pasture` (forage budget) bridges
+  analysis + herd; `paddock` groups CRUD + per-paddock stats + rotation;
+  `herd` groups vaccination and future herd-health tools.
+- **Paddock state mirrors property state.** Paddocks are stored in
+  Valkey under `session:{user_id}` → `all_paddocks` (list of dicts with
+  `id`, `label`, `area_ha`, `car_code`), mirroring the property
+  `all_properties` pattern. CRUD tools (`auto_generate_paddocks`,
+  `set_paddock_label`, `delete_paddock`) read/write this key and return
+  `session_state` so the JS extension's `makeResult` plumbing works
+  unchanged.
+- **Per-paddock stats match real schema shapes.** `get_paddock_pasture_stats`
+  returns a `PastureStats.model_dump()`-shaped dict (4 optional nested
+  `*_stats` sections with `observation_year`, `amount: {value, unity}`,
+  or `data: [{..., amount}]`); `get_paddock_topographic_stats` returns
+  `{elevation: {value, unity}, slope: {value, unity}}`. Both also return
+  `stats_text` (formatted Portuguese string) — the only field the LLM
+  currently sees via `makeResult({message: result.stats_text})`.
+- **No per-paddock image tools.** Per the decision to skip mocked image
+  generation for paddocks, only the two stats tools were implemented
+  (no `get_paddock_biomass_image`, etc.). This keeps the paddock tool
+  count lean and avoids the complexity of generating mock base64 PNGs.
+- **`set_paddock_label` merges set + update.** Instead of separate
+  `set_paddock_label` and `update_paddock_label` tools (which would be
+  semantically identical), a single tool handles both creating and
+  renaming labels — identified by `paddock_id` only.
+- **`get_forage_budget` requires `herd_size_ua`.** The tool returns an
+  error if herd size is not provided. The skill instructs the LLM to
+  ask the user for herd size before calling the tool — a parameter-
+  gathering step that the alert tools do not exercise.
+- **`get_rotation_schedule` auto-falls-back.** If no paddocks exist in
+  session state, the tool mocks 4 default paddocks instead of erroring.
+  This lets the benchmark test the tool in isolation (without a prior
+  `auto_generate_paddocks` call), but the skill still recommends
+  generating paddocks first for a realistic flow.
+- **`get_vaccination_calendar` is Cerrado/Centro-Oeste focused.** The
+  mocked calendar reflects LAPIG/UFG's regional focus (Goiás): Aftosa
+  in May + November, Brucelose for females 3–8 months, annual Raiva/
+  Carbúnculo/Clostridioses/Botulismo. The skill instructs the LLM to
+  always caveat that it's a reference calendar and to consult a vet.
 
 ---
 
@@ -338,8 +430,66 @@ This requires Valkey running (the tools persist `pending_alert` in
 | `utility` | `generate_speech`, `consult_update_notes` | Production |
 | `onboarding` | `accept_terms_and_conditions` | Production |
 | `feedback` | `request_feedback`, `save_feedback` | Production |
-| `alert` | `request_*_alert`, `confirm_*_alert` (biomass, rain, vigor, stocking rate) | **Benchmark (mocked)** |
+| `alert` | `request_*_alert`, `confirm_*_alert` (biomass, rain, vigor, stocking rate), `list_schedulers`, `delete_scheduler` | **Benchmark (mocked)** |
+| `weather` | `get_rain_forecast_15_days`, `get_rain_forecast_months`, `get_rain_history`, `get_weather_today`, `get_temperature_forecast_15_days`, `get_drought_index`, `get_evapotranspiration`, `get_soil_moisture`, `get_climate_summary` | **Benchmark (mocked)** |
+| `pasture` | `get_forage_budget` | **Benchmark (mocked)** |
+| `paddock` | `auto_generate_paddocks`, `set_paddock_label`, `delete_paddock`, `get_paddock_pasture_stats`, `get_paddock_topographic_stats`, `get_rotation_schedule` | **Benchmark (mocked)** |
+| `herd` | `get_vaccination_calendar` | **Benchmark (mocked)** |
 
-Future filler batches (scales 3–4) will introduce additional mocked
+Future filler batches (scales 4–5) will introduce additional mocked
 categories to keep descriptions diverse and stress Tool-RAG's ability to
 disambiguate.
+
+### Deletion guide — removing all benchmark mocked tools
+
+All benchmark mocked tools are organized so they can be deleted in one
+sweep per category when testing is finished. Each category is tagged with
+a comment marker (`# weather-benchmark`, `# alert (benchmark — mocked)`,
+`# pasture-benchmark`, `# paddock-benchmark`, `# herd-benchmark`) in the
+source files.
+
+**Weather tools (`category: "weather"`) — 9 tools, read-only:**
+1. `agent/registry.py` — remove the 9 entries in `TOOLS` under the
+   `# ═══ Weather (benchmark — mocked) ═══` section, and the 9 entries in
+   `ACTION_MAP` under the `# benchmark (mocked weather data tools)` comment.
+2. `agent/extensions/pasto-legal-tools.js` — remove the entire
+   `// ── Weather (benchmark — mocked) ────────────────────────` block
+   (9 `pi.registerTool` calls).
+3. `agent/tools/benchmark.py` — remove the entire `# ── Weather tools
+   (benchmark — mocked) ──` section (the `_rain_for_day`,
+   `_rain_table_message` helpers and all 9 `get_*` functions) and their
+   entries in the `ACTIONS` dict under `# weather-benchmark`.
+
+**Alert tools (`category: "alert"`) — 10 tools, two-step confirm flow:**
+1. `agent/registry.py` — remove the `# ═══ Alert Schedulers (benchmark
+   — mocked) ═══` and `# ═══ Scheduler management (benchmark — mocked)
+   ═══` sections in `TOOLS`, and the corresponding entries in
+   `ACTION_MAP` under `# benchmark (mocked alert schedulers)`.
+2. `agent/extensions/pasto-legal-tools.js` — remove the
+   `// ── Alert Schedulers (benchmark — mocked) ──` and
+   `// ── List / delete schedulers (benchmark — mocked) ──` blocks.
+3. `agent/tools/benchmark.py` — remove the alert classes (`BiomassAlert`,
+   `RainAlert`, `VigorAlert`, `StockingRateAlert`), `list_schedulers`,
+   `delete_scheduler`, `MOCKED_SCHEDULERS`, the operator helpers, and
+   their entries in `ACTIONS`.
+
+**Forage / paddock / herd tools (`pasture`, `paddock`, `herd`) — 8 tools:**
+1. `agent/registry.py` — remove the 8 entries in `TOOLS` under the
+   `# ═══ Forage budget`, `# ═══ Paddock management`, and
+   `# ═══ Vaccination calendar` sections, and the 8 entries in
+   `ACTION_MAP` under `# benchmark (mocked forage budget / paddock /
+   vaccination)`.
+2. `agent/extensions/pasto-legal-tools.js` — remove the
+   `// ── Forage budget, paddock & herd tools (benchmark — mocked) ──`
+   block (8 `pi.registerTool` calls).
+3. `agent/tools/benchmark.py` — remove the entire `# ── Paddock & herd
+   tools (benchmark — mocked) ──` section (the `_mock_pasture_stats_dict`,
+   `_mock_topographic_stats_dict`, `_PASTURE_STATS_TEMPLATE`,
+   `_find_paddock` helpers and all 8 functions) and their entries in
+   `ACTIONS` under `# pasture-benchmark / paddock-benchmark / herd-benchmark`.
+
+If all benchmark categories are removed, the entire `benchmark.py` file
+can be deleted along with all its `ACTION_MAP` entries.
+
+No production code (`property.py`, `gee.py`, `feedback.py`, `tts.py`,
+`onboarding.py`, `version.py`) is touched by any deletion.
