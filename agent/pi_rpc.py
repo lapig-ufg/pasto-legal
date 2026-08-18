@@ -196,6 +196,7 @@ class PiRpcClient:
             self.last_used = time.time()
             _t0 = time.time()
             _tool_calls = 0
+            _tool_calls_log: list[dict] = []
 
             cmd: dict = {"type": "prompt", "message": message}
             if images:
@@ -203,7 +204,13 @@ class PiRpcClient:
 
             await self._send(cmd)
 
-            result = {"content": "", "images": [], "audio": [], "session_state_updates": []}
+            result = {
+                "content": "",
+                "images": [],
+                "audio": [],
+                "session_state_updates": [],
+                "tool_calls": _tool_calls_log,
+            }
             last_stop_reason: Optional[str] = None
             last_error_msg: Optional[str] = None
 
@@ -229,6 +236,10 @@ class PiRpcClient:
                         f"[pi-rpc:{self.user_id[:12]}] tool start: {event.get('toolName')} "
                         f"args={json.dumps(event.get('args', {}), default=str)[:150]}"
                     )
+                    _tool_calls_log.append({
+                        "name": event.get("toolName", ""),
+                        "args": event.get("args", {}),
+                    })
 
                 elif t == "tool_execution_end":
                     _tool_calls += 1

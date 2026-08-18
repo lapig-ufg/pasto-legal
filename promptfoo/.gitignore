@@ -1,0 +1,4 @@
+node_modules/
+.env
+promptfoo_results.json
+.cache/

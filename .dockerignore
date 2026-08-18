@@ -93,3 +93,7 @@ tmp/
 data/
 debug/
 dead_agno/
+docker-vols/
+logs/
+promptfoo/node_modules/
+promptfoo/.env
