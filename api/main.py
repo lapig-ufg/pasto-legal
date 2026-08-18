@@ -9,7 +9,6 @@ Usage:
   uvicorn api.main:app --port 3000 --reload
 """
 import os
-import re
 import sys
 import json
 import base64
@@ -25,7 +24,7 @@ from pydantic import BaseModel, Field
 from api.interfaces.whatsapp.router import attach_routes
 from api.configs.config import config
 from api.services.audio.stt import transcribe_audio
-from agent.pi_rpc import PiRpcPool, SESSIONS_DIR
+from agent.pi_rpc import PiRpcPool
 
 log = logging.getLogger("pasto-legal.main")
 
@@ -185,51 +184,6 @@ def _prepare_media(req: ChatRequest) -> tuple[str, list[dict], bool]:
     return message, images, audio_input
 
 
-_USER_MSG_RE = re.compile(r"<user-message>(.*)</user-message>", re.DOTALL)
-
-
-def _cleanup_last_user_message(user_id: str) -> None:
-    """Strip prompt scaffolding from the last role=user line in session.jsonl.
-
-    pi stores the entire build_prompt() output (system instructions, tools,
-    session-state, ...) as the user message text. We rewrite only the most
-    recent user message, replacing its text with just the inner content of
-    the trailing <user-message>...</user-message> tag. All other JSONL lines
-    and all structural fields (id, parentId, timestamp) are preserved.
-    Best-effort: any error is logged and swallowed so /chat still returns.
-    """
-    session_file = SESSIONS_DIR / user_id / "session.jsonl"
-    if not session_file.exists():
-        return
-    try:
-        lines = session_file.read_text(encoding="utf-8").splitlines(keepends=True)
-        last_user_idx = None
-        for i in range(len(lines) - 1, -1, -1):
-            if not lines[i].strip():
-                continue
-            obj = json.loads(lines[i])
-            if (obj.get("type") == "message"
-                    and obj.get("message", {}).get("role") == "user"):
-                last_user_idx = i
-                break
-        if last_user_idx is None:
-            return
-        obj = json.loads(lines[last_user_idx])
-        content = obj["message"]["content"]
-        if not content or not isinstance(content, list):
-            return
-        text = content[0].get("text", "") if isinstance(content[0], dict) else ""
-        m = _USER_MSG_RE.search(text)
-        if not m:
-            return
-        content[0]["text"] = m.group(1)
-        lines[last_user_idx] = json.dumps(obj, ensure_ascii=False) + "\n"
-        session_file.write_text("".join(lines), encoding="utf-8")
-        log.debug(f"[chat] cleaned last user message for {user_id}")
-    except Exception as e:
-        log.warning(f"[chat] failed to cleanup session.jsonl for {user_id}: {e}")
-
-
 @app.post("/chat")
 async def chat(req: ChatRequest):
     """Chat endpoint for Streamlit debug UI."""
@@ -271,7 +225,6 @@ async def chat(req: ChatRequest):
         result["session_state"] = session_state
         result["transcribed_message"] = message if message != req.message else None
         log.info(f"[chat] onboarding user={req.user_id} elapsed={_time.time() - _t0:.1f}s")
-        _cleanup_last_user_message(req.user_id)
         return result
 
     # Normal flow: Tool-RAG + full prompt
@@ -293,7 +246,6 @@ async def chat(req: ChatRequest):
     result["session_state"] = session_state
     result["transcribed_message"] = message if message != req.message else None
     log.info(f"[chat] user={req.user_id} elapsed={_time.time() - _t0:.1f}s")
-    _cleanup_last_user_message(req.user_id)
     return result
 
 

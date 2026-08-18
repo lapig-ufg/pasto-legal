@@ -130,6 +130,7 @@ class PiRpcClient:
             "--provider", self.provider,
             "--model", self.model,
             "-e", str(Path(self.cwd) / "extensions" / "pasto-legal-tools.js"),
+            "-e", str(Path(self.cwd) / "extensions" / "strip-history.js"),
             "-e", str(Path(self.cwd) / "extensions" / "prompt-dumper.js"),
         ]
 
