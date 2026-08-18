@@ -131,6 +131,7 @@ class PiRpcClient:
             "--model", self.model,
             "-e", str(Path(self.cwd) / "extensions" / "pasto-legal-tools.js"),
             "-e", str(Path(self.cwd) / "extensions" / "strip-history.js"),
+            "-e", str(Path(self.cwd) / "extensions" / "filter-tools.js"),
             "-e", str(Path(self.cwd) / "extensions" / "prompt-dumper.js"),
         ]
 
@@ -471,25 +472,20 @@ def build_prompt(
             "receba a resposta em áudio falado.\n"
         )
 
-    # ── Tool-RAG: only suggest relevant tools + inject skills ─────────
+    # ── Tool-RAG: active-tools marker + skill instructions ────────────
+    # The <active-tools> marker is consumed by the filter-tools.js pi
+    # extension (hook before_provider_request), which filters the provider
+    # payload's tool schemas down to this allowlist and then strips the
+    # marker from the message text. The LLM therefore only sees schemas for
+    # RAG-selected + always-available tools, and cannot call off-list tools.
     if relevant_tools:
         from agent.registry import TOOLS as _REGISTRY
         name_to_tool = {t["name"]: t for t in _REGISTRY}
 
-        # Tool descriptions
-        lines = []
-        for name in relevant_tools:
-            t = name_to_tool.get(name)
-            if t:
-                lines.append(f"- `{name}`: {t['description']}")
-        parts.append(
-            "## Ferramentas disponíveis para esta consulta\n"
-            "Use APENAS as ferramentas listadas abaixo para responder ao usuário.\n"
-            "Não invente ferramentas que não estão nesta lista.\n\n"
-            + "\n".join(lines) + "\n"
-        )
+        parts.append(f"<active-tools>{','.join(relevant_tools)}</active-tools>")
 
-        # Skill instructions (only for tools that have them)
+        # Skill instructions (not in the provider schema — kept in-prompt).
+        # Only tools that have a `skill` block contribute.
         skill_lines = []
         for name in relevant_tools:
             t = name_to_tool.get(name)
@@ -599,17 +595,9 @@ def build_onboarding_prompt(user_message: str, user_id: str = "", audio_input: b
             "receba a resposta em áudio falado.\n"
         )
 
-    # Onboarding tools only
-    lines = []
-    for name in ONBOARDING_TOOLS:
-        t = name_to_tool.get(name)
-        if t:
-            lines.append(f"- `{name}`: {t['description']}")
-    parts.append(
-        "## Ferramentas disponíveis (Modo Onboarding)\n"
-        "Use APENAS as ferramentas listadas abaixo. Não invente outras.\n\n"
-        + "\n".join(lines) + "\n"
-    )
+    # Active-tools marker for the onboarding subset (filter-tools.js filters
+    # the provider payload down to these). See build_prompt for details.
+    parts.append(f"<active-tools>{','.join(ONBOARDING_TOOLS)}</active-tools>")
 
     # Skill instructions for onboarding tools
     skill_lines = []
