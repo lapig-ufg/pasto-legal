@@ -91,8 +91,7 @@ pasto_legal_workflow = PersistOnSuccessWorkflow(
                         name=INTENT_ROUTER_STEP_NAME,
                         executor=_agent_executor_factory(
                             agent=single_agent,
-                            include_summary=True,
-                            num_runs=4
+                            include_summary=True
                         )
                     ),
                     name="Feedback and Routing",

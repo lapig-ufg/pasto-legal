@@ -31,6 +31,10 @@ from app.tools.property_crud_tools import (
     start_registration_by_url,
 )
 from app.tools.tts_tools import generate_speech
+from app.tools.weather_tools import (
+    get_precipitation_forecast,
+    get_temperature_forecast,
+)
 
 try:
     skills = Skills(loaders=[LocalSkills("app/skills/property_analyst_agent")])
@@ -50,6 +54,8 @@ _ANALYST_TOOLS = [
     generate_biomass_image,
     generate_soil_texture_image,
     generate_pasture_classification_image,
+    get_precipitation_forecast,
+    get_temperature_forecast,
 ]
 
 
@@ -57,7 +63,7 @@ def get_tools(run_context: RunContext):
     session_state = run_context.session_state
     registration_state = session_state.get("registration_state", None)
 
-    tools = [generate_speech, *_ANALYST_TOOLS]
+    tools = [generate_speech]
 
     # ==========================================
     # ESTADO: PENDING (Confirmação ou Seleção)
@@ -79,7 +85,7 @@ def get_tools(run_context: RunContext):
     # ESTADO: FINAL (Definição de Nome customizado)
     # ==========================================
     elif registration_state == "final":
-        tools.extend([complete_registration, cancel_registration])
+        tools.extend([complete_registration, get_pasture_stats, cancel_registration])
 
     # ==========================================
     # ESTADO: DEFAULT / ELSE (Gerenciamento Geral)
@@ -92,6 +98,7 @@ def get_tools(run_context: RunContext):
             start_registration_by_url,
             start_registration_by_car,
             start_registration_by_coordinate,
+            *_ANALYST_TOOLS
         ])
 
     return tools
