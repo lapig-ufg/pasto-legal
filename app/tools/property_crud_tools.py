@@ -18,14 +18,6 @@ from app.services.geospatial.sicar import (
 from app.services.geospatial.image import create_vertical_mosaic
 from app.services.geospatial.gee import retrieve_feature_images
 from app.schemas.rural_property import RuralProperty
-from app.schemas.workflow_state import WorkflowState, RouteEnum
-
-
-def _set_workflow_state(run_context):
-    workflow_state = WorkflowState.model_validate(run_context.session_state["workflow_state"])        
-    workflow_state.route = RouteEnum.MANAGER
-    workflow_state.is_loop_active = True
-    run_context.session_state["workflow_state"] = workflow_state.model_dump()
 
 
 def start_registration_by_coordinate(run_context: RunContext, latitude: float, longitude: float):
@@ -63,8 +55,6 @@ def start_registration_by_coordinate(run_context: RunContext, latitude: float, l
 
     run_context.session_state["registration_state"] = "pending"
 
-    _set_workflow_state(run_context)
-    
     if len(properties) == 1:
         img = imgs[0]
 
@@ -144,8 +134,6 @@ def start_registration_by_car(run_context: RunContext, car_codes: List[str]):
 
     run_context.session_state["registration_state"] = "pending"
 
-    _set_workflow_state(run_context)
-    
     if len(properties) == 1:
         return ToolResult(
             content=(
@@ -214,8 +202,6 @@ def start_registration_by_url(run_context: RunContext, url: str) -> ToolResult:
 
     run_context.session_state["registration_state"] = "pending"
 
-    _set_workflow_state(run_context)
-    
     if len(properties) == 1:
         img = imgs[0]
 
@@ -300,7 +286,7 @@ def confirm_car_selection(run_context: RunContext):
     )
 
 
-@tool(stop_after_tool_call=True)
+@tool
 def complete_registration(run_context: RunContext, name: str):
     """
     Concluir cadastro com o nome da propriedade.
@@ -316,10 +302,6 @@ def complete_registration(run_context: RunContext, name: str):
     all_properties.append(selected_property)  
 
     run_context.session_state["all_properties"] = all_properties
-
-    workflow_state = WorkflowState.model_validate(run_context.session_state["workflow_state"])        
-    workflow_state.route = RouteEnum.DIAGNOSIS
-    run_context.session_state["workflow_state"] = workflow_state.model_dump()
     run_context.session_state["registration_state"] = None
     run_context.session_state['candidate_properties'] = None
 
@@ -327,7 +309,20 @@ def complete_registration(run_context: RunContext, name: str):
         content=(
             "Propriedade registrada com sucesso."
             f"\nNome: {name}"
-            f"\nCAR: {selected_property["car_code"]}"
+            f"\nCAR: {selected_property["car_code"]}\n\n"
+            "INSTRUÇÃO AO AGENTE: O cadastro foi concluído. Agora você deve entregar "
+            "ao usuário o primeiro diagnóstico da propriedade. Para isso:"
+            "\n1. Chame imediatamente a ferramenta `get_pasture_stats` passando o "
+            f"CAR `{selected_property['car_code']}`."
+            "\n2. Com os dados retornados, escreva UM único parágrafo contínuo (2 a 3 "
+            "frases fluidas, sem bullet points, títulos ou quebras de linha) confirmando "
+            "o cadastro e entregando um insight valioso cruzando as métricas "
+            "(oportunidade / alerta de degradação / subutilização)."
+            "\n3. Cite no máximo 1 ou 2 dados reais (ex: área total em hectares ou idade "
+            "do pasto) para dar embasamento sem jargões."
+            "\n4. Use no máximo 1 ou 2 emojis discretos no final."
+            "\n5. Finalize com UMA única pergunta-CTA instigante focada num problema "
+            "financeiro ou de manejo (ex: calcular Unidade Animal / capacidade de suporte)."
         )
     )
 
@@ -338,9 +333,6 @@ def cancel_registration(run_context: RunContext):
     
     Use esta ferramenta se o usuário disser que a propriedade mostrada na imagem NÃO é a correta ou quiser cancelar a seleção.
     """
-    workflow_state = WorkflowState.model_validate(run_context.session_state["workflow_state"])        
-    workflow_state.route = RouteEnum.AUTO
-    run_context.session_state["workflow_state"] = workflow_state.model_dump()
     run_context.session_state["registration_state"] = None
     run_context.session_state['candidate_properties'] = None
 

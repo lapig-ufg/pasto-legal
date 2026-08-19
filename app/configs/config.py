@@ -25,6 +25,12 @@ class BaseConfig:
     POSTGRES_USER: str = os.getenv("POSTGRES_USER", None)
     POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", None)
 
+    PGVECTOR_HOST: str = os.getenv("PGVECTOR_HOST", None)
+    PGVECTOR_PORT: str = os.getenv("PGVECTOR_PORT", None)
+    PGVECTOR_DBNAME: str = os.getenv("PGVECTOR_DBNAME", None)
+    PGVECTOR_USER: str = os.getenv("PGVECTOR_USER", None)
+    PGVECTOR_PASSWORD: str = os.getenv("PGVECTOR_PASSWORD", None)
+
     WHATSAPP_ACCESS_TOKEN: str = os.getenv("WHATSAPP_ACCESS_TOKEN", None)
     WHATSAPP_VERIFY_TOKEN: str = os.getenv("WHATSAPP_VERIFY_TOKEN", None)
     WHATSAPP_WEBHOOK_URL: str = os.getenv("WHATSAPP_WEBHOOK_URL", None)
