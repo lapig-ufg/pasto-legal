@@ -10,7 +10,7 @@ from app.configs.config import config
 from app.knowledge.pasto_legal_kb import pasto_legal_kb
 from app.schemas.rural_property import RuralProperty
 from app.schemas.user_persona import UserPersona
-from app.tools.property_analyst_tools import (
+from app.tools.analysis_tools import (
     generate_biomass_image,
     generate_pasture_classification_image,
     generate_property_image,
@@ -18,7 +18,7 @@ from app.tools.property_analyst_tools import (
     get_pasture_stats,
     get_topographic_stats,
 )
-from app.tools.property_crud_tools import (
+from app.tools.property_tools import (
     cancel_registration,
     complete_registration,
     confirm_car_selection,
