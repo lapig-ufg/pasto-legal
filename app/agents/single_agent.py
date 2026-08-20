@@ -129,10 +129,36 @@ def _registrations_text(session_state) -> str:
     return "*Nenhum imóvel cadastrado no momento.*"
 
 
+def _context_blocks(session_state) -> str:
+    """Build the <history_context> and <conversation_summary> blocks read
+    from session_state, to be prepended to the agent instructions.
+
+    - ``history_context``: the dynamic <iterações> block, written by
+      ``_input_pre_processing`` (app.core.step_factory) each turn. Grows and
+      shrinks dynamically via ``InputManager.runs_count``.
+    - ``conversation_summary``: the running summary, written by the
+      summarization step each turn.
+    """
+    parts: list[str] = []
+
+    history_context = session_state.get("history_context") or ""
+    if history_context:
+        parts.append(f"<history_context>\n{history_context}\n</history_context>")
+
+    conversation_summary = session_state.get("conversation_summary") or ""
+    if conversation_summary:
+        parts.append(
+            f"<conversation_summary>\n{conversation_summary}\n</conversation_summary>"
+        )
+
+    return "\n".join(parts)
+
+
 def get_instructions(run_context: RunContext) -> str:
     log_debug("GET INSTRUCTIONS (single_agent)")
     session_state = run_context.session_state or {}
     registration_state = session_state.get("registration_state", None)
+    context_blocks = _context_blocks(session_state)
 
     # ==========================================
     # ESTADO: PENDING (Confirmação ou Seleção)
@@ -148,6 +174,8 @@ def get_instructions(run_context: RunContext) -> str:
             candidate_text = str(candidate_properties[0])
 
             instructions = textwrap.dedent(f"""
+                {context_blocks}
+
                 # Perfil e Objetivo
                 Você é o Gestor de Propriedades Rurais do sistema Pasto Legal. Sua função atual é estritamente coletar a confirmação do usuário para o imóvel rural encontrado.
 
@@ -169,6 +197,8 @@ def get_instructions(run_context: RunContext) -> str:
             candidate_text = "\n".join(options_text)
 
             instructions = textwrap.dedent(f"""
+                {context_blocks}
+
                 # Perfil e Objetivo
                 Você é o Gestor de Propriedades Rurais do sistema Pasto Legal. Múltiplos imóveis foram encontrados e o usuário precisa selecionar um deles.
 
@@ -192,6 +222,8 @@ def get_instructions(run_context: RunContext) -> str:
         candidate_text = str(candidate_properties[0]) if candidate_properties else "Propriedade selecionada"
 
         instructions = textwrap.dedent(f"""
+            {context_blocks}
+
             # Perfil e Objetivo
             Você está na etapa final de cadastro do imóvel rural:
             > {candidate_text}
@@ -214,6 +246,8 @@ def get_instructions(run_context: RunContext) -> str:
         registrations_text = _registrations_text(session_state)
 
         instructions = textwrap.dedent(f"""\
+            {context_blocks}
+
             <user-persona>
             {persona_text}
             </user-persona>

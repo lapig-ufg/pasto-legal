@@ -32,14 +32,13 @@ def _input_pre_processing(
         session_state.get("summary_state", {})
     )
 
-    parts: list[str] = []
-
-    if include_summary and input_manager.summary:
-        parts.append(f"<resumo>\n{input_manager.summary}\n</resumo>\n")
-
+    # Build the dynamic conversation history block and stash it in
+    # session_state so the agent's dynamic instructions can read it.
+    # The history grows/shrinks dynamically via input_manager.runs_count.
     effective_runs = num_runs if num_runs is not None else input_manager.runs_count
     history_msgs = step_input.get_workflow_history(num_runs=effective_runs)
 
+    history_block = ""
     if history_msgs:
         history_block = "<iterações>"
         for idx, msg in enumerate(history_msgs):
@@ -49,8 +48,17 @@ def _input_pre_processing(
                 f"Usuário: {user_msg}\n"
                 f"Assistente: {assistant_msg}\n"
             )
-        history_block+="</iterações>"
-        parts.append(history_block)
+        history_block += "</iterações>"
+
+    session_state["history_context"] = history_block
+
+    # The running summary is already maintained in session_state by the
+    # summarization step (session_state['conversation_summary']); it is
+    # read directly by the agent's dynamic instructions, so we no longer
+    # inject it into the input string here.
+    _ = include_summary  # kept for signature compatibility; no longer used
+
+    parts: list[str] = []
 
     text = list(step_input.previous_step_outputs.values())[-1].content or ""
     if text:

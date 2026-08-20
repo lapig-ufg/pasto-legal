@@ -33,6 +33,7 @@ def summarization_executor(
     if summary_state.runs_count < SUMMARY_THRESHOLD:
         summary_state.runs_count += 1
         session_state["summary_state"] = summary_state.model_dump()
+        session_state["conversation_summary"] = summary_state.summary or ""
         log_debug(
             f"summarization_executor: skipping (runs_count={summary_state.runs_count})"
         )
@@ -43,6 +44,7 @@ def summarization_executor(
         log_debug("summarization_executor: no history available, skipping")
         summary_state.runs_count += 1
         session_state["summary_state"] = summary_state.model_dump()
+        session_state["conversation_summary"] = summary_state.summary or ""
         return None
 
     recent_msgs = history_msgs[:HISTORY_WINDOW]
@@ -69,6 +71,7 @@ def summarization_executor(
         log_error(f"summarization_executor: agent failed: {exc}")
         summary_state.runs_count += 1
         session_state["summary_state"] = summary_state.model_dump()
+        session_state["conversation_summary"] = summary_state.summary or ""
         return None
 
     if response and response.content:
@@ -83,6 +86,9 @@ def summarization_executor(
         summary_state.runs_count += 1
 
     session_state["summary_state"] = summary_state.model_dump()
+    # Expose the running summary under a stable key so the agent's dynamic
+    # instructions can read it (wrapped in <conversation_summary> tags).
+    session_state["conversation_summary"] = summary_state.summary or ""
     return StepOutput(content="Summary updated")
 
 
