@@ -66,6 +66,7 @@ def get_instructions(run_context: RunContext) -> str:
 persona_manager_agent = Agent(
     name="User Persona Management Agent",
     model=config.model,
+    fallback_models=[config.fallback_model],
     instructions=get_instructions,
     output_schema=PersonaUpdate,
     use_json_mode=True,

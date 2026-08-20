@@ -297,5 +297,6 @@ single_agent = Agent(
     add_search_knowledge_instructions=True,
     skills=skills,
     model=config.model,
+    fallback_models=[config.fallback_model],
     debug_mode=config.DEBUG_MODE,
 )

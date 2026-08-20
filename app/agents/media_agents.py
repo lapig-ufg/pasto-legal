@@ -40,6 +40,7 @@ audio_transcription_agent = Agent(
     name="Agente de Transcrição de Áudio",
     role="Especialista em transcrição literal de fala (Speech-to-Text).",
     model=config.model,
+    fallback_models=[config.fallback_model],
     debug_mode=config.DEBUG_MODE,
     markdown=False,
     instructions=(

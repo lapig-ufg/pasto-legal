@@ -41,13 +41,16 @@ class BaseConfig:
     GEE_SERVICE_ACCOUNT: str = os.getenv("GEE_SERVICE_ACCOUNT", None)
     GEE_KEY_FILE: str = os.getenv("GEE_KEY_FILE", None)
 
-    MODEL_PROVIDER: str = os.getenv("MODEL_PROVIDER", "google")
-    MODEL_ID: str = os.getenv("MODEL_ID", "gemini-3.1-flash-lite")
+    PRIMARY_MODEL_PROVIDER: str = os.getenv("PRIMARY_MODEL_PROVIDER", "google")
+    PRIMARY_MODEL_ID: str = os.getenv("PRIMARY_MODEL_ID", "gemini-3.5-flash-lite")
+
+    FALLBACK_MODEL_PROVIDER: str = os.getenv("FALLBACK_MODEL_PROVIDER")
+    FALLBACK_MODEL_ID: str = os.getenv("FALLBACK_MODEL_ID")
 
     GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", None)
 
-    OLLAMA_HOST: str = os.getenv("OLLAMA_MODEL_ID", None)
     OLLAMA_API_KEY: str = os.getenv("OLLAMA_API_KEY", None)
+    OLLAMA_HOST: str = os.getenv("OLLAMA_HOST", None)
 
     S3_ENDPOINT_URL: str = os.getenv("S3_ENDPOINT_URL", None)
     S3_ACCESS_KEY: str = os.getenv("S3_ACCESS_KEY", None)
@@ -63,22 +66,40 @@ class BaseConfig:
         if self.GEE_KEY_FILE is None:
             raise ValueError("GEE_KEY_FILE environment variables must be set.")
 
-        if self.MODEL_PROVIDER == "ollama":
+        if self.PRIMARY_MODEL_PROVIDER == "ollama":
             if self.OLLAMA_API_KEY is None:
                 raise ValueError("OLLAMA_API_KEY environment variables must be set.")
 
     @property
     def model(self) -> Gemini | Ollama:
-        match self.MODEL_PROVIDER:
+        match self.PRIMARY_MODEL_PROVIDER:
             case "google":
                 if self.GOOGLE_API_KEY is None:
                     raise ValueError("GOOGLE_API_KEY environment variables must be set.")
-
-                return Gemini(id=self.MODEL_ID, temperature=0, api_key=self.GOOGLE_API_KEY)
+                return Gemini(id=self.PRIMARY_MODEL_ID, temperature=0.4, api_key=self.GOOGLE_API_KEY)
             case "ollama":
-                return Ollama(id=self.MODEL_ID, host=self.OLLAMA_HOST, api_key=self.OLLAMA_API_KEY)
+                if self.OLLAMA_API_KEY is None and self.OLLAMA_HOST is not None:
+                    raise ValueError("OLLAMA_API_KEY environment variable must be set.")
+                return Ollama(id=self.PRIMARY_MODEL_ID, host=self.OLLAMA_HOST, api_key=self.OLLAMA_API_KEY)
             case _:
-                raise ValueError(f"Invalid model provider: {self.MODEL_PROVIDER}")
+                raise ValueError(f"Invalid model provider: {self.PRIMARY_MODEL_PROVIDER}")
+
+    @property
+    def fallback_model(self) -> Gemini | Ollama | None:
+        if self.FALLBACK_MODEL_PROVIDER is not None and self.FALLBACK_MODEL_ID is None:
+            raise ValueError("FALLBACK_MODEL_ID environment variable must be set")
+
+        match self.PRIMARY_MODEL_PROVIDER:
+            case "google":
+                if self.GOOGLE_API_KEY is None:
+                    raise ValueError("GOOGLE_API_KEY environment variable must be set.")
+                return Gemini(id=self.FALLBACK_MODEL_ID, temperature=0.4, api_key=self.GOOGLE_API_KEY)
+            case "ollama":
+                if self.OLLAMA_API_KEY is None and self.OLLAMA_HOST is not None:
+                    raise ValueError("OLLAMA_API_KEY environment variable must be set.")
+                return Ollama(id=self.FALLBACK_MODEL_ID, host=self.OLLAMA_HOST, api_key=self.OLLAMA_API_KEY)
+            case _:
+                raise None
 
 
 class DevelopmentConfig(BaseConfig):
@@ -139,7 +160,7 @@ if env_app not in ["production", "development", "stagging"]:
     raise("APP_ENV has to be 'production', 'development' or 'stagging'.")
 
 # Instancia a classe de configuração correta
-config = config_map[env_app]()
+config: BaseConfig = config_map[env_app]()
 
 from app.configs.logging_config import setup_logging  # noqa: E402
 

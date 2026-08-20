@@ -84,5 +84,6 @@ welcoming_agent = Agent(
         accept_terms_and_conditions
     ],
     model=config.model,
+    fallback_models=[config.fallback_model],
     debug_mode=config.DEBUG_MODE
 )

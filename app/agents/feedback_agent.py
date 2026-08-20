@@ -93,6 +93,7 @@ def get_satisfaction_instructions(run_context: RunContext) -> str:
 satisfaction_evaluation_agent = Agent(
     name="Satisfaction Evaluation Agent",
     model=config.model,
+    fallback_models=[config.fallback_model],
     output_schema=Effectiveness, 
     instructions=get_satisfaction_instructions,
     debug_mode=config.DEBUG_MODE,

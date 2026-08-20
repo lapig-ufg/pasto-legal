@@ -33,5 +33,6 @@ def get_instructions() -> str:
 summary_agent = Agent(
     name="Summary Agent",
     model=config.model,
+    fallback_models=[config.fallback_model],
     instructions=get_instructions,
 )
