@@ -28,10 +28,11 @@ from typing import Any
 from agno.knowledge.chunking.recursive import RecursiveChunking
 from agno.knowledge.embedder.google import GeminiEmbedder
 from agno.knowledge.knowledge import Knowledge
-from agno.utils.log import log_debug, log_error
+from agno.utils.log import log_debug, log_error, log_warning
 from agno.vectordb.chroma import ChromaDb
 from agno.vectordb.distance import Distance
 from agno.vectordb.pgvector import PgVector
+from google.genai.types import HttpOptions
 from sqlalchemy import create_engine, select, text
 
 from app.configs.config import config
@@ -44,12 +45,18 @@ from app.configs.config import config
 _BOOTSTRAP_LOCK_KEY = (0x70675F31, 0x6B625F31)  # 'pg_1','kb_1'
 _INDEXING_LOCK_KEY = (0x70675F32, 0x6B625F32)  # 'pg_2','kb_2'
 
+# Embedding request timeout in milliseconds. Prevents a hung Gemini call from
+# wedging the leader worker (which holds the indexing advisory lock) and being
+# SIGKILLed by the uvicorn supervisor.
+_EMBED_TIMEOUT_MS = 60_000
+
 # ---
 # Embedder (shared by both vector backends)
 # ---
 _embedder = GeminiEmbedder(
     id="gemini-embedding-001",
     api_key=config.GOOGLE_API_KEY,
+    client_params={"http_options": HttpOptions(timeout=_EMBED_TIMEOUT_MS)},
 )
 
 # ---
@@ -183,6 +190,14 @@ def _index_documents() -> None:
     hash_to_path: dict = {}
     for md_file in sorted(_kb_dir.glob("*.md")):
         if md_file.name in _excluded_files:
+            continue
+        # Skip empty placeholder files: agno's MarkdownReader returns a single
+        # Document(content="") for them, and the Gemini embedder has no empty-
+        # content guard, so the insert either errors silently (never persists,
+        # re-indexed every startup) or hangs the leader worker. See:
+        #   agno/knowledge/reader/markdown_reader.py, embedder/google.py
+        if md_file.stat().st_size == 0:
+            log_warning(f"pasto_legal_kb: skipping empty file {md_file.name}")
             continue
         try:
             file_hash = _compute_file_hash(md_file)
