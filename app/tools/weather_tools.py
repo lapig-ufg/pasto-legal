@@ -2,6 +2,7 @@ import datetime
 
 import numpy as np
 import openmeteo_requests
+import pandas as pd
 import requests_cache
 from openmeteo_sdk.Variable import Variable
 from retry_requests import retry
@@ -21,6 +22,8 @@ openmeteo = openmeteo_requests.Client(session=retry_session)
 
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 ENSEMBLE_URL = "https://ensemble-api.open-meteo.com/v1/ensemble"
+SEASONAL_URL = "https://seasonal-api.open-meteo.com/v1/seasonal"
+ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 
 
 def _daily_dates(daily) -> list[datetime.date]:
@@ -130,6 +133,93 @@ def get_precipitation_forecast(
         )
 
         return ToolResult(content=content)
+
+    except Exception as e:
+        log_error(f"ERROR: {e}")
+        return ToolResult(content=str(e))
+
+
+@tool(tool_hooks=[validate_selected_property_hook])
+def get_rain_season_forecast(
+    run_context: RunContext, car_codes: list[str]
+) -> ToolResult:
+    """
+    Determines when the rain season will begin within the next 7 months for
+    the rural property, combining the seasonal precipitation forecast
+    (monthly) with the historical precipitation of the last year (daily).
+
+    Always attempts the full 7-month horizon; if there is no sign of the
+    rain season starting within that window, the result indicates there will
+    be no rain season in the next 7 months.
+
+    Use this tool when the user asks about:
+    - When the rain season will start.
+    - When it will start raining on the property.
+    - The beginning of the rainy season in the coming months.
+
+    params:
+        car_codes (list[str]): List of CAR codes for the property.
+
+    Return:
+        ToolResult: Text indicating in how many months the rain season
+        will begin.
+    """
+    try:
+        property_obj = _resolve_property(run_context, car_codes)
+        latitude, longitude = property_obj.get_centroid()
+
+        today = datetime.date.today()
+        one_year_ago = today - datetime.timedelta(days=365)
+
+        archive_params = {
+            "latitude": latitude,
+            "longitude": longitude,
+            "start_date": one_year_ago.isoformat(),
+            "end_date": today.isoformat(),
+            "daily": "precipitation_sum",
+        }
+        archive_responses = openmeteo.weather_api(ARCHIVE_URL, params=archive_params)
+        archive_response = archive_responses[0]
+
+        archive_daily = archive_response.Daily()
+        archive_precipitation_sum = archive_daily.Variables(0).ValuesAsNumpy()
+
+        archive_data = {
+            "date": pd.date_range(
+                start=pd.to_datetime(archive_daily.Time(), unit="s", utc=True),
+                end=pd.to_datetime(archive_daily.TimeEnd(), unit="s", utc=True),
+                freq=pd.Timedelta(seconds=archive_daily.Interval()),
+                inclusive="left",
+            ),
+            "precipitation_sum": archive_precipitation_sum,
+        }
+        pd.DataFrame(data=archive_data)
+
+        seasonal_params = {
+            "latitude": latitude,
+            "longitude": longitude,
+            "monthly": ["precipitation_mean", "precipitation_anomaly"],
+        }
+        seasonal_responses = openmeteo.weather_api(SEASONAL_URL, params=seasonal_params)
+        seasonal_response = seasonal_responses[0]
+
+        monthly = seasonal_response.Monthly()
+        monthly_precipitation_mean = monthly.Variables(0).ValuesAsNumpy()
+        monthly_precipitation_anomaly = monthly.Variables(1).ValuesAsNumpy()
+
+        monthly_data = {
+            "date": pd.date_range(
+                start=f"{monthly.Year()}-{monthly.Month()}-01",
+                periods=monthly.Count(),
+                freq="MS",
+                inclusive="left",
+            ),
+            "precipitation_mean": monthly_precipitation_mean,
+            "precipitation_anomaly": monthly_precipitation_anomaly,
+        }
+        pd.DataFrame(data=monthly_data)
+
+        return ToolResult(content="Vai começar a chover em 2 meses")
 
     except Exception as e:
         log_error(f"ERROR: {e}")

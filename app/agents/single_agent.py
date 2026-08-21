@@ -33,6 +33,7 @@ from app.tools.property_tools import (
 from app.tools.tts_tools import generate_speech
 from app.tools.weather_tools import (
     get_precipitation_forecast,
+    get_rain_season_forecast,
     get_temperature_forecast,
 )
 
@@ -55,6 +56,7 @@ _ANALYST_TOOLS = [
     generate_soil_texture_image,
     generate_pasture_classification_image,
     get_precipitation_forecast,
+    get_rain_season_forecast,
     get_temperature_forecast,
 ]
 
