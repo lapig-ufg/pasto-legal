@@ -20,6 +20,7 @@ External interface:
     pasto_legal_kb  -- the ``Knowledge`` singleton imported by
                        ``app.agents.single_agent``.
 """
+
 import hashlib
 from pathlib import Path
 from typing import Any
@@ -34,6 +35,14 @@ from agno.vectordb.pgvector import PgVector
 from sqlalchemy import create_engine, select, text
 
 from app.configs.config import config
+
+# ---
+# Advisory lock keys (stable, per-purpose) used to serialize multi-worker
+# bootstrap against the shared KB Postgres. Two int32 halves are required by
+# ``pg_advisory_xact_lock(int4, int4)`` / ``pg_try_advisory_lock(int4, int4)``.
+# ---
+_BOOTSTRAP_LOCK_KEY = (0x70675F31, 0x6B625F31)  # 'pg_1','kb_1'
+_INDEXING_LOCK_KEY = (0x70675F32, 0x6B625F32)  # 'pg_2','kb_2'
 
 # ---
 # Embedder (shared by both vector backends)
@@ -60,8 +69,17 @@ _excluded_files = {"termos_de_uso.md"}
 def _build_pgvector() -> PgVector:
     """Build a PgVector backed by the dedicated PGVECTOR_* Postgres database.
 
-    Ensures the ``vector`` extension exists on the target database before
-    handing the engine over to PgVector (which expects it).
+    Ensures the ``vector`` extension, ``ai`` schema, and the KB table exist on
+    the target database before handing the engine over to PgVector.
+
+    Multi-worker safe: the full DDL bootstrap (extension + schema + table) is
+    serialized with a transaction-scoped advisory lock so concurrent workers
+    (e.g. uvicorn ``--workers 16``) don't race on ``CREATE EXTENSION`` /
+    ``CREATE TABLE`` — neither is protected by ``IF NOT EXISTS`` / ``checkfirst``
+    under concurrency and both raise ``UniqueViolation`` / ``DuplicateTable``.
+    The lock auto-releases on commit; later workers observe everything already
+    present and their DDL is a no-op. ``Knowledge.__post_init__`` then sees
+    ``vector_db.exists()`` is True and skips its own (unlocked) ``create()``.
     """
     db_url = (
         f"postgresql+psycopg://{config.PGVECTOR_USER}:{config.PGVECTOR_PASSWORD}"
@@ -69,21 +87,33 @@ def _build_pgvector() -> PgVector:
     )
     engine = create_engine(db_url, pool_pre_ping=True)
 
-    # Bootstrap the vector extension on the dedicated KB database.
-    try:
-        with engine.connect() as conn:
-            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
-            conn.commit()
-    except Exception as exc:
-        log_error(f"pasto_legal_kb: failed to create 'vector' extension: {exc}")
-
-    return PgVector(
+    vector_db = PgVector(
         table_name=_table_name,
         schema=_schema,
         db_engine=engine,
         embedder=_embedder,
         distance=Distance.cosine,
     )
+
+    # Serialize the entire DDL bootstrap across workers. All three statements
+    # run on one connection holding the lock, so the table exists before the
+    # lock is released and the next worker's ``checkfirst`` is a no-op.
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text("SELECT pg_advisory_xact_lock(:k1, :k2);"),
+                {"k1": _BOOTSTRAP_LOCK_KEY[0], "k2": _BOOTSTRAP_LOCK_KEY[1]},
+            )
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+            conn.execute(text("CREATE SCHEMA IF NOT EXISTS ai;"))
+            vector_db.table.create(conn, checkfirst=True)
+    except Exception as exc:
+        # A genuine connection/permission failure; if the table already exists
+        # (e.g. a prior worker won the race before us), ``checkfirst=True``
+        # makes ``table.create`` a no-op and we never reach this branch.
+        log_error(f"pasto_legal_kb: failed to bootstrap vector DB schema: {exc}")
+
+    return vector_db
 
 
 def _build_chroma() -> ChromaDb:
@@ -112,7 +142,9 @@ def _select_vector_db() -> Any:
         try:
             return _build_pgvector()
         except Exception as exc:
-            log_error(f"pasto_legal_kb: PgVector setup failed, falling back to ChromaDb: {exc}")
+            log_error(
+                f"pasto_legal_kb: PgVector setup failed, falling back to ChromaDb: {exc}"
+            )
     return _build_chroma()
 
 
@@ -124,7 +156,7 @@ pasto_legal_kb = Knowledge(
         "Manuais e documentação técnica do Pasto Legal. Use para responder relaciondas a plataforma"
     ),
     vector_db=vector_db,
-    max_results=3
+    max_results=3,
 )
 
 
@@ -183,6 +215,54 @@ def _index_documents() -> None:
             log_error(f"pasto_legal_kb: failed to index {md_file.name}: {exc}")
 
 
+def _index_documents_leader_only() -> None:
+    """Run ``_index_documents()`` on a single worker when sharing a DB.
+
+    Under multi-worker deployments (e.g. uvicorn ``--workers 16`` or Swarm)
+    every worker would otherwise re-embed and re-insert the same markdown files
+    concurrently, racing on inserts and wasting embedding API quota.
+
+    For PgVector we take a non-blocking **session-level** advisory lock on the
+    shared KB Postgres: the first worker that wins the lock performs the sync,
+    the rest skip silently. Session-level (not transaction-scoped) is required
+    because ``_index_documents()`` opens its own short-lived sessions for each
+    insert, so the lock must outlive the lock-acquiring transaction. For
+    ChromaDb (local dev, no concurrency across workers since each worker has
+    its own process-local client) we just run.
+    """
+    if not isinstance(vector_db, PgVector):
+        _index_documents()
+        return
+
+    engine = vector_db.db_engine
+    # Open a dedicated connection that stays alive for the whole indexing run
+    # so the session-level lock is held until we explicitly release it.
+    conn = engine.connect()
+    try:
+        acquired = conn.execute(
+            text("SELECT pg_try_advisory_lock(:k1, :k2);"),
+            {"k1": _INDEXING_LOCK_KEY[0], "k2": _INDEXING_LOCK_KEY[1]},
+        ).scalar()
+        if not acquired:
+            log_debug("pasto_legal_kb: indexing lock held by another worker, skipping")
+            return
+        try:
+            _index_documents()
+        finally:
+            try:
+                conn.execute(
+                    text("SELECT pg_advisory_unlock(:k1, :k2);"),
+                    {"k1": _INDEXING_LOCK_KEY[0], "k2": _INDEXING_LOCK_KEY[1]},
+                )
+            except Exception:
+                pass
+    except Exception as exc:
+        log_error(f"pasto_legal_kb: indexing lock failed, running without guard: {exc}")
+        _index_documents()
+    finally:
+        conn.close()
+
+
 def _compute_file_hash(path: Path) -> str:
     """Return the first 16 hex chars of the sha256 of a file's content."""
     return hashlib.sha256(path.read_bytes()).hexdigest()[:16]
@@ -201,7 +281,9 @@ def _get_indexed_source_hashes() -> set[str]:
             with vector_db.Session() as sess:
                 stmt = (
                     select(vector_db.table.c.meta_data["source_content_hash"].astext)
-                    .where(vector_db.table.c.meta_data["source_content_hash"].isnot(None))
+                    .where(
+                        vector_db.table.c.meta_data["source_content_hash"].isnot(None)
+                    )
                     .distinct()
                 )
                 for row in sess.execute(stmt):
@@ -219,4 +301,4 @@ def _get_indexed_source_hashes() -> set[str]:
     return hashes
 
 
-_index_documents()
+_index_documents_leader_only()
