@@ -74,7 +74,7 @@ def generate_biomass_image(run_context: RunContext, car_codes: list[str]) -> Too
 
         today = datetime.date.today()
 
-        img = retrieve_t2g_biomass_image(selected_property.get_coords(), today.month, today.year)
+        img = retrieve_t2g_biomass_image(selected_property.get_coords(), today.month, today.year, today.day)
 
         if img is not None:
             buffer = BytesIO()
@@ -189,26 +189,18 @@ def get_pasture_stats(run_context: RunContext, car_codes: list[str]):
         Dicionário contendo a área de biomassa, vigor da pastagem, idade e uso e cobertura do solo.
     """
     try:
-        #properties_stats = run_context.session_state.get("properties_stats", [])
-        #property_stats = next((prop for prop in properties_stats if prop["id"] == property_id), None)
-        #new_property_stats = PropertyStats.model_validate(properties_stats) if property_stats else PropertyStats(id=property_id)
-        #
-        #for pasture_stats in new_property_stats.list_pasture_stats:
-        #    if pasture_stats.year == year:
-        #        return ToolResult(content=str(pasture_stats))
-            
         all_properties = run_context.session_state["all_properties"]
         selected_property = next((prop for prop in all_properties if prop["car_code"] == ', '.join(car_codes)))
         selected_property = RuralProperty.model_validate(selected_property)
 
-        new_pasture_stats: PastureStats = query_pasture_statistics(coords=selected_property.get_coords(), year=2026, month=5)
+        today = datetime.date.today()
 
-        #new_property_stats.list_pasture_stats.append(new_pasture_stats)
-
-        #if property_stats is not None:
-        #    properties_stats.remove(property_stats)
-        #properties_stats.append(new_property_stats.model_dump())
-        #run_context.session_state["properties_stats"] = properties_stats
+        new_pasture_stats: PastureStats = query_pasture_statistics(
+            coords=selected_property.get_coords(),
+            year=today.year,
+            month=today.month,
+            day=today.day
+        )
 
         return ToolResult(content=str(new_pasture_stats))
     except Exception as e:

@@ -311,7 +311,7 @@ def retrieve_mapbiomas_biomass_image(coords: List[List[List[List[float]]]], year
         )
     
 
-def _get_t2g_biomass_image(roi, month, year):
+def _get_t2g_biomass_image(roi, month, year, day=1):
     UGPP_SCALE_FACTOR = 0.1
 
     # Maximum light use efficiency (LUEmax) 
@@ -334,17 +334,18 @@ def _get_t2g_biomass_image(roi, month, year):
         '23LPC','23LPD','23LPE','23LQC','23LQD','23LRC','23LRD','24LTH','24LTJ'
         ]
 
-    today_date = ee.Date.fromYMD(year, month, 1)
-    start_date = today_date.advance(-2, 'month')
+    # Apply a 7-day margin to the reference date, then select the full month
+    # containing that shifted date (e.g. run on Oct 5 -> Sep 28 -> September).
+    ref_date = datetime.date(year, month, day) - datetime.timedelta(days=7)
+    target_year, target_month = ref_date.year, ref_date.month
+
+    start_date = ee.Date.fromYMD(target_year, target_month, 1)
     end_date = start_date.advance(1, 'month')
 
     n_days = ee.Number(end_date.difference(start_date, 'day'))
 
     ugpp = ee.ImageCollection("projects/wri-lcl-time2graze/assets/ugpp_10m_v1")
     ugpp_col = ugpp.filter(ee.Filter.inList('tile', TILES)).filterBounds(roi)
-
-    if ugpp_col.size().eq(0).getInfo():
-        return None
 
     grassland_asset = ee.ImageCollection("projects/global-pasture-watch/assets/ggc-30m/v1-1/grassland_c");
     grassland_mask = grassland_asset.filterBounds(roi).filterDate('2024-01-01','2024-12-31').first().gte(1)
@@ -358,16 +359,18 @@ def _get_t2g_biomass_image(roi, month, year):
         .multiply(ee.Image(n_days)).multiply(ee.Image(UGPP_SCALE_FACTOR)).multiply(DRY_BIOMASS_FACTOR) \
         .updateMask(grassland_mask).clip(roi).rename('tonC_hec')
     
-    return grassland_image
+    return grassland_image, target_year, target_month
     
 
-def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int, year: int) -> PIL.Image.Image | None:
+def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int, year: int, day: int = 1) -> PIL.Image.Image | None:
     roi = ee.Geometry.MultiPolygon(coords)
 
-    grassland_image = _get_t2g_biomass_image(roi, month, year)
+    result = _get_t2g_biomass_image(roi, month, year, day)
 
-    if grassland_image is None:
+    if result is None:
         return None
+
+    grassland_image, _target_year, _target_month = result
     
     stats = grassland_image.reduceRegion(
             reducer=ee.Reducer.minMax(),
@@ -479,11 +482,11 @@ def retrieve_feature_soil_texture_image(coords: List[List[List[List[float]]]]):
         )
 
 
-def get_biomass(roi: ee.Geometry, year: int, month: int) -> 'BiomassStats':
-    last_biomass = _get_t2g_biomass_image(roi, month, year)
+def get_biomass(roi: ee.Geometry, year: int, month: int, day: int = 1) -> 'BiomassStats':
+    result = _get_t2g_biomass_image(roi, month, year, day)
 
     # Fallback to mapbiomas asset if custom getter returns None
-    if last_biomass is None:
+    if result is None:
         year = 2024
 
         biomass_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_biomass_v2')
@@ -501,6 +504,8 @@ def get_biomass(roi: ee.Geometry, year: int, month: int) -> 'BiomassStats':
 
         return BiomassStats(observation_year=2024, amount=Value(value=biomass_value, unity="tonelada(s) de matéria seca acumulada no ano"))
     else:
+        last_biomass, target_year, target_month = result
+
         stats = last_biomass.reduceRegion(
             reducer=ee.Reducer.sum(),
             geometry=roi,
@@ -512,7 +517,7 @@ def get_biomass(roi: ee.Geometry, year: int, month: int) -> 'BiomassStats':
 
         month_dict = { 1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho", 7: "Julho", 8: "Agosto", 9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro" }
 
-        return BiomassStats(observation_year=2026, amount=Value(value=biomass_value, unity=f"tonelada(s) de matéria seca acumulada no mês de {month_dict[month]}"))
+        return BiomassStats(observation_year=target_year, amount=Value(value=biomass_value, unity=f"tonelada(s) de matéria seca acumulada no mês de {month_dict[target_month]}"))
 
 
 def get_pasture_age(roi: ee.Geometry, year: int, month: int = None) -> List['AgeStats']:
@@ -623,14 +628,14 @@ def get_land_use_land_cover(roi: ee.Geometry, year: int, month: int = None) -> L
 
     return LULCStats(observation_year=2024, data=lulc_class_data_list)
 
-def query_pasture_statistics(coords: List[List[List[List[float]]]], year: int, month: int) -> PropertyStats:
+def query_pasture_statistics(coords: List[List[List[List[float]]]], year: int, month: int, day: int = 1) -> PropertyStats:
     """
     Extração de estatísticas de pastagem (biomassa, vigor, idade e chuva).
     """
     try:
         roi = ee.Geometry.MultiPolygon(coords)
 
-        biomass_stats = get_biomass(roi, year, month)
+        biomass_stats = get_biomass(roi, year, month, day)
         age_stats = get_pasture_age(roi, 2024, month)
         vigor_stats = get_pasture_vigor(roi, 2024, month)
         lulc_stats = get_land_use_land_cover(roi, 2024, month)
