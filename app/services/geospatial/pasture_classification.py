@@ -68,7 +68,7 @@ def _utm_grid(roi: ee.Geometry, crs: str, scale: int) -> Tuple[affine.Affine, in
 
 def _native_crs(collection: ee.ImageCollection) -> str:
     """Return the native (metric) CRS of the first image in the collection."""
-    return collection.first().select(0).projection().getInfo()["crs"]
+    return collection.select(0).projection().getInfo()["crs"]
 
 
 def _embedding(roi: ee.Geometry, year: int) -> ee.Image:
@@ -226,7 +226,7 @@ def classify_pasture_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int 
         start = time.perf_counter()
 
         embedding_check = _embedding(roi=roi, year=pred_year)
-        if embedding_check.size().getInfo() == 0:
+        if embedding_check.getInfo() is None:
             raise ValueError(f"Satellite Embedding {pred_year} not yet available for this property.")
 
         fc, bandnames = _samples(roi=roi, train_year=train_year)

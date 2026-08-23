@@ -34,7 +34,6 @@ _HIGHVOLUME_URL = "https://earthengine-highvolume.googleapis.com"
 try:
     credentials = ee.ServiceAccountCredentials(config.GEE_SERVICE_ACCOUNT, config.GEE_KEY_FILE)
     ee.Initialize(credentials, project=config.GEE_PROJECT, opt_url=_HIGHVOLUME_URL)
-    GEE_CONNECTED_FLAG = True
 except Exception as e:
     log_error(f"Authentication failed: {e}")
     raise ValueError("GEE_PROJECT environment variables must be set.")
@@ -326,14 +325,6 @@ def _get_t2g_biomass_image(roi, month, year, day=1):
 
     DRY_BIOMASS_FACTOR = GRASS_LUEMAX_FACTOR * IPCC_FACTOR * CONVERSION_FACTOR
 
-    TILES = [
-        '36NXG', '36MVB', '36MWV', '36KUF', '35KRS', '32PRQ', '23KLQ', '21MXN',
-        '18PVQ', '36MTE', '32PLU', '21HXC', '20HKH', '19NBG', '21HWE', '21HUV',
-        '22LDJ', '23KLB','23KMA','23KMB','23KMV','23KNA','23KNB','23KNV','23KPA',
-        '23KPB','23KQA','23KQB','23KRB','23LMC','23LMD','23LNC','23LND','23LNE',
-        '23LPC','23LPD','23LPE','23LQC','23LQD','23LRC','23LRD','24LTH','24LTJ'
-        ]
-
     # Apply a 7-day margin to the reference date, then select the full month
     # containing that shifted date (e.g. run on Oct 5 -> Sep 28 -> September).
     ref_date = datetime.date(year, month, day) - datetime.timedelta(days=7)
@@ -345,17 +336,15 @@ def _get_t2g_biomass_image(roi, month, year, day=1):
     n_days = ee.Number(end_date.difference(start_date, 'day'))
 
     ugpp = ee.ImageCollection("projects/wri-lcl-time2graze/assets/ugpp_10m_v1")
-    ugpp_col = ugpp.filter(ee.Filter.inList('tile', TILES)).filterBounds(roi)
+    ugpp_col = ugpp.filterBounds(roi).filterDate(start_date, end_date)
 
     grassland_asset = ee.ImageCollection("projects/global-pasture-watch/assets/ggc-30m/v1-1/grassland_c");
     grassland_mask = grassland_asset.filterBounds(roi).filterDate('2024-01-01','2024-12-31').first().gte(1)
 
-    date_filtered = ugpp_col.filterDate(start_date, end_date)
-
-    if date_filtered.size().eq(0).getInfo():
+    if ugpp_col.size().eq(0).getInfo():
         return None
 
-    grassland_image: ee.Image = date_filtered.mean() \
+    grassland_image: ee.Image = ugpp_col.mean() \
         .multiply(ee.Image(n_days)).multiply(ee.Image(UGPP_SCALE_FACTOR)).multiply(DRY_BIOMASS_FACTOR) \
         .updateMask(grassland_mask).clip(roi).rename('tonC_hec')
     
@@ -370,9 +359,9 @@ def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int
     if result is None:
         return None
 
-    grassland_image, _target_year, _target_month = result
+    biomass_img, _target_year, _target_month = result
     
-    stats = grassland_image.reduceRegion(
+    stats = biomass_img.reduceRegion(
             reducer=ee.Reducer.minMax(),
             geometry=roi,
             scale=10,
@@ -389,7 +378,7 @@ def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int
     max_bio_val = stats[max_key]    
     
     palette = ['#000033','#9400D3','#FF00FF','#00FFFF','#FFFFFF']
-    bioprop = grassland_image.visualize(**{"min": min_bio_val, "max": max_bio_val, "palette": palette})        
+    bioprop = biomass_img.visualize(**{"min": min_bio_val, "max": max_bio_val, "palette": palette})        
     
     base_image = _get_base_image(roi=roi, year=year)
 
@@ -407,13 +396,13 @@ def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int
 
     img = append_continuous_colorbar(
         img, 
-        title=f"Biomassa\n({str(year)}) - T2G", 
+        title=f"Biomassa\n({str(_target_year)}/{str(_target_month)}) - T2G", 
         vmin=round(min_bio_val),
         vmax=round(max_bio_val),
         palette=palette
     )
 
-    return img
+    return biomass_img, _target_year, _target_month
 
 def retrieve_feature_soil_texture_image(coords: List[List[List[List[float]]]]):
     try:

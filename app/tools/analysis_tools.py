@@ -74,14 +74,16 @@ def generate_biomass_image(run_context: RunContext, car_codes: list[str]) -> Too
 
         today = datetime.date.today()
 
-        img = retrieve_t2g_biomass_image(selected_property.get_coords(), today.month, today.year, today.day)
+        result = retrieve_t2g_biomass_image(selected_property.get_coords(), today.month, today.year, today.day)
 
-        if img is not None:
+        if result is not None:
+            biomass_img, _target_year, _target_month = result
+
             buffer = BytesIO()
-            img.save(buffer, format="PNG")
+            biomass_img.save(buffer, format="PNG")
 
             return ToolResult(
-                content=(f"Legenda: Azul claro (Alta concentração) a Roxo escuro (Baixa concentração). Data: mês {today.month}, ano {today.year}"),
+                content=(f"Legenda: Acumulado de biomassa no mês de referência. Azul claro (Alta concentração) a Roxo escuro (Baixa concentração). Data referência: mês {_target_month}, ano {_target_year}"),
                 images=[Image(content=buffer.getvalue())]
             )
 
@@ -91,12 +93,10 @@ def generate_biomass_image(run_context: RunContext, car_codes: list[str]) -> Too
         img.save(buffer, format="PNG")
 
         return ToolResult(
-            content=(f"Legenda: Azul claro (Alta concentração) a Roxo escuro (Baixa concentração). Data: ano 2024"),
+            content=(f"Legenda: Acumulado de biomassa no ano de referência. Azul claro (Alta concentração) a Roxo escuro (Baixa concentração). Data referência: ano 2024"),
             images=[Image(content=buffer.getvalue())]
         )
                 
-
-
     except Exception as e:
         return ToolResult(content=str(e))
 
