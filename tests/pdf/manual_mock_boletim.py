@@ -37,7 +37,6 @@ def main() -> None:
     stats = build_placeholder_property_stats(rural_property.car_code)
     story = build_boletim_story(
         rural_property, stats,
-        satellite_image_bytes=_mock_image_bytes((150, 130, 100)),
         location_image_bytes=_mock_image_bytes((150, 130, 100)),
         pasture_map_image_bytes=_mock_image_bytes((60, 140, 70)),
         vigor_map_image_bytes=_mock_image_bytes((215, 25, 28)),

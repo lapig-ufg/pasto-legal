@@ -57,7 +57,7 @@ def build_placeholder_property_stats(car_code: str) -> PropertyStats:
 def _build_location_blocks(location_image_bytes: bytes) -> List[Flowable]:
     return [
         pdf.section_title("Localização da Propriedade"),
-        pdf.single_image(location_image_bytes, caption="Imagem de satélite com o limite do CAR"),
+        pdf.single_image(location_image_bytes, caption="Imagem de satélite com o limite do CAR", image_height_mm=100),
         pdf.spacer(4),
     ]
 
@@ -76,14 +76,13 @@ def _build_age_blocks(pasture_stats: Optional[PastureStats]) -> List[Flowable]:
 
 
 def _build_vigor_blocks(
-    pasture_stats: Optional[PastureStats], satellite_image_bytes: bytes, vigor_map_image_bytes: Optional[bytes]
+    pasture_stats: Optional[PastureStats], vigor_map_image_bytes: Optional[bytes]
 ) -> List[Flowable]:
     blocks: List[Flowable] = [pdf.subsection_title("Vigor da Pastagem")]
 
     if vigor_map_image_bytes:
-        blocks.append(pdf.side_by_side_images(
-            satellite_image_bytes, vigor_map_image_bytes,
-            left_caption="Imagem de satélite", right_caption="Mapa de vigor",
+        blocks.append(pdf.single_image(
+            vigor_map_image_bytes, caption="Mapa de vigor", image_height_mm=100,
         ))
         blocks.append(pdf.spacer(2))
 
@@ -126,7 +125,6 @@ def _build_biomass_blocks(pasture_stats: Optional[PastureStats]) -> List[Flowabl
 def build_boletim_story(
     rural_property: RuralProperty,
     property_stats: PropertyStats,
-    satellite_image_bytes: bytes,
     location_image_bytes: bytes,
     pasture_map_image_bytes: bytes,
     vigor_map_image_bytes: Optional[bytes] = None,
@@ -135,8 +133,8 @@ def build_boletim_story(
     emission_date: Optional[date] = None,
 ) -> List[Flowable]:
     """Monta a lista de flowables do boletim: localização, pastagem (idade/vigor/LULC),
-    biomassa e tipos de solo — cada seção com o mapa temático ao lado da imagem de
-    satélite "crua" e os dados numéricos logo abaixo.
+    biomassa e tipos de solo — cada seção com o mapa temático principal e os dados
+    numéricos logo abaixo.
     """
     emission_date = emission_date or date.today()
     farm_name = rural_property.nickname or rural_property.car_code
@@ -156,22 +154,20 @@ def build_boletim_story(
     story.extend(_build_location_blocks(location_image_bytes))
 
     story.append(pdf.section_title("1. Dados de Pastagem"))
-    story.append(pdf.side_by_side_images(
-        satellite_image_bytes, pasture_map_image_bytes,
-        left_caption="Imagem de satélite", right_caption="Classificação de pastagem",
+    story.append(pdf.single_image(
+        pasture_map_image_bytes, caption="Classificação de pastagem", image_height_mm=100,
     ))
     story.append(pdf.spacer(3))
     story.extend(_build_age_blocks(latest_pasture_stats))
-    story.extend(_build_vigor_blocks(latest_pasture_stats, satellite_image_bytes, vigor_map_image_bytes))
+    story.extend(_build_vigor_blocks(latest_pasture_stats, vigor_map_image_bytes))
     story.extend(_build_lulc_blocks(latest_pasture_stats))
 
     story.append(pdf.spacer(4))
 
     story.append(pdf.section_title("2. Análise de Biomassa"))
     if biomass_map_image_bytes:
-        story.append(pdf.side_by_side_images(
-            satellite_image_bytes, biomass_map_image_bytes,
-            left_caption="Imagem de satélite", right_caption="Mapa de biomassa",
+        story.append(pdf.single_image(
+            biomass_map_image_bytes, caption="Mapa de biomassa", image_height_mm=100,
         ))
         story.append(pdf.spacer(3))
     story.extend(_build_biomass_blocks(latest_pasture_stats))
@@ -179,9 +175,8 @@ def build_boletim_story(
     if soil_map_image_bytes:
         story.append(pdf.spacer(4))
         story.append(pdf.section_title("3. Tipos de Solo"))
-        story.append(pdf.side_by_side_images(
-            satellite_image_bytes, soil_map_image_bytes,
-            left_caption="Imagem de satélite", right_caption="Textura do solo",
+        story.append(pdf.single_image(
+            soil_map_image_bytes, caption="Textura do solo", image_height_mm=100,
         ))
 
     return story

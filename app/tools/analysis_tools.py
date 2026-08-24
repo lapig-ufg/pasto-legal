@@ -13,7 +13,6 @@ from app.services.geospatial.gee import (
     retrieve_feature_images,
     retrieve_mapbiomas_biomass_image,
     retrieve_t2g_biomass_image,
-    retrieve_plain_satellite_image,
     retrieve_pasture_vigor_image,
     retrieve_feature_soil_texture_image,
     query_pasture_statistics,
@@ -298,7 +297,6 @@ def generate_property_boletim(run_context: RunContext, car_codes: list[str]) -> 
         pasture_stats = query_pasture_statistics(coords=coords, year=today.year, month=today.month, day=today.day)
         stats = PropertyStats(car_code=selected_property.car_code, list_pasture_stats=[pasture_stats])
 
-        satellite_image = retrieve_plain_satellite_image(coords)[0]
         location_image = retrieve_feature_images(coords)[0]
 
         roi = ee.Geometry.MultiPolygon(coords)
@@ -319,7 +317,6 @@ def generate_property_boletim(run_context: RunContext, car_codes: list[str]) -> 
         story = build_boletim_story(
             selected_property,
             stats,
-            satellite_image_bytes=_pil_to_png_bytes(satellite_image),
             location_image_bytes=_pil_to_png_bytes(location_image),
             pasture_map_image_bytes=_pil_to_png_bytes(pasture_map_image),
             vigor_map_image_bytes=_pil_to_png_bytes(vigor_map_image) if vigor_map_image else None,

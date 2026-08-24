@@ -37,7 +37,6 @@ def _build_sample_property() -> RuralProperty:
 
 def _build_full_story(rural_property: RuralProperty, stats, **overrides):
     kwargs = dict(
-        satellite_image_bytes=_sample_image_bytes((150, 130, 100)),
         location_image_bytes=_sample_image_bytes((150, 130, 100)),
         pasture_map_image_bytes=_sample_image_bytes((40, 120, 60)),
         vigor_map_image_bytes=_sample_image_bytes((215, 25, 28)),
