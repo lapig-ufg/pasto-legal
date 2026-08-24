@@ -52,30 +52,117 @@ def _resolve_property(run_context: RunContext, car_codes: list[str]) -> RuralPro
     return RuralProperty.model_validate(selected_property)
 
 
-@tool(tool_hooks=[validate_selected_property_hook])
-def get_precipitation_forecast(
-    run_context: RunContext, car_codes: list[str], forecast_days: int = 36
+@tool
+def get_monthly_precipitation_forecast(
+    run_context: RunContext, car_codes: list[str], months: int = 7
 ) -> ToolResult:
     """
-    Retrieves the daily precipitation forecast (mm) for the rural property
-    from an ensemble of weather models via the Open-Meteo API, returning the
-    most pessimistic (highest volume) and most optimistic (lowest volume)
-    values among the ensemble members.
+    Retrieves the monthly precipitation forecast (mm) for the rural property
+    from the Open-Meteo seasonal API, returning the mean precipitation for
+    each month within the requested horizon (1 to 7 months).
 
     Use this tool when the user asks about:
-    - Rain or precipitation forecast.
-    - Expected rainfall volume for the coming days.
-    - Pessimistic/optimistic rain scenario.
-    - Flood or drought risk within the forecast horizon.
+    - Rainfall over the coming months or the next season.
+    - Monthly precipitation mean for a horizon of 1 to 7 months.
+    - Long-range flood/drought outlook on a monthly basis.
+
+    Do NOT use this tool when the user asks about a specific future date
+    or "in N days" — use get_daily_precipitation_forecast instead.
 
     params:
         car_codes (list[str]): List of CAR codes for the property.
-        forecast_days (int): Number of forecast days, between 1 and 36.
-            Defaults to 36.
+        months (int): Number of months to forecast, between 1 and 7.
+            Defaults to 7.
 
     Return:
-        ToolResult: Text with the daily precipitation forecast
-        (date + pessimistic mm / optimistic mm).
+        ToolResult: Text with the monthly precipitation forecast
+        (date + mean mm).
+    """
+    try:
+        if not 1 <= months <= 7:
+            raise ValueError(
+                f"months must be between 1 and 7 (received: {months})."
+            )
+
+        property_obj = _resolve_property(run_context, car_codes)
+        latitude, longitude = property_obj.get_centroid()
+
+        forecast_days = months * 31
+
+        params = {
+            "latitude": latitude,
+            "longitude": longitude,
+            "monthly": "precipitation_mean",
+            "forecast_days": forecast_days,
+        }
+        responses = openmeteo.weather_api(SEASONAL_URL, params=params)
+        response = responses[0]
+
+        monthly = response.Monthly()
+        monthly_precipitation_mean = monthly.Variables(0).ValuesAsNumpy()
+
+        monthly_data = {
+            "date": pd.date_range(
+                start=f"{monthly.Year()}-{monthly.Month()}-01",
+                periods=monthly.Count(),
+                freq="MS",
+                inclusive="left",
+            ),
+            "precipitation_mean": monthly_precipitation_mean,
+        }
+        monthly_dataframe = pd.DataFrame(data=monthly_data)
+
+        lines = []
+        for _, row in monthly_dataframe.iterrows():
+            mean_val = float(row["precipitation_mean"])
+            if mean_val != mean_val:
+                mean_val = 0.0
+            lines.append(
+                f"{row['date'].strftime('%Y-%m-%d')}: mean {mean_val:.1f} mm"
+            )
+
+        content = (
+            f"Monthly precipitation forecast (seasonal) for property "
+            f"{property_obj.car_code} ({latitude:.4f}, {longitude:.4f}):\n"
+            + "\n".join(lines)
+        )
+
+        return ToolResult(content=content)
+
+    except Exception as e:
+        log_error(f"ERROR: {e}")
+        return ToolResult(content=str(e))
+
+
+@tool
+def get_daily_precipitation_forecast(
+    run_context: RunContext, car_codes: list[str], forecast_days: int = 1
+) -> ToolResult:
+    """
+    Retrieves the precipitation forecast (mm) for a specific target day of the
+    rural property from an ensemble of weather models via the Open-Meteo API,
+    returning the 1st quartile (lower bound) and 3rd quartile (upper bound) of
+    precipitation across the ensemble members for that single day.
+
+    The ensemble API returns daily data from day 1 up to the chosen day; this
+    tool reports the quartiles only for the last day (the day the user chose).
+
+    Use this tool when the user asks about:
+    - Precipitation on a specific future date (e.g. "on 2026-09-27").
+    - Rainfall "in N days" / "on day N" (1 to 36 days ahead).
+    - A single-day optimistic/pessimistic band (Q1/Q3 quartiles).
+
+    Do NOT use this tool for monthly or seasonal trends — use
+    get_monthly_precipitation_forecast instead.
+
+    params:
+        car_codes (list[str]): List of CAR codes for the property.
+        forecast_days (int): Target day to forecast, between 1 and 36.
+            Defaults to 1.
+
+    Return:
+        ToolResult: Text with the precipitation forecast for the chosen
+        day (date + Q1 mm / Q3 mm).
     """
     try:
         if not 1 <= forecast_days <= 36:
@@ -103,33 +190,27 @@ def get_precipitation_forecast(
         precipitation_members = [
             v.ValuesAsNumpy()
             for v in daily_variables
-            if v.Variable() == Variable.precipitation_sum
+            if v.Variable() == Variable.precipitation
         ]
 
         if not precipitation_members:
             raise ValueError(
-                "No ensemble member with precipitation_sum was returned."
+                "No ensemble member with precipitation was returned."
             )
 
-        members_array = np.ma.array(precipitation_members, mask=np.isnan(precipitation_members))
-        pessimist = members_array.max(axis=0)
-        optimist = members_array.min(axis=0)
+        members_array = np.array(precipitation_members)
+        last_day_values = members_array[:, -1]
 
-        dates = _daily_dates(daily)
+        q1 = float(np.nanquantile(last_day_values, 0.25))
+        q3 = float(np.nanquantile(last_day_values, 0.75))
 
-        lines = []
-        for date, pess, opt in zip(dates, pessimist, optimist):
-            pess_val = float(pess) if pess is not np.ma.masked else 0.0
-            opt_val = float(opt) if opt is not np.ma.masked else 0.0
-            lines.append(
-                f"{date.isoformat()}: "
-                f"pessimistic {pess_val:.1f} mm / optimistic {opt_val:.1f} mm"
-            )
+        target_date = _daily_dates(daily)[-1].isoformat()
 
         content = (
-            f"Precipitation forecast (ensemble) for property "
-            f"{property_obj.car_code} ({latitude:.4f}, {longitude:.4f}):\n"
-            + "\n".join(lines)
+            f"Daily precipitation forecast (ensemble quartiles) for property "
+            f"{property_obj.car_code} ({latitude:.4f}, {longitude:.4f}) "
+            f"on {target_date} (day {forecast_days}):\n"
+            f"Q1 (lower): {q1:.1f} mm / Q3 (upper): {q3:.1f} mm"
         )
 
         return ToolResult(content=content)
@@ -139,7 +220,7 @@ def get_precipitation_forecast(
         return ToolResult(content=str(e))
 
 
-@tool(tool_hooks=[validate_selected_property_hook])
+@tool
 def get_rain_season_forecast(
     run_context: RunContext, car_codes: list[str]
 ) -> ToolResult:
@@ -226,7 +307,7 @@ def get_rain_season_forecast(
         return ToolResult(content=str(e))
 
 
-@tool(tool_hooks=[validate_selected_property_hook])
+@tool
 def get_temperature_forecast(
     run_context: RunContext, car_codes: list[str], forecast_days: int = 16
 ) -> ToolResult:
