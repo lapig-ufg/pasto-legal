@@ -203,7 +203,7 @@ with col_btn:
 user_query = None
 
 if loc_input_value:
-    user_query = """Minhas coordenadas são Lat: -15.82994 S Long: -49.43353."""
+    user_query = """Minhas coordenadas são 2°46'32.94"S 48°31'41.74"W."""
 elif chat_input_value:
     user_query = chat_input_value
 elif audio_input_value:

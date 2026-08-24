@@ -10,9 +10,8 @@ from retry_requests import retry
 from agno.tools import tool
 from agno.tools.function import ToolResult
 from agno.run import RunContext
-from agno.utils.log import log_error
+from agno.utils.log import log_debug, log_warning, log_error
 
-from app.hooks.tool_hooks import validate_selected_property_hook
 from app.schemas.rural_property import RuralProperty
 
 
@@ -79,7 +78,9 @@ def get_monthly_precipitation_forecast(
         (date + mean mm).
     """
     try:
+        log_debug(f"get_monthly_precipitation_forecast: car_codes={car_codes}, months={months}")
         if not 1 <= months <= 7:
+            log_warning(f"months fora do intervalo permitido: {months}")
             raise ValueError(
                 f"months must be between 1 and 7 (received: {months})."
             )
@@ -127,10 +128,11 @@ def get_monthly_precipitation_forecast(
             + "\n".join(lines)
         )
 
+        log_debug(f"get_monthly_precipitation_forecast: {len(lines)} meses retornados ({property_obj.car_code})")
         return ToolResult(content=content)
 
     except Exception as e:
-        log_error(f"ERROR: {e}")
+        log_error(f"get_monthly_precipitation_forecast: {e}")
         return ToolResult(content=str(e))
 
 
@@ -165,7 +167,9 @@ def get_daily_precipitation_forecast(
         day (date + Q1 mm / Q3 mm).
     """
     try:
+        log_debug(f"get_daily_precipitation_forecast: car_codes={car_codes}, forecast_days={forecast_days}")
         if not 1 <= forecast_days <= 36:
+            log_warning(f"forecast_days fora do intervalo permitido: {forecast_days}")
             raise ValueError(
                 f"forecast_days must be between 1 and 36 (received: {forecast_days})."
             )
@@ -213,10 +217,11 @@ def get_daily_precipitation_forecast(
             f"Q1 (lower): {q1:.1f} mm / Q3 (upper): {q3:.1f} mm"
         )
 
+        log_debug(f"get_daily_precipitation_forecast: Q1={q1:.1f}mm Q3={q3:.1f}mm ({property_obj.car_code})")
         return ToolResult(content=content)
 
     except Exception as e:
-        log_error(f"ERROR: {e}")
+        log_error(f"get_daily_precipitation_forecast: {e}")
         return ToolResult(content=str(e))
 
 
@@ -246,6 +251,7 @@ def get_rain_season_forecast(
         will begin.
     """
     try:
+        log_debug(f"get_rain_season_forecast: car_codes={car_codes}")
         property_obj = _resolve_property(run_context, car_codes)
         latitude, longitude = property_obj.get_centroid()
 
@@ -300,10 +306,11 @@ def get_rain_season_forecast(
         }
         pd.DataFrame(data=monthly_data)
 
+        log_debug(f"get_rain_season_forecast: estimativa gerada ({property_obj.car_code})")
         return ToolResult(content="Vai começar a chover em 2 meses")
 
     except Exception as e:
-        log_error(f"ERROR: {e}")
+        log_error(f"get_rain_season_forecast: {e}")
         return ToolResult(content=str(e))
 
 
@@ -329,7 +336,9 @@ def get_temperature_forecast(
         ToolResult: Text with the daily temperature forecast (date, max, min).
     """
     try:
+        log_debug(f"get_temperature_forecast: car_codes={car_codes}, forecast_days={forecast_days}")
         if not 1 <= forecast_days <= 16:
+            log_warning(f"forecast_days fora do intervalo permitido: {forecast_days}")
             raise ValueError(
                 f"forecast_days must be between 1 and 16 (received: {forecast_days})."
             )
@@ -365,8 +374,9 @@ def get_temperature_forecast(
             + "\n".join(lines)
         )
 
+        log_debug(f"get_temperature_forecast: {len(lines)} dias retornados ({property_obj.car_code})")
         return ToolResult(content=content)
 
     except Exception as e:
-        log_error(f"ERROR: {e}")
+        log_error(f"get_temperature_forecast: {e}")
         return ToolResult(content=str(e))
