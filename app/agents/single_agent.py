@@ -14,6 +14,7 @@ from app.tools.analysis_tools import (
     generate_biomass_image,
     generate_pasture_classification_image,
     generate_property_image,
+    generate_property_boletim,
     generate_soil_texture_image,
     get_pasture_stats,
     get_topographic_stats,
@@ -56,6 +57,7 @@ _ANALYST_TOOLS = [
     generate_biomass_image,
     generate_soil_texture_image,
     generate_pasture_classification_image,
+    generate_property_boletim,
     get_monthly_precipitation_forecast,
     get_daily_precipitation_forecast,
     get_rain_season_forecast,
@@ -272,6 +274,7 @@ def get_instructions(run_context: RunContext) -> str:
             - Use seu conhecimento com base em cartilhas e conhecimentos da Embrapa para esclarecer dúvidas dos usuários.
             - Gere imagens apenas quando explicitamente pedido pelo usuário.
             - Gere apenas um tipo de imagem por vez. Nunca gere mais de um tipo de imagem por vez.
+            - Se a ferramenta `generate_property_boletim` for chamada, o campo `content` que ela devolve já é a mensagem final pronta para o usuário (texto curto, gerado em Python, não precisa de resumo). Repasse esse texto exatamente como veio, sem reescrever, resumir de novo ou elaborar em cima. Lembre o usuário da defasagem temporal dos dados (biomassa = mês/ano atual; idade, vigor e LULC = ano mais recente do MapBiomas).
 
             # Regras de Suporte (Q&A)
             - Responda baseando-se EXCLUSIVAMENTE nos trechos retornados pela base de conhecimento.

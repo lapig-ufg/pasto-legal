@@ -154,7 +154,7 @@ if "debug_messages" not in st.session_state:
     st.session_state.debug_messages = []
 
 # Exibe mensagens anteriores
-for message in st.session_state.messages:
+for msg_idx, message in enumerate(st.session_state.messages):
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
         if "images" in message:
@@ -165,6 +165,15 @@ for message in st.session_state.messages:
             for aud in message["audio"]:
                 if aud is not None:
                     st.audio(aud, format="audio/ogg")
+        if "files" in message:
+            for file_idx, f in enumerate(message["files"]):
+                st.download_button(
+                    label=f"Baixar {f['name'] or 'arquivo'}",
+                    data=f["content"],
+                    file_name=f["name"] or f"arquivo_{file_idx}.pdf",
+                    mime=f["mime_type"] or "application/octet-stream",
+                    key=f"dl_hist_{msg_idx}_{file_idx}",
+                )
 
 # Inputs do usuário
 if 'file_uploader_key' not in st.session_state:
@@ -296,6 +305,17 @@ if user_query:
                 for aud in audio_to_display:
                     if getattr(aud, 'filepath', None):
                         st.audio(str(aud.filepath), format="audio/ogg")
+
+            if response and getattr(response, 'files', None):
+                for file_idx, f in enumerate(response.files):
+                    if f.content:
+                        st.download_button(
+                            label=f"Baixar {f.name or 'arquivo'}",
+                            data=f.content,
+                            file_name=f.name or f"arquivo_{file_idx}.{f.format or 'bin'}",
+                            mime=f.mime_type or "application/octet-stream",
+                            key=f"dl_{st.session_state.session_id}_{len(st.session_state.messages)}_{file_idx}",
+                        )
             # Exibe a resposta final
             message_placeholder.markdown(full_response)
 
@@ -319,6 +339,11 @@ if user_query:
             if audio_to_display:
                 new_message["audio"] = [
                     str(aud.filepath) for aud in audio_to_display if getattr(aud, 'filepath', None)
+                ]
+            if getattr(response, 'files', None):
+                new_message["files"] = [
+                    {"content": f.content, "name": f.name, "mime_type": f.mime_type}
+                    for f in response.files if f.content
                 ]
         
         st.session_state.messages.append(new_message)
