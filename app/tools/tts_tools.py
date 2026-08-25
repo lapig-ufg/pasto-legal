@@ -14,6 +14,7 @@ synthesis cost on every intermediate agent step.
 from agno.media import Audio
 from agno.tools import tool
 from agno.tools.function import ToolResult
+from agno.utils.log import log_debug, log_error
 
 
 @tool
@@ -31,4 +32,9 @@ def generate_speech(text: str) -> ToolResult:
     Returns:
         ToolResult: Objeto de resultado contendo a fala gerada.
     """
-    return ToolResult(content="Áudio gerado com sucesso!", audios=[Audio(content=bytes(), transcript=text)])
+    log_debug("generate_speech: marcando turn para síntese de áudio")
+    try:
+        return ToolResult(content="Áudio gerado com sucesso!", audios=[Audio(content=bytes(), transcript=text)])
+    except Exception as e:
+        log_error(f"generate_speech: {e}")
+        return ToolResult(content=f"Erro ao gerar áudio: {str(e)}")

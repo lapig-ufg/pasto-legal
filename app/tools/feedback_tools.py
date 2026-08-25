@@ -4,7 +4,7 @@ from agno.tools import tool
 from agno.run import RunContext
 from agno.agent import Agent
 from agno.models.google import Gemini
-from agno.utils.log import log_debug
+from agno.utils.log import log_debug, log_warning, log_error
 
 from app.database.session import SessionLocal, engine
 from app.database.models import NegativeFeedback, AnalysisFeedback
@@ -66,7 +66,8 @@ def _get_sanitized_history(run_context: RunContext) -> str:
     try:
         sanitizer_response = sanitizer_agent.run(history_text)
         sanitized_history = sanitizer_response.content if sanitizer_response and sanitizer_response.content else history_text
-    except Exception:
+    except Exception as sanitizer_error:
+        log_warning(f"Sanitizador semântico falhou, usando fallback determinístico: {sanitizer_error}")
         sanitized_history = history_text
         
     # 3. Fallback Determinístico (Camada 2 - Regex)
@@ -89,7 +90,7 @@ def record_frustration_feedback(
     """
     NegativeFeedback.metadata.create_all(bind=engine)
     db = SessionLocal()
-    
+    log_debug("record_frustration_feedback: iniciando registro")
     try:
         # Puxa o histórico já limpo e anonimizado pela nossa esteira
         sanitized_history = _get_sanitized_history(run_context)
@@ -104,11 +105,11 @@ def record_frustration_feedback(
         
         db.add(novo_feedback)
         db.commit()
-        log_debug("Feedback registrado com sucesso.")
+        log_debug("record_frustration_feedback: feedback registrado com sucesso")
         return "Feedback registrado com sucesso no sistema. Muito obrigado por ajudar a melhorar o Pasto Legal!"
     except Exception as e:
         db.rollback()
-        log_debug("Erro ao registrar feedback.")
+        log_error(f"record_frustration_feedback: erro ao registrar feedback: {e}")
         return f"Erro ao registrar feedback: {str(e)}"
     finally:
         db.close()
@@ -125,7 +126,7 @@ def record_analisys_feedback(
     """
     AnalysisFeedback.metadata.create_all(bind=engine)
     db = SessionLocal()
-    
+    log_debug("record_analisys_feedback: iniciando registro")
     try:
         # Puxa o histórico já limpo e anonimizado pela nossa esteira
         final_safe_context = _get_sanitized_history(run_context)
@@ -139,9 +140,11 @@ def record_analisys_feedback(
         
         db.add(novo_feedback)
         db.commit()
+        log_debug("record_analisys_feedback: feedback registrado com sucesso")
         return "Feedback registrado com sucesso no sistema. Muito obrigado por ajudar a melhorar o Pasto Legal!"
     except Exception as e:
         db.rollback()
+        log_error(f"record_analisys_feedback: erro ao registrar feedback: {e}")
         return f"Erro ao registrar feedback: {str(e)}"
     finally:
         db.close()

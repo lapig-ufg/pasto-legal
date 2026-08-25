@@ -395,13 +395,17 @@ def _get_t2g_biomass_image(roi, month, year, day=1):
 
     n_days = ee.Number(end_date.difference(start_date, 'day'))
 
-    ugpp = ee.ImageCollection("projects/wri-lcl-time2graze/assets/ugpp_10m_v1")
+    ugpp = ee.ImageCollection("projects/wri-lcl-time2graze/assets/ugpp_prod_10m_v1")
     ugpp_col = ugpp.filterBounds(roi).filterDate(start_date, end_date)
 
     grassland_asset = ee.ImageCollection("projects/global-pasture-watch/assets/ggc-30m/v1-1/grassland_c");
     grassland_mask = grassland_asset.filterBounds(roi).filterDate('2024-01-01','2024-12-31').first().gte(1)
 
     if ugpp_col.size().eq(0).getInfo():
+        log_error(
+            f"_get_t2g_biomass_image returned None: empty UGPP collection "
+            f"for roi={roi}, month={month}, year={year}, day={day}"
+        )
         return None
 
     grassland_image: ee.Image = ugpp_col.mean() \
@@ -412,57 +416,86 @@ def _get_t2g_biomass_image(roi, month, year, day=1):
     
 
 def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int, year: int, day: int = 1) -> PIL.Image.Image | None:
-    roi = ee.Geometry.MultiPolygon(coords)
+    try:
+        roi = ee.Geometry.MultiPolygon(coords)
 
-    result = _get_t2g_biomass_image(roi, month, year, day)
+        result = _get_t2g_biomass_image(roi, month, year, day)
 
-    if result is None:
-        return None
+        if result is None:
+            return None
 
-    biomass_img, _target_year, _target_month = result
-    
-    stats = biomass_img.reduceRegion(
-            reducer=ee.Reducer.minMax(),
-            geometry=roi,
-            scale=10,
-            maxPixels=1e13
-        ).getInfo()
+        biomass_img, _target_year, _target_month = result
+        
+        stats = biomass_img.reduceRegion(
+                reducer=ee.Reducer.minMax(),
+                geometry=roi,
+                scale=10,
+                maxPixels=1e13
+            ).getInfo()
 
-    min_key = next((k for k in stats if k.endswith('_min')), None)
-    max_key = next((k for k in stats if k.endswith('_max')), None)
+        min_key = next((k for k in stats if k.endswith('_min')), None)
+        max_key = next((k for k in stats if k.endswith('_max')), None)
 
-    if not min_key or stats[min_key] is None:
-        raise ValueError("Não foi possível calcular a biomassa. A área pode não conter pastagem mapeada.")
+        if not min_key or stats[min_key] is None:
+            raise ValueError("Não foi possível calcular a biomassa. A área pode não conter pastagem mapeada.")
 
-    min_bio_val = stats[min_key]
-    max_bio_val = stats[max_key]    
-    
-    palette = ['#000033','#9400D3','#FF00FF','#00FFFF','#FFFFFF']
-    bioprop = biomass_img.visualize(**{"min": min_bio_val, "max": max_bio_val, "palette": palette})        
-    
-    base_image = _get_base_image(roi=roi, year=year)
+        min_bio_val = stats[min_key]
+        max_bio_val = stats[max_key]    
+        
+        palette = ['#000033','#9400D3','#FF00FF','#00FFFF','#FFFFFF']
+        bioprop = biomass_img.visualize(**{"min": min_bio_val, "max": max_bio_val, "palette": palette})        
+        
+        base_image = _get_base_image(roi=roi, year=year)
 
-    outline = _draw_feature_boundaries(roi=roi)
+        outline = _draw_feature_boundaries(roi=roi)
 
-    final_image = base_image.blend(bioprop.clip(roi))
-    final_image = final_image.blend(outline).clip(roi.buffer(_FEATURE_BUFFER).bounds());
-    
-    url = final_image.getThumbURL({"dimensions":_IMAGE_DIMENSION, "format": "png"})
-    
-    resposta = requests.get(url, timeout=60)
-    resposta.raise_for_status()
+        final_image = base_image.blend(bioprop.clip(roi))
+        final_image = final_image.blend(outline).clip(roi.buffer(_FEATURE_BUFFER).bounds());
+        
+        url = final_image.getThumbURL({"dimensions":_IMAGE_DIMENSION, "format": "png"})
+        
+        resposta = requests.get(url, timeout=60)
+        resposta.raise_for_status()
 
-    img = PIL.Image.open(BytesIO(resposta.content))
+        img = PIL.Image.open(BytesIO(resposta.content))
 
-    img = append_continuous_colorbar(
-        img, 
-        title=f"Biomassa\n({str(_target_year)}/{str(_target_month)}) - T2G", 
-        vmin=round(min_bio_val),
-        vmax=round(max_bio_val),
-        palette=palette
-    )
+        img = append_continuous_colorbar(
+            img, 
+            title=f"Biomassa\n({str(_target_year)}/{str(_target_month)}) - T2G", 
+            vmin=round(min_bio_val),
+            vmax=round(max_bio_val),
+            palette=palette
+        )
 
-    return biomass_img, _target_year, _target_month
+        return img, _target_year, _target_month
+
+    except ValueError as error:
+        log_error(traceback.format_exc())
+        raise error
+    except ee.EEException as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Peça desculpas e informe que houve uma falha de processamento.\n"
+            "Peça ao usuário que tente novamente mais tarde."
+        )
+    except requests.exceptions.HTTPError as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Peça desculpas e informe que o servidor de imagens do satélite falhou.\n"
+            "Peça ao usuário que tente novamente mais tarde."
+        )
+    except requests.exceptions.RequestException as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Peça desculpas e informe que houve um problema de conexão ao baixar o mapa de biomassa.\n"
+            "Peça ao usuário que tente novamente mais tarde."
+        )
+    except Exception as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Peça desculpas e informe que houve um erro inesperado.\n"
+            "Peça ao usuário que tente novamente mais tarde."
+        )
 
 def retrieve_feature_soil_texture_image(coords: List[List[List[List[float]]]]):
     try:
