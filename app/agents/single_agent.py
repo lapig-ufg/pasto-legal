@@ -305,5 +305,7 @@ single_agent = Agent(
     skills=skills,
     model=config.model,
     fallback_models=[config.fallback_model],
+    add_datetime_to_context=True,
+    timezone_identifier="America/Sao_Paulo",
     debug_mode=config.DEBUG_MODE,
 )
