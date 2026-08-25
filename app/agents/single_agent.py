@@ -35,7 +35,8 @@ from app.tools.tts_tools import generate_speech
 from app.tools.weather_tools import (
     get_monthly_precipitation_forecast,
     get_daily_precipitation_forecast,
-    get_rain_season_forecast,
+    get_rain_season_onset_forecast,
+    get_dry_season_onset_forecast,
     get_temperature_forecast,
 )
 
@@ -60,7 +61,8 @@ _ANALYST_TOOLS = [
     generate_property_boletim,
     get_monthly_precipitation_forecast,
     get_daily_precipitation_forecast,
-    get_rain_season_forecast,
+    get_rain_season_onset_forecast,
+    get_dry_season_onset_forecast,
     get_temperature_forecast,
 ]
 

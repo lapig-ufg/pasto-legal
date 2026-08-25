@@ -5,6 +5,7 @@ services:
     volumes:
       - .:/app
       - /app/.venv
+      - ./data:/app/data:ro
       - ./tmp:/app/tmp
       - ./logs:/app/logs
     ports:
