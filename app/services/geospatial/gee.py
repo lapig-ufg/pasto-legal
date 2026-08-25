@@ -467,7 +467,7 @@ def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int
             palette=palette
         )
 
-        return biomass_img, _target_year, _target_month
+        return img, _target_year, _target_month
 
     except ValueError as error:
         log_error(traceback.format_exc())
