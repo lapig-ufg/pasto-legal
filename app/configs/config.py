@@ -89,7 +89,7 @@ class BaseConfig:
         if self.FALLBACK_MODEL_PROVIDER is not None and self.FALLBACK_MODEL_ID is None:
             raise ValueError("FALLBACK_MODEL_ID environment variable must be set")
 
-        match self.PRIMARY_MODEL_PROVIDER:
+        match self.FALLBACK_MODEL_PROVIDER:
             case "google":
                 if self.GOOGLE_API_KEY is None:
                     raise ValueError("GOOGLE_API_KEY environment variable must be set.")
