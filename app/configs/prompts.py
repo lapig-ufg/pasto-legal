@@ -2,29 +2,38 @@
 
 The YAML files under ``app/configs/prompts/`` are the single runtime source for
 agent instructions/metadata and tool descriptions, so the product can be
-re-localized to other languages by replacing these files (no code changes).
+re-localized to other languages by providing these files (no code changes).
+
+The English reference files under ``app/configs/prompts/defaults/`` are the
+fallback base: any key missing from the localized files is filled from the
+default and logged as a warning. When the whole localized file is absent,
+the default file is used and a warning is emitted as well.
 
 Structure:
     agents.yml -> {agent_tag: {name/role/description/instructions/...}}
     tools.yml  -> {component: {tool_name: {description: ...}}}
-    hooks.yml  -> {group: {key: text}} or {group: {key: {subkey: text}}}
+    hooks.yml  -> {group: {key: text}}
 """
 
 from functools import lru_cache
 from pathlib import Path
 
 import yaml
+from agno.utils.log import log_warning
 
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
+DEFAULTS_DIR = PROMPTS_DIR / "defaults"
+
+PROMPT_FILES = ("agents.yml", "tools.yml", "hooks.yml")
 
 
 class MissingPromptError(KeyError):
-    """Raised when a requested agent/tool/hook text is absent from the YAML files."""
+    """Raised when a requested agent/tool/hook text is absent from all YAML files."""
 
 
-@lru_cache(maxsize=1)
-def _load_yaml(filename: str) -> dict:
-    path = PROMPTS_DIR / filename
+@lru_cache(maxsize=None)
+def _read_yaml(directory: Path, filename: str) -> dict:
+    path = directory / filename
     if not path.exists():
         raise MissingPromptError(f"Prompts file not found: {path}")
     with open(path, "r", encoding="utf-8") as file:
@@ -32,6 +41,75 @@ def _load_yaml(filename: str) -> dict:
     if not isinstance(data, dict):
         raise MissingPromptError(f"Prompts file must contain a mapping: {path}")
     return data
+
+
+def _warn(message: str) -> None:
+    log_warning(f"[prompts] {message}")
+
+
+def _is_blank(value) -> bool:
+    """A key counts as missing when absent, None, or an empty/whitespace string."""
+    if value is None:
+        return True
+    return isinstance(value, str) and not value.strip()
+
+
+def _merge_level(default_value, localized_value, path: str, filename: str):
+    """Merges one mapping level: fills missing/blank keys from the default
+    (warning per gap) and reports localized keys unknown to the default."""
+    merged: dict = {}
+    for key, default_sub_value in default_value.items():
+        localized_sub_value = localized_value.get(key)
+        if _is_blank(localized_sub_value):
+            _warn(f"{filename}: key '{path}.{key}' missing - falling back to English default")
+            merged[key] = default_sub_value
+        elif isinstance(default_sub_value, dict) and isinstance(localized_sub_value, dict):
+            merged[key] = _merge_level(
+                default_sub_value, localized_sub_value, f"{path}.{key}", filename
+            )
+        else:
+            merged[key] = localized_sub_value
+
+    for extra_key in localized_value:
+        if extra_key not in default_value:
+            _warn(
+                f"{filename}: unknown key '{path}.{extra_key}' "
+                "(not present in the English default; check for typos)"
+            )
+    return merged
+
+
+def _merge_with_default(filename: str) -> dict:
+    """Merges the localized file over the English default, warning per gap.
+
+    - Localized file missing -> warning + use default entirely.
+    - Key (up to 3 levels deep, e.g. component -> tool -> description) missing
+      or None in the localized file -> warning + fill from default; localized
+      values win otherwise.
+    - Localized keys unknown to the default -> warning (ignored at runtime;
+      the default file defines the schema, which catches typos).
+    """
+    try:
+        default_data = _read_yaml(DEFAULTS_DIR, filename)
+    except MissingPromptError:
+        # No default for this file: behave as before (localized is the only source).
+        return _read_yaml(PROMPTS_DIR, filename)
+
+    try:
+        localized = _read_yaml(PROMPTS_DIR, filename)
+    except MissingPromptError:
+        _warn(f"{filename} not found in {PROMPTS_DIR} - using English default")
+        return default_data
+
+    return _merge_level(default_data, localized, filename.rstrip(".yml"), filename)
+
+
+@lru_cache(maxsize=1)
+def _load_yaml(filename: str) -> dict:
+    """Loads one prompt file: localized values merged over the English defaults."""
+    if filename not in PROMPT_FILES:
+        raise MissingPromptError(f"Unknown prompts file: {filename}")
+    return _merge_with_default(filename)
 
 
 def get_agent_config(agent: str) -> dict:
