@@ -11,47 +11,29 @@ Interface externa:
 from agno.agent import Agent
 
 from app.configs.config import config
+from app.configs.prompts import get_agent_config
+
+
+_image_config = get_agent_config("image_description_agent")
+_audio_config = get_agent_config("audio_transcription_agent")
 
 
 image_description_agent = Agent(
-    name="Agente de Descrição de Imagem",
-    role="Especialista em descrição visual detalhada de imagens.",
+    name=_image_config["name"],
+    role=_image_config["role"],
     model=config.model,
     debug_mode=config.DEBUG_MODE,
     markdown=False,
-    instructions=(
-        "Você é um especialista em descrição visual. Descreva a imagem com o "
-        "MAIOR NÍVEL DE RIQUEZA E DETALHE possível, em português do Brasil, para "
-        "que outro agente possa usá-la sem precisar ver a imagem.\n\n"
-        "Inclua, quando aplicável:\n"
-        "- Cena geral e contexto (ambiente, paisagem, tipo de local).\n"
-        "- Sujeitos e objetos presentes, com posição espacial entre eles.\n"
-        "- Cores, texturas, iluminação e condições climáticas.\n"
-        "- Não descvreva textos na imagem "
-        "- Inferências úteis sobre o contexto (ex.: pastagem, lavoura, gado, "
-        "maquinário), sempre indicando o que é observação vs. inferência.\n\n"
-        "Responda APENAS com a descrição. Não use markdown nem formatação "
-        "especial. Não comente sobre a tarefa. Apenas descreva o que é visível."
-    ),
+    instructions=_image_config["instructions"].strip(),
 )
 
 
 audio_transcription_agent = Agent(
-    name="Agente de Transcrição de Áudio",
-    role="Especialista em transcrição literal de fala (Speech-to-Text).",
+    name=_audio_config["name"],
+    role=_audio_config["role"],
     model=config.model,
     fallback_models=[config.fallback_model],
     debug_mode=config.DEBUG_MODE,
     markdown=False,
-    instructions=(
-        "Transcreva o áudio para texto em português do Brasil, EXATAMENTE como "
-        "foi falado. Responda APENAS com a transcrição literal.\n\n"
-        "Regras:\n"
-        "- Não adicione comentários, títulos ou explicações.\n"
-        "- Não corrija gramática nem reformule; preserve as palavras do falante.\n"
-        "- Não use markdown nem formatação especial.\n"
-        "- Se o áudio for ininteligível, transcreva as partes compreensíveis e "
-        "omita o restante sem indicadores como [...].\n"
-        "- Se não houver fala detectável, responda com texto vazio."
-    ),
+    instructions=_audio_config["instructions"].strip(),
 )

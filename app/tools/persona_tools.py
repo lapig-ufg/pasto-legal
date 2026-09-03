@@ -4,12 +4,14 @@ from agno.tools import tool
 from agno.run import RunContext
 from agno.utils.log import log_debug, log_warning, log_error
 
+from app.configs.prompts import get_tool_description
+
 
 # =====================================================================
 # TOOLS PARA ATRIBUTOS PRINCIPAIS
 # =====================================================================
 
-@tool
+@tool(description=get_tool_description("persona_tools", "update_persona_name"))
 def update_persona_name(name: str, run_context: RunContext) -> str:
     """
     Atualiza organicamente o nome da persona (perfil) do usuário no estado da sessão.
@@ -36,7 +38,7 @@ def update_persona_name(name: str, run_context: RunContext) -> str:
         return f"Erro ao atualizar nome da persona: {str(e)}"
 
 
-@tool
+@tool(description=get_tool_description("persona_tools", "update_persona_role"))
 def update_persona_role(role: Literal["Produtor", "Técnico"], run_context: RunContext) -> str:
     """
     Atualiza organicamente o papel profissional da persona do usuário no estado da sessão.
@@ -64,7 +66,7 @@ def update_persona_role(role: Literal["Produtor", "Técnico"], run_context: RunC
         return f"Erro ao atualizar papel da persona: {str(e)}"
 
 
-@tool
+@tool(description=get_tool_description("persona_tools", "update_persona_region"))
 def update_persona_region(regionality: str, run_context: RunContext) -> str:
     """
     Atualiza organicamente a regionalidade/localização da persona no estado da sessão.
@@ -94,7 +96,7 @@ def update_persona_region(regionality: str, run_context: RunContext) -> str:
 # TOOLS PARA GERENCIAMENTO DE PREFERÊNCIAS
 # =====================================================================
 
-@tool
+@tool(description=get_tool_description("persona_tools", "create_persona_preference"))
 def create_persona_preference(key: str, description: str, run_context: RunContext) -> str:
     """
     Adiciona uma nova preferência, interesse, hobbie ou comportamento descoberto sobre o usuário.
@@ -135,7 +137,7 @@ def create_persona_preference(key: str, description: str, run_context: RunContex
         return f"Erro ao registrar preferência: {str(e)}"
 
 
-@tool
+@tool(description=get_tool_description("persona_tools", "update_persona_preference"))
 def update_persona_preference(key: str, description: str, run_context: RunContext) -> str:
     """
     Atualiza uma preferência ou comportamento já existente na persona do usuário.
@@ -175,7 +177,7 @@ def update_persona_preference(key: str, description: str, run_context: RunContex
         return f"Erro ao atualizar preferência: {str(e)}"
 
 
-@tool
+@tool(description=get_tool_description("persona_tools", "remove_persona_preference"))
 def remove_persona_preference(key: str, run_context: RunContext) -> str:
     """
     Remove uma preferência específica do perfil do usuário caso ela não seja mais válida.

@@ -1,0 +1,320 @@
+# =============================================================================
+# Tool descriptions (runtime source of truth).
+#
+# Grouped by component (tool file), then by tool function name. Each entry has
+# a `description` tag passed to the agno `@tool(description=...)` decorator.
+# These texts are moved 1:1 from the original docstrings (as seen by the LLM
+# at runtime) — translate/adjust them to localize the product.
+#
+# The docstrings in the Python files stay as developer reference; the
+# description here overrides them at runtime.
+# =============================================================================
+
+analysis_tools:
+  generate_property_image:
+    description: |
+      Gera uma imagem de satélite em alta resolução (RGB) da propriedade rural,
+      incluindo a delimitação geográfica, com base nos últimos dois meses.
+
+      Use apenas quando o usuário pedir para visualizar a propriedade.
+
+      params:
+          car_codes (list[str]): Lista de códigos CAR da propriedade.
+
+      Return:
+          ToolResult: Imagem PNG da visão aérea com delimitação geográfica.
+  generate_biomass_image:
+    description: |
+      Gera um mapa temático da biomassa (matéria seca) sobre os limites da propriedade rural.
+      params:
+          car_codes (list[str]): Lista de códigos CAR da propriedade.
+
+      Return:
+          ToolResult: Mapa renderizado em formato PNG.
+  generate_pasture_classification_image:
+    description: |
+      Gera o mapa de classificação de pastagem (pasto x não-pasto) da propriedade rural,
+      calculado sob demanda ("on-the-fly") para o ano mais recente disponível.
+
+      Diferente de `get_pasture_stats` (que usa o mapeamento oficial do MapBiomas, sempre
+      com pelo menos um ano de atraso), esta ferramenta classifica a propriedade em tempo real
+      usando o ano de satélite mais recente disponível, útil quando o usuário quer o mapeamento
+      de uso do solo mais atualizado possível.
+
+      params:
+          car_codes (list[str]): Lista de códigos CAR da propriedade.
+
+      Return:
+          ToolResult: Mapa em PNG (verde = pastagem) e a área de pastagem em hectares.
+  generate_soil_texture_image:
+    description: |
+      Gera um mapa temático da textura do solo sobre os limites da propriedade rural na profundidade de 0 a 30cm.
+      params:
+          car_codes (list[str]): Lista de códigos CAR da propriedade.
+
+      Return:
+          ToolResult: Mapa renderizado em formato PNG.
+  get_pasture_stats:
+    description: |
+      Recupera estatísticas de bimoassa, vigor vegetativo, idade da pastagem e classificação de uso do solo mais recentes.
+      Use esta ferramenta quando o usuário perguntar sobre:
+      - Saúde ou qualidade da pastagem (degradação, vigor).
+      - Quantidade de biomassa disponível.
+      - Classificação de uso do solo (LULC) incluindo: Silvicultura, Cana, Soja, Arroz, Café, Citrus, etc.
+      - Idade da pastagem.
+
+      params:
+          car_codes (list[str]): Lista de códigos CAR da propriedade.
+
+      Return:
+          Dicionário contendo a área de biomassa, vigor da pastagem, idade e uso e cobertura do solo.
+  get_topographic_stats:
+    description: |
+      Recupera estatísticas de topografia da propriedade (altimetria e declividade).
+      params:
+          car_codes (list[str]): Lista de códigos CAR da propriedade.
+
+      Return:
+          Dicionário contendo as informações de altimetria e declividade.
+  generate_property_boletim:
+    description: |
+      Gera um boletim em PDF consolidando as análises da propriedade rural — localização,
+      classificação de pastagem, biomassa, vigor e tipos de solo — com os mapas
+      correspondentes, pronto para compartilhar com agrônomos ou parceiros.
+
+      IMPORTANTE: a biomassa é calculada para o mês/ano atual; idade, vigor e uso do
+      solo (LULC) refletem o ano mais recente disponível no MapBiomas (2024). Avise o
+      usuário sobre essa defasagem ao entregar o boletim.
+
+      Use apenas quando o usuário pedir explicitamente um boletim, relatório ou PDF
+      para compartilhar ou baixar. A geração consulta o satélite e gera vários mapas em
+      tempo real, podendo levar dezenas de segundos.
+
+      params:
+          car_codes (list[str]): Lista de códigos CAR da propriedade.
+
+      Return:
+          ToolResult: Arquivo PDF do boletim com dados e mapas reais da propriedade.
+
+tts_tools:
+  generate_speech:
+    description: |
+      Gera áudio falado (conversão de texto em fala) a partir de um texto fornecido.
+
+      QUANDO USAR:
+      - Chame esta ferramenta APENAS quando o usuário solicitar explicitamente uma resposta em áudio ou voz.
+      - Chame esta ferramenta se a sessão atual ou a preferência do sistema exigir respostas em áudio.
+
+      Args:
+          text (str): O texto completo do conteúdo.
+
+      Returns:
+          ToolResult: Objeto de resultado contendo a fala gerada.
+
+onboarding_tools:
+  accept_terms_and_conditions:
+    description: |
+      Records the user's formal acceptance of the Pasto Legal Terms and Conditions in the database.
+
+version_tools:
+  consult_update_notes:
+    description: |
+      Lê e retorna as notas de atualização (patch notes) do sistema Pasto Legal.
+      Use esta ferramenta quando o usuário perguntar sobre a versão atual, novidades ou atualizações.
+
+weather_tools:
+  get_monthly_precipitation_forecast:
+    description: |
+      Retrieves the monthly precipitation forecast (mm) for the rural property.
+
+      params:
+          car_codes (list[str]): List of CAR codes for the property.
+          months (int): Number of months to forecast, between 1 and 7. Defaults to 7.
+
+      Return:
+          ToolResult: Text with the monthly precipitation forecast (date + mean mm).
+  get_daily_precipitation_forecast:
+    description: |
+      Retrieves the precipitation forecast (mm) for a specific target day of the rural property.
+
+      params:
+          car_codes (list[str]): List of CAR codes for the property.
+          forecast_days (int): Target day to forecast, between 1 and 36. Defaults to 1.
+
+      Return:
+          ToolResult: Text with the precipitation forecast for the chosen day.
+  get_rain_season_onset_forecast:
+    description: |
+      Predicts the start date of the rainy season for the rural property.
+
+      params:
+          car_codes (list[str]): List of CAR codes for the property.
+
+      Return:
+          ToolResult: Predicted rain onset date (YYYY-MM-DD), or a message
+          indicating the rainy season has already begun / is unavailable.
+  get_dry_season_onset_forecast:
+    description: |
+      Predicts the start date of the dry season (end of rains) for the rural property.
+
+      params:
+          car_codes (list[str]): List of CAR codes for the property.
+
+      Return:
+          ToolResult: Predicted dry-season onset date (YYYY-MM-DD), or a
+          message indicating the dry season is underway / the forecast
+          horizon does not extend far enough.
+  get_temperature_forecast:
+    description: |
+      Retrieves the daily maximum and minimum temperature forecast (°C) for the rural property.
+
+      params:
+          car_codes (list[str]): List of CAR codes for the property.
+          forecast_days (int): Number of forecast days, between 1 and 16. Defaults to 16.
+
+      Return:
+          ToolResult: Text with the daily temperature forecast (date, max, min).
+
+feedback_tools:
+  record_frustration_feedback:
+    description: |
+      Registra uma correção do usuário quando o assistente fornece uma resposta incorreta.
+      Use esta função estritamente quando a seguinte sequência de eventos ocorrer:
+      1. O usuário faz uma pergunta.
+      2. O assistente responde.
+      3. O usuário reclama da resposta.
+      4. O assistente pede para o usuário explicar como seria a resposta correta.
+      5. O usuário fornece a resposta.
+  record_analisys_feedback:
+    description: |
+      Registra uma sugestão de nova funcionalidade ou análise de dados.
+      Use quando o usuário solicitar uma análise que o assistente ainda não possui ferramentas para gerar.
+
+persona_tools:
+  update_persona_name:
+    description: |
+      Atualiza organicamente o nome da persona (perfil) do usuário no estado da sessão.
+
+      Use esta ferramenta apenas quando o usuário informar ou confirmar o seu nome
+      durante a conversa de forma natural.
+
+      Args:
+          name (str): Nome próprio do usuário (ex: "João", "Maria").
+  update_persona_role:
+    description: |
+      Atualiza organicamente o papel profissional da persona do usuário no estado da sessão.
+
+      Use esta ferramenta quando identificar claramente se o usuário é um produtor rural
+      ou um assistente técnico/agrônomo.
+
+      Args:
+          role (Literal["Produtor", "Técnico"]): O papel profissional identificado.
+  update_persona_region:
+    description: |
+      Atualiza organicamente a regionalidade/localização da persona no estado da sessão.
+
+      Use esta ferramenta quando o usuário mencionar a cidade, estado ou região onde atua.
+
+      Args:
+          regionality (str): Cidade, estado ou região do usuário (ex: "Sorriso - MT", "Sul de Minas").
+  create_persona_preference:
+    description: |
+      Adiciona uma nova preferência, interesse, hobbie ou comportamento descoberto sobre o usuário.
+
+      Use esta ferramenta de forma sutil sempre que captar um gosto, rotina ou preferência do usuário.
+      Evite duplicar chaves existentes. Se a chave já existir, use 'update_persona_preference'.
+
+      Args:
+          key (str): Uma palavra-chave curta em minúsculas identificando a categoria (ex: "cultura", "cafe", "horario_contato", "canal_favorito").
+          description (str): Detalhes sobre o gosto ou comportamento do usuário naquela categoria.
+  update_persona_preference:
+    description: |
+      Atualiza uma preferência ou comportamento já existente na persona do usuário.
+
+      Use esta ferramenta quando o usuário mudar de opinião ou trouxer novas informações
+      sobre um ponto que já havia sido mapeado anteriormente.
+
+      Args:
+          key (str): A palavra-chave exata da preferência a ser atualizada (ex: "cultura", "cafe").
+          description (str): A nova descrição atualizada que substituirá a anterior.
+  remove_persona_preference:
+    description: |
+      Remove uma preferência específica do perfil do usuário caso ela não seja mais válida.
+
+      Args:
+          key (str): A palavra-chave da preferência que deve ser removida.
+
+property_tools:
+  start_registration_by_coordinate:
+    description: |
+      Iniciar o registro de uma nova propriedade rural baseando-se nas coordenadas fornecidas.
+
+      Use esta ferramenta quando o usuário fornecer coordenadas geográficas (latitude/longitude).
+
+      Args:
+          latitude (float): Latitude em graus decimais.
+          longitude (float): Longitude em graus decimais.
+
+      Returns:
+          ToolResult: Resultado da busca contendo imagem e instruções para o próximo passo.
+  start_registration_by_car:
+    description: |
+      Inicia o registro de uma nova propriedade rural baseando-se no código CAR fornecidos.
+
+      Use esta ferramenta quando o usuário fornecer um valor de CAR ainda não registrado no sistema.
+
+      Args:
+          cars (List[str]): Código de Cadastro Ambiental Rural (CAR) no padrão SICAR.
+
+      Returns:
+          ToolResult: Resultado da busca contendo imagem e instruções para o próximo passo.
+  start_registration_by_url:
+    description: |
+      Inicia o processo de registro de uma nova propriedade rural baseando-se na URL de compartilhamento do Google Maps.
+
+      Use esta ferramenta quando o usuário fornecer uma URL de compartilhamento do Google Maps.
+
+      Args:
+          url (str): URL de compartilhamento do Google Maps
+
+      Returns:
+          ToolResult: Resultado da busca contendo imagem e instruções para o próximo passo.
+  select_car_from_list:
+    description: |
+      Seleciona uma propriedade específica quando a busca retorna múltiplos resultados.
+
+      Use esta ferramenta APENAS quando o usuário fornecer um número correspondente a uma das opções apresentadas anteriormente.
+
+      Args:
+          selection (int): O número da opção escolhida pelo usuário (ex: 1, 2, 3...).
+  confirm_car_selection:
+    description: |
+      Confirma a propriedade encontrada quando a busca retorna apenas um resultado único.
+
+      Use esta ferramenta quando a ferramenta 'query_car' encontrar apenas 1 imóvel e o usuário confirmar que está correto (ex: dizendo "Sim", "É essa mesmo").
+  complete_registration:
+    description: |
+      Concluir cadastro com o nome da propriedade.
+
+      Use esta ferramente quando o usuário informar o nome da propriedade.
+  cancel_registration:
+    description: |
+      Cancela a seleção ou rejeita os resultados encontrados.
+
+      Use esta ferramenta se o usuário disser que a propriedade mostrada na imagem NÃO é a correta ou quiser cancelar a seleção.
+  set_property_name:
+    description: |
+      Atualizar o nome propriedade registrada no sistema.
+
+      Args:
+          car_codes(str): Códigos CAR da propriedade.
+          name (str): Nome da propriedade.
+  remove_property:
+    description: |
+      Remove a propriedade selecionada do sistema.
+
+      Args:
+          car(str): Código de Cadastro Ambiental Rural (CAR)
+  remove_all_properties:
+    description: |
+      Remove todas as propriedades registradas no sistema.

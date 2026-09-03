@@ -8,6 +8,8 @@ from agno.tools.function import ToolResult
 from agno.media import Image
 from agno.utils.log import log_debug, log_warning, log_error
 
+from app.configs.prompts import get_tool_description
+
 from app.services.geospatial.sicar import (
     fetch_property_by_car,
     fetch_property_by_coordinates,
@@ -19,6 +21,7 @@ from app.services.geospatial.gee import retrieve_feature_images
 from app.schemas.rural_property import RuralProperty
 
 
+@tool(description=get_tool_description("property_tools", "start_registration_by_coordinate"))
 def start_registration_by_coordinate(run_context: RunContext, latitude: float, longitude: float):
     """
     Iniciar o registro de uma nova propriedade rural baseando-se nas coordenadas fornecidas.
@@ -93,6 +96,7 @@ def start_registration_by_coordinate(run_context: RunContext, latitude: float, l
         return ToolResult(content=str(e))
 
 
+@tool(description=get_tool_description("property_tools", "start_registration_by_car"))
 def start_registration_by_car(run_context: RunContext, car_codes: List[str]):
     """
     Inicia o registro de uma nova propriedade rural baseando-se no código CAR fornecidos.
@@ -170,6 +174,7 @@ def start_registration_by_car(run_context: RunContext, car_codes: List[str]):
         return ToolResult(content=str(e))
 
 
+@tool(description=get_tool_description("property_tools", "start_registration_by_url"))
 def start_registration_by_url(run_context: RunContext, url: str) -> ToolResult:
     """
     Inicia o processo de registro de uma nova propriedade rural baseando-se na URL de compartilhamento do Google Maps.
@@ -261,6 +266,7 @@ def start_registration_by_url(run_context: RunContext, url: str) -> ToolResult:
         return ToolResult(content=str(e))
 
 
+@tool(description=get_tool_description("property_tools", "select_car_from_list"))
 def select_car_from_list(run_context: RunContext, selection: int):
     """
     Seleciona uma propriedade específica quando a busca retorna múltiplos resultados.
@@ -299,6 +305,7 @@ def select_car_from_list(run_context: RunContext, selection: int):
         return ToolResult(content=str(e))
 
 
+@tool(description=get_tool_description("property_tools", "confirm_car_selection"))
 def confirm_car_selection(run_context: RunContext):
     """
     Confirma a propriedade encontrada quando a busca retorna apenas um resultado único.
@@ -330,7 +337,7 @@ def confirm_car_selection(run_context: RunContext):
         return ToolResult(content=str(e))
 
 
-@tool
+@tool(description=get_tool_description("property_tools", "complete_registration"))
 def complete_registration(run_context: RunContext, name: str):
     """
     Concluir cadastro com o nome da propriedade.
@@ -377,6 +384,7 @@ def complete_registration(run_context: RunContext, name: str):
         return ToolResult(content=str(e))
 
 
+@tool(description=get_tool_description("property_tools", "cancel_registration"))
 def cancel_registration(run_context: RunContext):
     """
     Cancela a seleção ou rejeita os resultados encontrados.
@@ -395,6 +403,7 @@ def cancel_registration(run_context: RunContext):
         return ToolResult(content=str(e))
 
 
+@tool(description=get_tool_description("property_tools", "set_property_name"))
 def set_property_name(run_context: RunContext, car_codes: List[str], name: str):
     """
     Atualizar o nome propriedade registrada no sistema.
@@ -431,6 +440,7 @@ def set_property_name(run_context: RunContext, car_codes: List[str], name: str):
         return ToolResult(content=str(e))
 
 
+@tool(description=get_tool_description("property_tools", "remove_property"))
 def remove_property(car: str, run_context: RunContext) -> str:
     """
     Remove a propriedade selecionada do sistema.
@@ -469,6 +479,7 @@ def remove_property(car: str, run_context: RunContext) -> str:
         return str(e)
 
 
+@tool(description=get_tool_description("property_tools", "remove_all_properties"))
 def remove_all_properties(run_context: RunContext) -> str:
     """
     Remove todas as propriedades registradas no sistema.

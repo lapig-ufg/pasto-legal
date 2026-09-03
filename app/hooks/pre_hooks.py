@@ -1,5 +1,3 @@
-import textwrap
-
 from typing import Optional, Callable, Dict, Any
 from pydantic import BaseModel, Field
 
@@ -10,6 +8,11 @@ from agno.models.google import Gemini
 from agno.utils.log import log_error, log_debug
 
 from app.configs.config import config
+from app.configs.prompts import get_hook_texts
+
+
+_pre_hook_texts = get_hook_texts("pre_hooks")
+_tool_hook_texts = get_hook_texts("tool_hooks")
 
 
 def validate_phone_authorization(user_id: Optional[str], run_input: RunInput):
@@ -31,29 +34,12 @@ def validate_phone_authorization(user_id: Optional[str], run_input: RunInput):
         log_error(f"Exception: {e}.")
     
     if config.APP_ENV == "production":
-        run_input.input_content = (
-            "O usuário não está autorizado a usar o sistema. "
-            "Não responda nada do que ele perguntou antes. "
-            "Sua ÚNICA tarefa agora é infomar o usuário que:"
-            "- Esta é uma versão de Alpha com acesso restrito. "
-            "- Para ter solicitar acesso é necessário preencher o formulário em: forms.gle/sKqngW7UvjmSJFKk8. "
-        )
+        run_input.input_content = _pre_hook_texts["unauthorized_production"].strip()
         
     elif config.APP_ENV == "stagging":
-        run_input.input_content = (
-            "INSTRUÇÃO DE SISTEMA IMPERATIVA: O usuário não está autorizado a testar esse sistema. "
-            "Não responda nada do que ele perguntou antes. "
-            "Sua ÚNICA tarefa agora é infomar o usuário que:"
-            "- Esta é uma versão de desenvolvimento com acesso restrito. "
-            "- Apenas pessoas autorizadas do projeto possuem acesso. "
-        )
+        run_input.input_content = _pre_hook_texts["unauthorized_stagging"].strip()
     else:
-        run_input.input_content = (
-            "INSTRUÇÃO DE SISTEMA IMPERATIVA: O usuário é um desenvolvedor testando o pre-hook de autorização. "
-            "Não responda nada do que ele perguntou antes. "
-            "Sua ÚNICA tarefa agora é infomar o usuário que:"
-            "- O pre-hook esta funcionado. "
-        )
+        run_input.input_content = _pre_hook_texts["unauthorized_development"].strip()
 
 
 def validate_terms_acceptance(run_context: RunContext, run_input: RunInput):
@@ -68,12 +54,7 @@ def validate_terms_acceptance(run_context: RunContext, run_input: RunInput):
     if terms_accepted is None:
         session_state["terms_acceptance"] = False
 
-        run_input.input_content = (
-            "INSTRUÇÃO DE SISTEMA IMPERATIVA: O usuário NOVO acabou de chegar. "
-            "Não responda nada do que ele perguntou antes. "
-            "Sua ÚNICA tarefa agora é se apresentar brevemente e perguntar: "
-            "'Você concorda com os nossos termos e condições?'"
-        )
+        run_input.input_content = _pre_hook_texts["terms_first_contact"].strip()
 
         return True
 
@@ -83,7 +64,7 @@ def validate_terms_acceptance(run_context: RunContext, run_input: RunInput):
             acceptance: bool = Field(False, description="True se concordou, False caso contrário.")
 
         validator = Agent(
-            instructions="Analise se o usuário concordou com os termos. Responda apenas com o JSON.",
+            instructions=_pre_hook_texts["terms_validator_instructions"].strip(),
             output_schema=TermConsent,
             model=Gemini(id="gemini-2.5-flash"), 
             markdown=False
@@ -94,14 +75,10 @@ def validate_terms_acceptance(run_context: RunContext, run_input: RunInput):
         if check.content.acceptance:
             session_state["terms_acceptance"] = True
             
-            run_input.input_content = "Olá! Aceitei os termos. Se apresente, por favor."
+            run_input.input_content = _pre_hook_texts["terms_accepted"].strip()
         else:
             # FALHA: O usuário respondeu algo que não foi um "sim"
-            run_input.input_content = (
-                "INSTRUÇÃO DE SISTEMA IMPERATIVA: O usuário respondeu algo, mas NÃO aceitou os termos claramente."
-                "Explique educadamente que para continuar a análise é OBRIGATÓRIO concordar com os termos. "
-                "Pergunte novamente."
-            )
+            run_input.input_content = _pre_hook_texts["terms_not_accepted"].strip()
 
     return True
 
@@ -113,10 +90,4 @@ def validate_car_selection(run_context: RunContext, function_call: Callable, arg
     session_state = run_context.session_state
 
     if session_state and not hasattr(session_state, "all_properties"):
-        return textwrap.dedent("""
-            [SISTEMA] Bloqueio de Execução: Nenhum CAR registrado no sistema.
-            
-            Ação obrigatória para o Agente:
-            1. Informe que o sistema ainda não possui uma propriedade selecionada.
-            2. Solicite que o usuário envie a **localização** por meio do pino de localização do WhatsApp para que o sistema identifique o CAR automaticamente.
-        """).strip()
+        return _tool_hook_texts["no_car_registered"].strip()

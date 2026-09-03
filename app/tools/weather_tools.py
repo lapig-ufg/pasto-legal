@@ -12,6 +12,7 @@ from agno.tools.function import ToolResult
 from agno.run import RunContext
 from agno.utils.log import log_debug, log_warning, log_error
 
+from app.configs.prompts import get_tool_description
 from app.schemas.rural_property import RuralProperty
 from app.services.geospatial.season_forecast import (
     get_dry_season_onset as _get_dry_season_onset,
@@ -55,7 +56,7 @@ def _resolve_property(run_context: RunContext, car_codes: list[str]) -> RuralPro
     return RuralProperty.model_validate(selected_property)
 
 
-@tool
+@tool(description=get_tool_description("weather_tools", "get_monthly_precipitation_forecast"))
 def get_monthly_precipitation_forecast(
     run_context: RunContext, car_codes: list[str], months: int = 7
 ) -> ToolResult:
@@ -128,7 +129,7 @@ def get_monthly_precipitation_forecast(
         return ToolResult(content=str(e))
 
 
-@tool
+@tool(description=get_tool_description("weather_tools", "get_daily_precipitation_forecast"))
 def get_daily_precipitation_forecast(
     run_context: RunContext, car_codes: list[str], forecast_days: int = 1
 ) -> ToolResult:
@@ -201,7 +202,7 @@ def get_daily_precipitation_forecast(
         return ToolResult(content=str(e))
 
 
-@tool
+@tool(description=get_tool_description("weather_tools", "get_rain_season_onset_forecast"))
 def get_rain_season_onset_forecast(
     run_context: RunContext, car_codes: list[str]
 ) -> ToolResult:
@@ -236,7 +237,7 @@ def get_rain_season_onset_forecast(
         return ToolResult(content=str(e))
 
 
-@tool
+@tool(description=get_tool_description("weather_tools", "get_dry_season_onset_forecast"))
 def get_dry_season_onset_forecast(
     run_context: RunContext, car_codes: list[str]
 ) -> ToolResult:
@@ -272,7 +273,7 @@ def get_dry_season_onset_forecast(
         return ToolResult(content=str(e))
 
 
-@tool
+@tool(description=get_tool_description("weather_tools", "get_temperature_forecast"))
 def get_temperature_forecast(
     run_context: RunContext, car_codes: list[str], forecast_days: int = 16
 ) -> ToolResult:

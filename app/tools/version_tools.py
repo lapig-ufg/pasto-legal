@@ -3,8 +3,10 @@ from pathlib import Path
 from agno.tools import tool
 from agno.utils.log import log_debug, log_warning, log_error
 
+from app.configs.prompts import get_tool_description
 
-@tool
+
+@tool(description=get_tool_description("version_tools", "consult_update_notes"))
 def consult_update_notes() -> str:
     """
     Lê e retorna as notas de atualização (patch notes) do sistema Pasto Legal.
