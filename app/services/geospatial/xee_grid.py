@@ -37,6 +37,6 @@ def _utm_grid(roi: ee.Geometry, crs: str, scale: int) -> Tuple[affine.Affine, in
     return transform, width, height
 
 
-def _native_crs(collection: ee.ImageCollection) -> str:
-    """Retorna o CRS nativo (métrico) da primeira imagem da coleção."""
-    return collection.first().select(0).projection().getInfo()["crs"]
+def _native_crs(image: ee.Image) -> str:
+    """Retorna o CRS nativo (métrico) da imagem."""
+    return image.select(0).projection().getInfo()["crs"]

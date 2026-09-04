@@ -97,6 +97,61 @@ class RuralProperty(BaseModel):
     def get_coords(self):
         return self.spatial_features.coordinates
 
+    def get_centroid(self) -> tuple[float, float]:
+        """
+        Computes the area-weighted centroid of the rural property polygon.
+
+        Returns:
+            Tuple (latitude, longitude) of the centroid.
+        """
+        coords = self.get_coords()
+        total_area = 0.0
+        weighted_lat = 0.0
+        weighted_lon = 0.0
+
+        for polygon in coords:
+            for ring in polygon:
+                n = len(ring)
+                signed_area = 0.0
+                for i in range(n):
+                    lon1, lat1 = ring[i]
+                    lon2, lat2 = ring[(i + 1) % n]
+                    signed_area += (lon1 * lat2 - lon2 * lat1)
+                signed_area /= 2.0
+
+                if signed_area == 0.0:
+                    continue
+
+                cx = 0.0
+                cy = 0.0
+                for i in range(n):
+                    lon1, lat1 = ring[i]
+                    lon2, lat2 = ring[(i + 1) % n]
+                    cross = (lon1 * lat2 - lon2 * lat1)
+                    cx += (lon1 + lon2) * cross
+                    cy += (lat1 + lat2) * cross
+
+                cx /= (6.0 * signed_area)
+                cy /= (6.0 * signed_area)
+
+                ring_area = abs(signed_area)
+                weighted_lat += cy * ring_area
+                weighted_lon += cx * ring_area
+                total_area += ring_area
+
+        if total_area == 0.0:
+            pts = []
+            for polygon in coords:
+                for ring in polygon:
+                    pts.extend(ring)
+            if not pts:
+                raise ValueError("Property coordinates are empty.")
+            lat = sum(p[1] for p in pts) / len(pts)
+            lon = sum(p[0] for p in pts) / len(pts)
+            return lat, lon
+
+        return weighted_lat / total_area, weighted_lon / total_area
+
     def __str__(self):
         return (
             f"Nickname: {self.nickname}, "

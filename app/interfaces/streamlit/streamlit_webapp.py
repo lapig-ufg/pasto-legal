@@ -154,15 +154,26 @@ if "debug_messages" not in st.session_state:
     st.session_state.debug_messages = []
 
 # Exibe mensagens anteriores
-for message in st.session_state.messages:
+for msg_idx, message in enumerate(st.session_state.messages):
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
         if "images" in message:
             for img in message["images"]:
-                st.image(img, use_container_width=True)
+                if img is not None:
+                    st.image(img, use_container_width=True)
         if "audio" in message:
             for aud in message["audio"]:
-                st.audio(aud, format="audio/ogg")
+                if aud is not None:
+                    st.audio(aud, format="audio/ogg")
+        if "files" in message:
+            for file_idx, f in enumerate(message["files"]):
+                st.download_button(
+                    label=f"Baixar {f['name'] or 'arquivo'}",
+                    data=f["content"],
+                    file_name=f["name"] or f"arquivo_{file_idx}.pdf",
+                    mime=f["mime_type"] or "application/octet-stream",
+                    key=f"dl_hist_{msg_idx}_{file_idx}",
+                )
 
 # Inputs do usuário
 if 'file_uploader_key' not in st.session_state:
@@ -192,7 +203,7 @@ with col_btn:
 user_query = None
 
 if loc_input_value:
-    user_query = """Minhas coordenadas são Lat: -15.82994 S Long: -49.43353."""
+    user_query = """Minhas coordenadas são 2°46'32.94"S 48°31'41.74"W."""
 elif chat_input_value:
     user_query = chat_input_value
 elif audio_input_value:
@@ -232,6 +243,7 @@ if user_query:
         
         full_response = ""
         response = None
+        audio_to_display = []
         
         try:
             run_kwargs = {
@@ -285,14 +297,25 @@ if user_query:
 
             if response and response.images:
                 for img in response.images:
-                    st.image(img.content, use_container_width=True)
-
+                    if img.content is not None:
+                        st.image(img.content, use_container_width=True)
             audio_to_display = []
             if response and hasattr(response, 'audio') and response.audio:
                 audio_to_display.extend(response.audio)
                 for aud in audio_to_display:
                     if getattr(aud, 'filepath', None):
                         st.audio(str(aud.filepath), format="audio/ogg")
+
+            if response and getattr(response, 'files', None):
+                for file_idx, f in enumerate(response.files):
+                    if f.content:
+                        st.download_button(
+                            label=f"Baixar {f.name or 'arquivo'}",
+                            data=f.content,
+                            file_name=f.name or f"arquivo_{file_idx}.{f.format or 'bin'}",
+                            mime=f.mime_type or "application/octet-stream",
+                            key=f"dl_{st.session_state.session_id}_{len(st.session_state.messages)}_{file_idx}",
+                        )
             # Exibe a resposta final
             message_placeholder.markdown(full_response)
 
@@ -316,6 +339,11 @@ if user_query:
             if audio_to_display:
                 new_message["audio"] = [
                     str(aud.filepath) for aud in audio_to_display if getattr(aud, 'filepath', None)
+                ]
+            if getattr(response, 'files', None):
+                new_message["files"] = [
+                    {"content": f.content, "name": f.name, "mime_type": f.mime_type}
+                    for f in response.files if f.content
                 ]
         
         st.session_state.messages.append(new_message)

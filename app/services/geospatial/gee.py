@@ -35,7 +35,6 @@ _HIGHVOLUME_URL = "https://earthengine-highvolume.googleapis.com"
 try:
     credentials = ee.ServiceAccountCredentials(config.GEE_SERVICE_ACCOUNT, config.GEE_KEY_FILE)
     ee.Initialize(credentials, project=config.GEE_PROJECT, opt_url=_HIGHVOLUME_URL)
-    GEE_CONNECTED_FLAG = True
 except Exception as e:
     log_error(f"Authentication failed: {e}")
     raise ValueError("GEE_PROJECT environment variables must be set.")
@@ -210,6 +209,66 @@ def retrieve_feature_images(coords: List[List[List[List[float]]]]) -> List[PIL.I
         )
 
 
+def retrieve_plain_satellite_image(coords: List[List[List[List[float]]]]) -> List[PIL.Image]:
+    """
+    Gera imagens de satélite individuais para cada polígono da propriedade rural,
+    sem contorno ou qualquer sobreposição (imagem "crua").
+
+    Args:
+        coords: Lista de coordenadas representando o MultiPolygon da fazenda.
+
+    Returns:
+        List[PIL.Image]: Uma lista de imagens (PIL.Image) correspondentes a cada polígono.
+    """
+    try:
+        result_imgs = []
+        for _coords in coords:
+            roi = ee.Geometry.MultiPolygon([_coords])
+
+            base_image = _get_base_image(roi=roi)
+
+            final_image = base_image.clip(roi.buffer(_FEATURE_BUFFER).bounds())
+
+            url = final_image.getThumbURL({"dimensions": _IMAGE_DIMENSION, "format": "png"})
+
+            response = requests.get(url, timeout=60)
+            response.raise_for_status()
+
+            img_pil = PIL.Image.open(BytesIO(response.content))
+            result_imgs.append(img_pil)
+
+        return result_imgs
+
+    except ee.EEException as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Falha ao processar as coordenadas no satélite. "
+            f"Verifique se as coordenadas da área estão corretas. Detalhes: {str(error)}"
+        )
+    except requests.exceptions.HTTPError as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"O servidor de imagens do satélite retornou um erro. "
+            f"Tente solicitar a imagem novamente em alguns instantes. Detalhes: {str(error)}"
+        )
+    except requests.exceptions.RequestException as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Não foi possível baixar a imagem por falha de conexão. "
+            f"Pode haver instabilidade na rede. Detalhes: {str(error)}"
+        )
+    except PIL.UnidentifiedImageError as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"O arquivo recebido do satélite está corrompido ou num formato inesperado. Detalhes: {str(error)}"
+        )
+    except Exception as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Ocorreu um erro inesperado ao gerar a imagem da fazenda. Detalhes: {str(error)}"
+        )
+
+
 def retrieve_mapbiomas_biomass_image(coords: List[List[List[List[float]]]], year: int = None) -> PIL.Image:
     """
     Gera uma imagem de satélite com a camada de biomassa de pastagem sobreposta,
@@ -312,94 +371,120 @@ def retrieve_mapbiomas_biomass_image(coords: List[List[List[List[float]]]], year
         )
     
 
-def _get_t2g_biomass_image(roi, month, year):
+def _get_t2g_biomass_image(roi, month, year, day=1):
     UGPP_SCALE_FACTOR = 0.1
 
-    TILES = [
-        '36NXG', '36MVB', '36MWV', '36KUF', '35KRS', '32PRQ', '23KLQ', '21MXN',
-        '18PVQ', '36MTE', '32PLU', '21HXC', '20HKH', '19NBG', '21HWE', '21HUV',
-        '22LDJ', '23KLB','23KMA','23KMB','23KMV','23KNA','23KNB','23KNV','23KPA',
-        '23KPB','23KQA','23KQB','23KRB','23LMC','23LMD','23LNC','23LND','23LNE',
-        '23LPC','23LPD','23LPE','23LQC','23LQD','23LRC','23LRD','24LTH','24LTJ'
-        ]
+    # Apply a 7-day margin to the reference date, then select the full month
+    # containing that shifted date (e.g. run on Oct 5 -> Sep 28 -> September).
+    ref_date = datetime.date(year, month, day) - datetime.timedelta(days=7)
+    target_year, target_month = ref_date.year, ref_date.month
 
-    today_date = ee.Date.fromYMD(year, month, 1)
-    start_date = today_date.advance(-2, 'month')
+    start_date = ee.Date.fromYMD(target_year, target_month, 1)
     end_date = start_date.advance(1, 'month')
 
     n_days = ee.Number(end_date.difference(start_date, 'day'))
 
-    ugpp = ee.ImageCollection("projects/wri-lcl-time2graze/assets/ugpp_10m_v1")
-    ugpp_col = ugpp.filter(ee.Filter.inList('tile', TILES)).filterBounds(roi)
-
-    if ugpp_col.size().eq(0).getInfo():
-        return None
+    ugpp = ee.ImageCollection("projects/wri-lcl-time2graze/assets/ugpp_prod_10m_v1")
+    ugpp_col = ugpp.filterBounds(roi).filterDate(start_date, end_date)
 
     grassland_asset = ee.ImageCollection("projects/global-pasture-watch/assets/ggc-30m/v1-1/grassland_c");
     grassland_mask = grassland_asset.filterBounds(roi).filterDate('2024-01-01','2024-12-31').first().gte(1)
 
-    date_filtered = ugpp_col.filterDate(start_date, end_date)
-
-    if date_filtered.size().eq(0).getInfo():
+    if ugpp_col.size().eq(0).getInfo():
+        log_error(
+            f"_get_t2g_biomass_image returned None: empty UGPP collection "
+            f"for roi={roi}, month={month}, year={year}, day={day}"
+        )
         return None
 
-    grassland_image: ee.Image = date_filtered.mean() \
+    grassland_image: ee.Image = ugpp_col.mean() \
         .multiply(ee.Image(n_days)).multiply(ee.Image(UGPP_SCALE_FACTOR)).multiply(DRY_BIOMASS_FACTOR) \
         .updateMask(grassland_mask).clip(roi).rename('tonC_hec')
     
-    return grassland_image
+    return grassland_image, target_year, target_month
     
 
-def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int, year: int) -> PIL.Image.Image | None:
-    roi = ee.Geometry.MultiPolygon(coords)
+def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int, year: int, day: int = 1) -> PIL.Image.Image | None:
+    try:
+        roi = ee.Geometry.MultiPolygon(coords)
 
-    grassland_image = _get_t2g_biomass_image(roi, month, year)
+        result = _get_t2g_biomass_image(roi, month, year, day)
 
-    if grassland_image is None:
-        return None
-    
-    stats = grassland_image.reduceRegion(
-            reducer=ee.Reducer.minMax(),
-            geometry=roi,
-            scale=10,
-            maxPixels=1e13
-        ).getInfo()
+        if result is None:
+            return None
 
-    min_key = next((k for k in stats if k.endswith('_min')), None)
-    max_key = next((k for k in stats if k.endswith('_max')), None)
+        biomass_img, _target_year, _target_month = result
+        
+        stats = biomass_img.reduceRegion(
+                reducer=ee.Reducer.minMax(),
+                geometry=roi,
+                scale=10,
+                maxPixels=1e13
+            ).getInfo()
 
-    if not min_key or stats[min_key] is None:
-        raise ValueError("Não foi possível calcular a biomassa. A área pode não conter pastagem mapeada.")
+        min_key = next((k for k in stats if k.endswith('_min')), None)
+        max_key = next((k for k in stats if k.endswith('_max')), None)
 
-    min_bio_val = stats[min_key]
-    max_bio_val = stats[max_key]    
-    
-    palette = ['#000033','#9400D3','#FF00FF','#00FFFF','#FFFFFF']
-    bioprop = grassland_image.visualize(**{"min": min_bio_val, "max": max_bio_val, "palette": palette})        
-    
-    base_image = _get_base_image(roi=roi, year=year)
+        if not min_key or stats[min_key] is None:
+            raise ValueError("Não foi possível calcular a biomassa. A área pode não conter pastagem mapeada.")
 
-    outline = _draw_feature_boundaries(roi=roi)
+        min_bio_val = stats[min_key]
+        max_bio_val = stats[max_key]    
+        
+        palette = ['#000033','#9400D3','#FF00FF','#00FFFF','#FFFFFF']
+        bioprop = biomass_img.visualize(**{"min": min_bio_val, "max": max_bio_val, "palette": palette})        
+        
+        base_image = _get_base_image(roi=roi, year=year)
 
-    final_image = base_image.blend(bioprop.clip(roi))
-    final_image = final_image.blend(outline).clip(roi.buffer(_FEATURE_BUFFER).bounds());
-    
-    url = final_image.getThumbURL({"dimensions":_IMAGE_DIMENSION, "format": "png"})
-    
-    resposta = requests.get(url, timeout=60)
-    resposta.raise_for_status()
+        outline = _draw_feature_boundaries(roi=roi)
 
-    img = PIL.Image.open(BytesIO(resposta.content))
+        final_image = base_image.blend(bioprop.clip(roi))
+        final_image = final_image.blend(outline).clip(roi.buffer(_FEATURE_BUFFER).bounds());
+        
+        url = final_image.getThumbURL({"dimensions":_IMAGE_DIMENSION, "format": "png"})
+        
+        resposta = requests.get(url, timeout=60)
+        resposta.raise_for_status()
 
-    img = append_continuous_colorbar(
-        img,
-        title=f"Biomassa\n({str(year)}) - T2G",
-        vmin=round(min_bio_val),
-        vmax=round(max_bio_val),
-        palette=palette
-    )
+        img = PIL.Image.open(BytesIO(resposta.content))
 
-    return img
+        img = append_continuous_colorbar(
+            img, 
+            title=f"Biomassa\n({str(_target_year)}/{str(_target_month)}) - T2G", 
+            vmin=round(min_bio_val),
+            vmax=round(max_bio_val),
+            palette=palette
+        )
+
+        return img, _target_year, _target_month
+
+    except ValueError as error:
+        log_error(traceback.format_exc())
+        raise error
+    except ee.EEException as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Peça desculpas e informe que houve uma falha de processamento.\n"
+            "Peça ao usuário que tente novamente mais tarde."
+        )
+    except requests.exceptions.HTTPError as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Peça desculpas e informe que o servidor de imagens do satélite falhou.\n"
+            "Peça ao usuário que tente novamente mais tarde."
+        )
+    except requests.exceptions.RequestException as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Peça desculpas e informe que houve um problema de conexão ao baixar o mapa de biomassa.\n"
+            "Peça ao usuário que tente novamente mais tarde."
+        )
+    except Exception as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Peça desculpas e informe que houve um erro inesperado.\n"
+            "Peça ao usuário que tente novamente mais tarde."
+        )
 
 
 def retrieve_gpw_biomass_image(coords: List[List[List[List[float]]]], year: int = None) -> PIL.Image.Image:
@@ -527,11 +612,85 @@ def retrieve_feature_soil_texture_image(coords: List[List[List[List[float]]]]):
         )
 
 
-def get_biomass(roi: ee.Geometry, year: int, month: int) -> 'BiomassStats':
-    last_biomass = _get_t2g_biomass_image(roi, month, year)
+def retrieve_pasture_vigor_image(coords: List[List[List[List[float]]]], year: int = 2024) -> PIL.Image:
+    """
+    Gera uma imagem de satélite com a camada de vigor de pastagem sobreposta,
+    baseada na geometria da propriedade rural fornecida.
+
+    Args:
+        coords: Lista de coordenadas representando o MultiPolygon da fazenda.
+        year (int, optional): Ano do mapeamento (MapBiomas). Usa 2024 se omitido.
+
+    Returns:
+        PIL.Image: Imagem final mesclada contendo satélite, vigor, contorno e legenda.
+    """
+    try:
+        PALETTE = {
+            'Baixo': '#d7191c',
+            'Médio': '#fdae61',
+            'Alto': '#1a9641',
+        }
+
+        roi = ee.Geometry.MultiPolygon(coords)
+
+        vigor_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_vigor_v3')
+        vigor = vigor_asset.select(year - 2000)
+
+        palette = ['#d7191c', '#fdae61', '#1a9641']
+        final = vigor.visualize(**{"min": 1, "max": 3, "palette": palette})
+
+        base_image = _get_base_image(roi=roi)
+
+        outline = _draw_feature_boundaries(roi=roi)
+
+        final_image = base_image.blend(final.clip(roi))
+        final_image = final_image.blend(outline).clip(roi.buffer(_FEATURE_BUFFER).bounds())
+
+        url = final_image.getThumbURL({"dimensions": _IMAGE_DIMENSION, "format": "png"})
+
+        response = requests.get(url, timeout=60)
+        response.raise_for_status()
+
+        img_pil = PIL.Image.open(BytesIO(response.content))
+        img_pil = append_discrete_legend(img_pil, "Vigor da Pastagem", PALETTE)
+
+        return img_pil
+
+    except ee.EEException as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Falha ao processar as coordenadas no satélite. "
+            f"Verifique se as coordenadas da área estão corretas. Detalhes: {str(error)}"
+        )
+    except requests.exceptions.HTTPError as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"O servidor de imagens do satélite retornou um erro. "
+            f"Tente solicitar a imagem novamente em alguns instantes. Detalhes: {str(error)}"
+        )
+    except requests.exceptions.RequestException as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Não foi possível baixar a imagem por falha de conexão. "
+            f"Pode haver instabilidade na rede. Detalhes: {str(error)}"
+        )
+    except PIL.UnidentifiedImageError as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"O arquivo recebido do satélite está corrompido ou num formato inesperado. Detalhes: {str(error)}"
+        )
+    except Exception as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Ocorreu um erro inesperado ao gerar a imagem da fazenda. Detalhes: {str(error)}"
+        )
+
+
+def get_biomass(roi: ee.Geometry, year: int, month: int, day: int = 1) -> 'BiomassStats':
+    result = _get_t2g_biomass_image(roi, month, year, day)
 
     # Fallback pro Global Pasture Watch (cobertura nacional/global) se o T2G não cobrir a propriedade
-    if last_biomass is None:
+    if result is None:
         year = _latest_gpw_year()
 
         last_biomass = _annual_biomass_image(roi, year)
@@ -548,6 +707,8 @@ def get_biomass(roi: ee.Geometry, year: int, month: int) -> 'BiomassStats':
 
         return BiomassStats(observation_year=year, amount=Value(value=biomass_value, unity="tonelada(s) de matéria seca acumulada no ano"))
     else:
+        last_biomass, target_year, target_month = result
+
         stats = last_biomass.reduceRegion(
             reducer=ee.Reducer.sum(),
             geometry=roi,
@@ -559,7 +720,7 @@ def get_biomass(roi: ee.Geometry, year: int, month: int) -> 'BiomassStats':
 
         month_dict = { 1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho", 7: "Julho", 8: "Agosto", 9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro" }
 
-        return BiomassStats(observation_year=year, amount=Value(value=biomass_value, unity=f"tonelada(s) de matéria seca acumulada no mês de {month_dict[month]}"))
+        return BiomassStats(observation_year=target_year, amount=Value(value=biomass_value, unity=f"tonelada(s) de matéria seca acumulada no mês de {month_dict[target_month]}"))
 
 
 def get_pasture_age(roi: ee.Geometry, year: int, month: int = None) -> List['AgeStats']:
@@ -670,14 +831,14 @@ def get_land_use_land_cover(roi: ee.Geometry, year: int, month: int = None) -> L
 
     return LULCStats(observation_year=2024, data=lulc_class_data_list)
 
-def query_pasture_statistics(coords: List[List[List[List[float]]]], year: int, month: int) -> PropertyStats:
+def query_pasture_statistics(coords: List[List[List[List[float]]]], year: int, month: int, day: int = 1) -> PropertyStats:
     """
     Extração de estatísticas de pastagem (biomassa, vigor, idade e chuva).
     """
     try:
         roi = ee.Geometry.MultiPolygon(coords)
 
-        biomass_stats = get_biomass(roi, year, month)
+        biomass_stats = get_biomass(roi, year, month, day)
         age_stats = get_pasture_age(roi, 2024, month)
         vigor_stats = get_pasture_vigor(roi, 2024, month)
         lulc_stats = get_land_use_land_cover(roi, 2024, month)
