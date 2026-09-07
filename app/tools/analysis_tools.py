@@ -87,7 +87,7 @@ def generate_biomass_image(run_context: RunContext, car_codes: list[str]) -> Too
 
         today = datetime.date.today()
 
-        result = retrieve_t2g_biomass_image(selected_property.get_coords(), today.month, today.year, today.day)
+        result = retrieve_t2g_biomass_image(selected_property.get_coords(), today.month, today.year)
 
         if result is not None:
             biomass_img, _target_year, _target_month = result
@@ -229,9 +229,8 @@ def get_pasture_stats(run_context: RunContext, car_codes: list[str]):
 
         new_pasture_stats: PastureStats = query_pasture_statistics(
             coords=selected_property.get_coords(),
-            year=today.year,
             month=today.month,
-            day=today.day
+            year=today.year
         )
 
         log_debug(f"get_pasture_stats: stats recuperadas ({selected_property.car_code})")
@@ -318,7 +317,7 @@ def generate_property_boletim(run_context: RunContext, car_codes: list[str]) -> 
         coords = selected_property.get_coords()
         today = datetime.date.today()
 
-        pasture_stats = query_pasture_statistics(coords=coords, year=today.year, month=today.month, day=today.day)
+        pasture_stats = query_pasture_statistics(coords=coords, month=today.month, year=today.year)
         stats = PropertyStats(car_code=selected_property.car_code, list_pasture_stats=[pasture_stats])
 
         location_image = retrieve_feature_images(coords)[0]
@@ -328,7 +327,7 @@ def generate_property_boletim(run_context: RunContext, car_codes: list[str]) -> 
         pasture_map_image = pasture_result["imagem"]
 
         def _fetch_biomass_image():
-            result = retrieve_t2g_biomass_image(coords, today.month, today.year, today.day)
+            result = retrieve_t2g_biomass_image(coords, today.month, today.year)
             if result is not None:
                 biomass_img, _target_year, _target_month = result
                 return biomass_img
