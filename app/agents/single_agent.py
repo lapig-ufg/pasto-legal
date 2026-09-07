@@ -12,6 +12,7 @@ from app.schemas.rural_property import RuralProperty
 from app.schemas.user_persona import UserPersona
 from app.tools.analysis_tools import (
     generate_biomass_image,
+    generate_biomass_video,
     generate_pasture_classification_image,
     generate_property_image,
     generate_property_boletim,
@@ -56,6 +57,7 @@ _ANALYST_TOOLS = [
     get_topographic_stats,
     generate_property_image,
     generate_biomass_image,
+    generate_biomass_video,
     generate_soil_texture_image,
     generate_pasture_classification_image,
     generate_property_boletim,

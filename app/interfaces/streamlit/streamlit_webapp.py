@@ -161,6 +161,10 @@ for msg_idx, message in enumerate(st.session_state.messages):
             for img in message["images"]:
                 if img is not None:
                     st.image(img, use_container_width=True)
+        if "videos" in message:
+            for vid in message["videos"]:
+                if vid is not None:
+                    st.video(vid, format="video/mp4")
         if "audio" in message:
             for aud in message["audio"]:
                 if aud is not None:
@@ -299,6 +303,10 @@ if user_query:
                 for img in response.images:
                     if img.content is not None:
                         st.image(img.content, use_container_width=True)
+            if response and getattr(response, 'videos', None):
+                for vid in response.videos:
+                    if vid.content is not None:
+                        st.video(vid.content, format="video/mp4")
             audio_to_display = []
             if response and hasattr(response, 'audio') and response.audio:
                 audio_to_display.extend(response.audio)
@@ -336,6 +344,10 @@ if user_query:
         if response:
             if response.images:
                 new_message["images"] = [img.content for img in response.images]
+            if getattr(response, 'videos', None):
+                new_message["videos"] = [
+                    vid.content for vid in response.videos if vid.content
+                ]
             if audio_to_display:
                 new_message["audio"] = [
                     str(aud.filepath) for aud in audio_to_display if getattr(aud, 'filepath', None)

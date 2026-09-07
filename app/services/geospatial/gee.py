@@ -7,7 +7,7 @@ import traceback
 from io import BytesIO
 from typing import List
 
-from agno.utils.log import log_error
+from agno.utils.log import log_error, log_warning
 
 from app.services.geospatial.image import append_discrete_legend, append_continuous_colorbar
 from app.schemas.property_stats import PropertyStats, PastureStats, TopographicStats
@@ -569,6 +569,232 @@ def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int
         raise RuntimeError(
             f"Peça desculpas e informe que houve um erro inesperado.\n"
             "Peça ao usuário que tente novamente mais tarde."
+        )
+
+BIOMASS_VIDEO_MIN_YEAR = 2025
+
+BIOMASS_VIDEO_PALETTE = ['#000033', '#9400D3', '#FF00FF', '#00FFFF', '#FFFFFF']
+
+
+def _iterate_reference_months(
+    start_year: int,
+    start_month: int,
+    end_year: int,
+    end_month: int,
+) -> tuple[list[tuple[int, int]], tuple[int, int], tuple[int, int]]:
+    """
+    Valida e normaliza o intervalo de meses de referência para o vídeo de biomassa.
+
+    Regras:
+        - O ano inicial não pode ser anterior a 2025 (início da série UGPP/T2G).
+        - O intervalo final é limitado ao mês de referência atual (mês corrente,
+          o mesmo limite aplicado por `_reference_period`); pedidos além disso
+          são ajustados (clamp) para o limite, sem erro.
+        - Meses fora de 1-12 geram erro.
+
+    Args:
+        start_year (int): Ano inicial solicitado.
+        start_month (int): Mês inicial solicitado.
+        end_year (int): Ano final solicitado (inclusivo).
+        end_month (int): Mês final solicitado (inclusivo).
+
+    Returns:
+        tuple: (lista de (ano, mês) de referência, início efetivo, fim efetivo).
+
+    Raises:
+        ValueError: Se ano/mês inicial for inválido, meses fora de 1-12 ou
+            intervalo vazio após o clamp.
+    """
+    today = datetime.date.today()
+
+    if not 1 <= start_month <= 12 or not 1 <= end_month <= 12:
+        raise ValueError("Os meses informados devem estar entre 1 (janeiro) e 12 (dezembro).")
+
+    if start_year < BIOMASS_VIDEO_MIN_YEAR:
+        raise ValueError(
+            f"Os dados de biomassa (T2G) estão disponíveis apenas a partir de "
+            f"{BIOMASS_VIDEO_MIN_YEAR}. Informe um ano inicial maior ou igual a {BIOMASS_VIDEO_MIN_YEAR}."
+        )
+
+    requested_end = (end_year, end_month)
+    current_limit = (today.year, today.month)
+
+    if requested_end > current_limit:
+        log_warning(
+            f"_iterate_reference_months: end {end_year}/{end_month} clamped to current reference month {current_limit[0]}/{current_limit[1]}"
+        )
+        end_year, end_month = current_limit
+
+    effective_start = (start_year, start_month)
+    effective_end = (end_year, end_month)
+
+    if effective_start > effective_end:
+        raise ValueError(
+            "O mês/ano inicial deve ser anterior ou igual ao mês/ano final "
+            "(considerando que o período final é limitado ao mês atual)."
+        )
+
+    months: list[tuple[int, int]] = []
+    year, month = effective_start
+    while (year, month) <= effective_end:
+        months.append((year, month))
+        if month == 12:
+            year, month = year + 1, 1
+        else:
+            month += 1
+
+    return months, effective_start, effective_end
+
+
+def retrieve_t2g_biomass_video(
+    coords: List[List[List[List[float]]]],
+    start_year: int,
+    start_month: int,
+    end_year: int,
+    end_month: int,
+) -> tuple[bytes, tuple[int, int], tuple[int, int]] | None:
+    """
+    Gera um GIF animado da biomassa acumulada (ton/ha) mês a mês, usando a
+    série T2G (Time2Graze/UGPP), sobre a imagem de satélite e com o contorno
+    da propriedade em cada frame, com escala de cores fixa entre os frames.
+
+    Para cada mês de referência no intervalo (inclusivo), acumula o mês anterior
+    via `_reference_period` + `_get_t2g_biomass_image` e empilha os frames
+    compostos como no mapa estático de biomassa: imagem de satélite de fundo,
+    camada de biomassa visualizada com a mesma paleta e contorno vermelho da
+    propriedade. Meses sem dados UGPP são ignorados.
+
+    Args:
+        coords: Lista de coordenadas representando o MultiPolygon da fazenda.
+        start_year (int): Ano do primeiro mês de referência (>= 2025).
+        start_month (int): Mês do primeiro mês de referência (1-12).
+        end_year (int): Ano do último mês de referência (limitado ao mês atual).
+        end_month (int): Mês do último mês de referência (1-12, limitado ao mês atual).
+
+    Returns:
+        tuple[bytes, tuple, tuple, list, float, float] | None: (GIF em bytes,
+        (ano, mês) inicial efetivo, (ano, mês) final efetivo, lista de
+        (ano, mês) de acumulação de cada frame, biomassa mínima global,
+        biomassa máxima global), ou None quando menos de 2 meses possuem
+        dados UGPP.
+
+    Raises:
+        ValueError: Se o intervalo informado for inválido (ver `_iterate_reference_months`).
+        RuntimeError: Em falhas de processamento, servidor, conexão ou erros
+            inesperados (com mensagem pronta para ser repassada ao usuário).
+    """
+    try:
+        months, effective_start, effective_end = _iterate_reference_months(
+            start_year, start_month, end_year, end_month
+        )
+
+        roi = ee.Geometry.MultiPolygon(coords)
+
+        frames: list[tuple[int, ee.Image, int, int]] = []
+        global_min: float | None = None
+        global_max: float | None = None
+
+        for ref_year, ref_month in months:
+            start_date, end_date = _reference_period(ref_year, ref_month)
+            result = _get_t2g_biomass_image(
+                roi,
+                start_date.year, start_date.month, start_date.day,
+                end_date.year, end_date.month, end_date.day
+            )
+
+            if result is None:
+                log_warning(
+                    f"retrieve_t2g_biomass_video: sem dados UGPP para {ref_month}/{ref_year}; frame ignorado"
+                )
+                continue
+
+            biomass_img, _target_year, _target_month = result
+
+            stats = biomass_img.reduceRegion(
+                reducer=ee.Reducer.minMax(),
+                geometry=roi,
+                scale=10,
+                maxPixels=1e13
+            ).getInfo()
+
+            min_key = next((k for k in stats if k.endswith('_min')), None)
+            max_key = next((k for k in stats if k.endswith('_max')), None)
+
+            if not min_key or stats[min_key] is None or stats[max_key] is None:
+                log_warning(
+                    f"retrieve_t2g_biomass_video: estatísticas vazias para {ref_month}/{ref_year}; frame ignorado"
+                )
+                continue
+
+            frame_min = float(stats[min_key])
+            frame_max = float(stats[max_key])
+            global_min = frame_min if global_min is None else min(global_min, frame_min)
+            global_max = frame_max if global_max is None else max(global_max, frame_max)
+
+            frames.append((ref_year, biomass_img, start_date.year, start_date.month))
+
+        if len(frames) < 2:
+            log_warning(
+                f"retrieve_t2g_biomass_video: apenas {len(frames)} frame(s) com dados UGPP "
+                f"para o período {effective_start} - {effective_end}; retornando None"
+            )
+            return None
+
+        frame_months: list[tuple[int, int]] = [(acc_year, acc_month) for _, _, acc_year, acc_month in frames]
+
+        outline = _draw_feature_boundaries(roi=roi)
+        frame_region = roi.buffer(_FEATURE_BUFFER).bounds()
+
+        base_by_year: dict[int, ee.Image] = {
+            year: _get_base_image(roi=roi, year=year) for year in {year for year, _, _, _ in frames}
+        }
+
+        visualized = []
+        for year, frame, _acc_year, _acc_month in frames:
+            bioprop = frame.visualize(
+                **{"min": global_min, "max": global_max, "palette": BIOMASS_VIDEO_PALETTE}
+            )
+            composed = base_by_year[year].blend(bioprop.clip(roi)).blend(outline).clip(frame_region)
+            visualized.append(composed)
+
+        video_collection = ee.ImageCollection.fromImages(visualized)
+
+        url = video_collection.getVideoThumbURL({
+            "dimensions": _IMAGE_DIMENSION,
+            "region": frame_region,
+            "framesPerSecond": 2,
+            "format": "gif",
+        })
+
+        resposta = requests.get(url, timeout=120)
+        resposta.raise_for_status()
+
+        return resposta.content, effective_start, effective_end, frame_months, global_min, global_max
+
+    except ValueError as error:
+        raise error
+    except ee.EEException as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Falha ao processar as coordenadas no satélite. "
+            f"Verifique se as coordenadas da área estão corretas. Detalhes: {str(error)}"
+        )
+    except requests.exceptions.HTTPError as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"O servidor de imagens do satélite retornou um erro ao gerar o vídeo. "
+            f"Tente solicitar o vídeo novamente em alguns instantes. Detalhes: {str(error)}"
+        )
+    except requests.exceptions.RequestException as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Não foi possível baixar o vídeo por falha de conexão. "
+            f"Pode haver instabilidade na rede. Detalhes: {str(error)}"
+        )
+    except Exception as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Ocorreu um erro inesperado ao gerar o vídeo da biomassa. Detalhes: {str(error)}"
         )
 
 def retrieve_feature_soil_texture_image(coords: List[List[List[List[float]]]]) -> PIL.Image.Image:

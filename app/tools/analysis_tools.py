@@ -2,17 +2,23 @@ import datetime
 
 from io import BytesIO
 
+import PIL
+
 from agno.tools import tool
 from agno.tools.function import ToolResult
 from agno.run import RunContext
-from agno.media import File, Image
+from agno.media import File, Image, Video
 from agno.utils.log import log_debug, log_warning, log_error
 
 from app.hooks.tool_hooks import validate_selected_property_hook
+from app.services.video import gif_bytes_to_mp4_bytes
+from app.services.geospatial.image import append_continuous_colorbar, draw_corner_label
 from app.services.geospatial.gee import (
+    BIOMASS_VIDEO_PALETTE,
     retrieve_feature_images,
     retrieve_mapbiomas_biomass_image,
     retrieve_t2g_biomass_image,
+    retrieve_t2g_biomass_video,
     retrieve_pasture_vigor_image,
     retrieve_feature_soil_texture_image,
     query_pasture_statistics,
@@ -114,6 +120,188 @@ def generate_biomass_image(run_context: RunContext, car_codes: list[str]) -> Too
 
     except Exception as e:
         log_error(f"generate_biomass_image: {e}")
+        return ToolResult(content=str(e))
+
+
+def _overlay_fixed_colorbar(
+    gif_bytes: bytes,
+    vmin: float,
+    vmax: float,
+    title: str,
+    frame_dates: list[str] | None = None,
+) -> bytes:
+    """
+    Sobrepõe uma barra de cores fixa (escala global) em todos os frames de um GIF,
+    e opcionalmente um rótulo de data (canto superior esquerdo) por frame.
+
+    Args:
+        gif_bytes (bytes): Conteúdo do GIF animado de entrada.
+        vmin (float): Valor mínimo global da escala (ton/ha).
+        vmax (float): Valor máximo global da escala (ton/ha).
+        title (str): Título exibido acima da barra de cores.
+        frame_dates (list[str] | None): Rótulo de data para cada frame
+            (ex.: "08/2025"), na ordem dos frames. None omite os rótulos.
+
+    Returns:
+        bytes: GIF reencodado com a barra de cores (e datas) em todos os frames.
+
+    Raises:
+        RuntimeError: Quando o GIF não pode ser decodificado, reencodado, ou
+            quando a quantidade de datas não corresponde à de frames.
+    """
+    try:
+        gif = PIL.Image.open(BytesIO(gif_bytes))
+
+        n_frames = getattr(gif, "n_frames", 1)
+        if frame_dates is not None and len(frame_dates) != n_frames:
+            raise RuntimeError(
+                f"Quantidade de datas ({len(frame_dates)}) não corresponde ao número "
+                f"de frames ({n_frames}) do vídeo."
+            )
+
+        frames_with_colorbar: list[PIL.Image.Image] = []
+        duration_ms = []
+        frame_index = 0
+        while True:
+            try:
+                duration_ms.append(gif.info.get("duration", 500))
+            except (AttributeError, KeyError):
+                duration_ms.append(500)
+
+            frame = gif.convert("RGB")
+            if frame_dates is not None:
+                frame = draw_corner_label(frame, frame_dates[frame_index])
+
+            frames_with_colorbar.append(
+                append_continuous_colorbar(
+                    frame,
+                    title=title,
+                    vmin=round(vmin),
+                    vmax=round(vmax),
+                    palette=BIOMASS_VIDEO_PALETTE,
+                )
+            )
+            frame_index += 1
+            try:
+                gif.seek(gif.tell() + 1)
+            except EOFError:
+                break
+
+        buffer = BytesIO()
+        frames_with_colorbar[0].save(
+            buffer,
+            format="GIF",
+            save_all=True,
+            append_images=frames_with_colorbar[1:],
+            duration=duration_ms or None,
+            loop=0,
+        )
+        return buffer.getvalue()
+
+    except RuntimeError:
+        raise
+    except Exception as e:
+        log_error(f"_overlay_fixed_colorbar: {e}")
+        raise RuntimeError(f"Falha ao adicionar a barra de cores ao vídeo. Detalhes: {str(e)}")
+
+
+@tool(tool_hooks=[validate_selected_property_hook])
+def generate_biomass_video(
+    run_context: RunContext,
+    car_codes: list[str],
+    start_year: int,
+    start_month: int,
+    end_year: int,
+    end_month: int,
+) -> ToolResult:
+    """
+    Gera um vídeo (MP4) animado mostrando a evolução mensal da biomassa (matéria seca,
+    ton/ha) acumulada na propriedade rural, mês a mês, sobre a imagem de satélite.
+
+    Cada frame corresponde ao acumulado do mês anterior ao mês de referência
+    (mesma regra do mapa de biomassa), com escala de cores fixa entre os frames
+    para permitir comparação direta entre os meses, e indica no canto superior
+    esquerdo o mês de acumulação do frame.
+
+    Limitações: dados disponíveis a partir de 2025; o período final é limitado ao
+    mês atual. Meses sem dados do satélite (UGPP) são omitidos; se houver menos de
+    dois meses com dados, o vídeo não é gerado.
+
+    A geração consulta o satélite para cada mês do intervalo e pode levar dezenas
+    de segundos. Use apenas quando o usuário pedir explicitamente um vídeo,
+    animação ou evolução temporal da biomassa.
+
+    params:
+        car_codes (list[str]): Lista de códigos CAR da propriedade.
+        start_year (int): Ano inicial do vídeo (mínimo 2025).
+        start_month (int): Mês inicial (1 a 12).
+        end_year (int): Ano final (limitado ao mês atual).
+        end_month (int): Mês final (1 a 12, limitado ao mês atual).
+
+    Return:
+        ToolResult: Vídeo MP4 da evolução mensal da biomassa.
+    """
+    log_debug(
+        f"generate_biomass_video: car_codes={car_codes}, "
+        f"period={start_month}/{start_year} - {end_month}/{end_year}"
+    )
+    try:
+        all_properties = run_context.session_state['all_properties']
+        selected_property = next((prop for prop in all_properties if prop["car_code"] == ', '.join(car_codes)), None)
+        if selected_property is None:
+            log_warning(f"Propriedade não encontrada: {car_codes}")
+            return ToolResult(content=f"Propriedade não encontrada: {', '.join(car_codes)}")
+        selected_property = RuralProperty.model_validate(selected_property)
+
+        result = retrieve_t2g_biomass_video(
+            coords=selected_property.get_coords(),
+            start_year=start_year,
+            start_month=start_month,
+            end_year=end_year,
+            end_month=end_month,
+        )
+
+        if result is None:
+            log_warning(f"generate_biomass_video: sem dados UGPP suficientes ({selected_property.car_code})")
+            return ToolResult(
+                content=(
+                    "Não há dados de biomassa suficientes (pelo menos dois meses) para gerar o vídeo "
+                    f"no período de {start_month}/{start_year} a {end_month}/{end_year}. "
+                    "Informe que a série T2G pode não cobrir a região ou o período solicitado e "
+                    "sugira um período mais recente ou um mapa de biomassa do mês atual."
+                )
+            )
+
+        gif_bytes, effective_start, effective_end, frame_months, global_min, global_max = result
+
+        frame_dates = [f"{acc_month:02d}/{acc_year}" for acc_year, acc_month in frame_months]
+        gif_bytes = _overlay_fixed_colorbar(
+            gif_bytes,
+            vmin=global_min,
+            vmax=global_max,
+            title="Biomassa (T2G)\nton/ha",
+            frame_dates=frame_dates,
+        )
+        mp4_bytes = gif_bytes_to_mp4_bytes(gif_bytes)
+
+        log_debug(
+            f"generate_biomass_video: vídeo gerado ({selected_property.car_code}, "
+            f"{effective_start[1]}/{effective_start[0]} - {effective_end[1]}/{effective_end[0]})"
+        )
+        return ToolResult(
+            content=(
+                f"Vídeo da evolução mensal da biomassa (ton/ha) de {effective_start[1]}/{effective_start[0]} "
+                f"a {effective_end[1]}/{effective_end[0]}, sobre a imagem de satélite e com o contorno "
+                "da propriedade. Cada frame é o acumulado do mês indicado no canto superior esquerdo "
+                "(formato MM/AAAA), com barra de cores de escala fixa entre os frames: Roxo escuro "
+                f"(Baixa concentração) a Azul claro (Alta concentração), variando de {round(global_min)} "
+                f"a {round(global_max)} ton/ha. Meses sem dados disponíveis foram omitidos."
+            ),
+            videos=[Video(content=mp4_bytes, mime_type="video/mp4", format="mp4")],
+        )
+
+    except Exception as e:
+        log_error(f"generate_biomass_video: {e}")
         return ToolResult(content=str(e))
 
 

@@ -4,6 +4,56 @@ from PIL import Image, ImageDraw, ImageFont, ImageColor
 from typing import Dict, List, Union
 
 
+def draw_corner_label(
+    image: Image.Image,
+    text: str,
+    position: str = "top_left",
+    font_path: str = "assets/fonts/DejaVuSans-Bold.ttf"
+) -> Image.Image:
+    """
+    Draws a timestamp-style label (white text with black stroke) on a corner of
+    the image, keeping it readable over satellite imagery.
+
+    Args:
+        image (PIL.Image.Image): Image to draw on (modified copy is returned).
+        text (str): Label text (e.g. "08/2025").
+        position (str): Corner to place the label ("top_left").
+        font_path (str): Path to a TrueType font for the label.
+
+    Returns:
+        PIL.Image.Image: New image with the label drawn.
+
+    Raises:
+        ValueError: If the position is not supported.
+    """
+    if position != "top_left":
+        raise ValueError(f"Posição de rótulo não suportada: {position}")
+
+    width, height = image.size
+    font_size = max(14, int(height * 0.05))
+
+    try:
+        font = ImageFont.truetype(font_path, font_size)
+    except IOError:
+        font = ImageFont.load_default()
+
+    margin = max(5, int(width * 0.02))
+
+    labeled = image.copy()
+    draw = ImageDraw.Draw(labeled)
+
+    draw.text(
+        (margin, margin),
+        text,
+        font=font,
+        fill=(255, 255, 255),
+        stroke_width=2,
+        stroke_fill=(0, 0, 0)
+    )
+
+    return labeled
+
+
 def append_continuous_colorbar(
     image: Image.Image, 
     title: str, 
