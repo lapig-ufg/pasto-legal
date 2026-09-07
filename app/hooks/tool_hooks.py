@@ -3,6 +3,12 @@ from typing import Callable, Dict, Any
 from agno.run import RunContext
 from datetime import datetime, timedelta
 
+from app.configs.prompts import get_hook_texts
+
+
+_hook_texts = get_hook_texts("tool_hooks")
+
+
 def validate_selected_property_hook(run_context: RunContext, function_call: Callable, arguments: Dict[str, Any]) -> Any:
     """
     Hook de validação para garantir que há uma propriedade armazenada no sistema.
@@ -12,10 +18,7 @@ def validate_selected_property_hook(run_context: RunContext, function_call: Call
     if session_state and 'all_properties' in session_state:
         return function_call(**arguments)
 
-    return (
-        "Não foi possível completar a análise, pois não há uma propriedade selecionada.\n"
-        "Peça desculpas ao usuário. Peça que o usuário informe uma propriedade."
-    )
+    return _hook_texts["no_property_selected"].strip()
 
 def validate_rate_limit_hook(run_context: Any, function_call: Callable, arguments: Dict[str, Any]) -> Any:
     """ Hook universal para evitar reprocessamento e controlar expiração (7 dias). """
@@ -31,7 +34,7 @@ def validate_rate_limit_hook(run_context: Any, function_call: Callable, argument
             saved_date = datetime.fromisoformat(saved_date_str)
 
             if datetime.now() - saved_date < timedelta(days=7):
-                return "A mídia solicitada já foi gerada com esses exatos parâmetros e entregue nesta sessão."
+                return _hook_texts["media_already_delivered"].strip()
         except Exception:
             pass
 
@@ -42,7 +45,7 @@ def validate_rate_limit_hook(run_context: Any, function_call: Callable, argument
             return result
         
         if not hasattr(result, 'images') or not result.images:
-             return "Erro: A integração com o satélite retornou uma mídia vazia. Tente novamente."
+             return _hook_texts["media_empty"].strip()
 
         delivered_media[search_key] = datetime.now().isoformat()
         run_context.session_state["delivered_media"] = delivered_media
@@ -50,4 +53,6 @@ def validate_rate_limit_hook(run_context: Any, function_call: Callable, argument
         return result
 
     except Exception as e:
-        return f"Erro na integração externa: Falha ao executar {function_call.__name__}. Detalhe: {str(e)}"
+        return _hook_texts["media_integration_error"].strip().format(
+            function_name=function_call.__name__, error=str(e)
+        )

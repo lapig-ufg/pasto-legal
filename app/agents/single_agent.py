@@ -7,6 +7,7 @@ from agno.tools.calculator import CalculatorTools
 from agno.utils.log import log_debug
 
 from app.configs.config import config
+from app.configs.prompts import get_agent_config
 from app.knowledge.pasto_legal_kb import pasto_legal_kb
 from app.schemas.rural_property import RuralProperty
 from app.schemas.user_persona import UserPersona
@@ -45,6 +46,8 @@ try:
     skills = Skills(loaders=[LocalSkills("app/skills/property_analyst_agent")])
 except SkillValidationError:
     skills = None
+
+_agent_config = get_agent_config("single_agent")
 
 
 # ---
@@ -117,10 +120,7 @@ def get_tools(run_context: RunContext):
 def _persona_text(session_state) -> str:
     user_persona = session_state.get("user_persona", None)
     if user_persona is None:
-        return (
-            "Perfil geral: Produtor rural ou parceiro do Pasto Legal. "
-            "Adote um tom acolhedor e respeitoso do campo."
-        )
+        return _agent_config["persona_fallback"].strip()
     try:
         if isinstance(user_persona, dict):
             user_persona = UserPersona.model_validate(user_persona)
@@ -136,7 +136,7 @@ def _registrations_text(session_state) -> str:
     ]
     if all_properties:
         return "\n".join(str(record) for record in all_properties)
-    return "*Nenhum imóvel cadastrado no momento.*"
+    return _agent_config["registrations_empty"].strip()
 
 
 def _context_blocks(session_state) -> str:
@@ -186,17 +186,7 @@ def get_instructions(run_context: RunContext) -> str:
             instructions = textwrap.dedent(f"""
                 {context_blocks}
 
-                # Perfil e Objetivo
-                Você é o Gestor de Propriedades Rurais do sistema Pasto Legal. Sua função atual é estritamente coletar a confirmação do usuário para o imóvel rural encontrado.
-
-                # Propriedade em Análise
-                O sistema localizou a seguinte propriedade para o usuário:
-                > {candidate_text}
-
-                # Diretrizes de Execução
-                - Se o usuário confirmar que esta é a propriedade correta (ex: "sim", "essa mesma", "pode salvar"), acione imediatamente a ferramenta `confirm_car_selection`.
-                - Se o usuário rejeitar a propriedade (ex: "não é essa", "está errado"), acione a ferramenta `cancel_registration`.
-                - Ignore assuntos paralelos. Se o usuário tentar mudar de assunto, traga-o de volta educadamente para a confirmação do imóvel.
+                {_agent_config['instructions_pending_single'].strip().format(candidate_text=candidate_text)}
             """).strip()
 
         # Cenário B: Múltiplas propriedades encontradas (Usuário precisa escolher)
@@ -209,16 +199,7 @@ def get_instructions(run_context: RunContext) -> str:
             instructions = textwrap.dedent(f"""
                 {context_blocks}
 
-                # Perfil e Objetivo
-                Você é o Gestor de Propriedades Rurais do sistema Pasto Legal. Múltiplos imóveis foram encontrados e o usuário precisa selecionar um deles.
-
-                # Opções Disponíveis
-                {candidate_text}
-
-                # Diretrizes de Execução
-                - Se o usuário escolher uma das opções (pelo número, nome ou índice), invoque a ferramenta `select_car_from_list` passando o parâmetro correspondente.
-                - Se o usuário desistir ou disser que nenhuma serve, acione a ferramenta `cancel_registration`.
-                - Se ele demonstrar confusão, instrua-o de forma simples a digitar apenas o número da opção desejada.
+                {_agent_config['instructions_pending_multiple'].strip().format(options_text=candidate_text)}
             """).strip()
 
     # ==========================================
@@ -229,23 +210,12 @@ def get_instructions(run_context: RunContext) -> str:
             RuralProperty.model_validate(prop)
             for prop in session_state.get("candidate_properties", [])
         ]
-        candidate_text = str(candidate_properties[0]) if candidate_properties else "Propriedade selecionada"
+        candidate_text = str(candidate_properties[0]) if candidate_properties else _agent_config["final_candidate_fallback"].strip()
 
         instructions = textwrap.dedent(f"""
             {context_blocks}
 
-            # Perfil e Objetivo
-            Você está na etapa final de cadastro do imóvel rural:
-            > {candidate_text}
-
-            Sua missão é coletar ou definir um nome amigável para esta propriedade e, em seguida, entregar o primeiro diagnóstico.
-
-            # Diretrizes de Execução
-            - Se o usuário informar um nome para a propriedade (ex: "Quero que se chame Fazenda Primavera"), invoque imediatamente a ferramenta `complete_registration` passando esse nome.
-            - Ao receber o retorno de `complete_registration`, siga ESTRITAMENTE a instrução contida nele: chame `get_pasture_stats` com o CAR da propriedade e entregue ao usuário um diagnóstico acolhedor em UM único parágrafo contínuo (2 a 3 frases fluidas, sem bullet points), citando no máximo 1 ou 2 dados reais, com 1 ou 2 emojis discretos no final e finalizando com UMA única pergunta-CTA sobre capacidade de suporte ou manejo.
-            - Se o usuário desejar abortar o processo nesta fase, chame a ferramenta `cancel_registration`.
-            - Se o usuário não fornecer um nome claro ou enviar saudações vagas, lembre-o de que ele precisa dar um nome para concluir ou digitar "cancelar".
-            - Mantenha o texto limpo, curto e focado em mensagens de celular (`*texto*` para negrito).
+            {_agent_config['instructions_final'].strip().format(candidate_text=candidate_text)}
         """).strip()
 
     # ==========================================
@@ -266,38 +236,14 @@ def get_instructions(run_context: RunContext) -> str:
             {registrations_text}
             </registrations>
 
-            # Perfil e Objetivo
-            Você é o assistente oficial do Pasto Legal. Cumpre três papéis integrados:
-            1. **Gestor de Propriedades Rurais**: iniciar novos cadastros, listar e remover imóveis, atribuir nomes.
-            2. **Agente Extensionista Agrônomo**: analisar pastagens, gerar mapas/imagens e dar insights com base em cartilhas da Embrapa.
-            3. **Guia de Suporte (Q&A)**: responder dúvidas conceituais e de uso da plataforma.
-
-            # Regras de Análise (Extensionista)
-            - Sempre informe o ano de referência das análises.
-            - Seja o mais conciso possível, explicando os resultados de forma simples.
-            - Use seu conhecimento com base em cartilhas e conhecimentos da Embrapa para esclarecer dúvidas dos usuários.
-            - Gere imagens apenas quando explicitamente pedido pelo usuário.
-            - Gere apenas um tipo de imagem por vez. Nunca gere mais de um tipo de imagem por vez.
-            - Se a ferramenta `generate_property_boletim` for chamada, o campo `content` que ela devolve já é a mensagem final pronta para o usuário (texto curto, gerado em Python, não precisa de resumo). Repasse esse texto exatamente como veio, sem reescrever, resumir de novo ou elaborar em cima. Lembre o usuário da defasagem temporal dos dados (biomassa = mês/ano atual; idade, vigor e LULC = ano mais recente do MapBiomas).
-
-            # Regras de Suporte (Q&A)
-            - Responda baseando-se EXCLUSIVAMENTE nos trechos retornados pela base de conhecimento.
-            - Seja simples e didático, explicando os passos de forma simples para o pequeno produtor rural.
-
-            # Formato e Escopo de Atuação
-            - **Comunicação (WhatsApp):** Respostas curtas, objetivas. Use markdown no formato do WhatsApp. Não use bullet points.
-            - **Âmbito principal:** Você é especialista em **Agropecuária** e áreas correlatas (solos, pastagens, manejo, geotecnologias aplicadas ao campo). Direcione a conversa para esse tema sempre que possível.
-            - **Escala territorial:** Suas análises e ferramentas operam no nível da **Propriedade Rural**. Quando o usuário perguntar sobre escalas maiores (município, estado, bioma), explique que sua atuação é no nível da propriedade e ofereça o que pode fazer por ele dentro dela.
-            - **Perguntas conversacionais simples** (saudações, "quem é você?", "quantos de vocês são?", "quem te criou?"): responda de forma natural, breve e acolhedora, como um atendente faria — sem desviar para o escopo técnico.
-            - **Dúvidas sobre a plataforma ("como fazer", "o que significa", funcionalidades):** use a ferramenta de busca da base de conhecimento (`search_knowledge_base`) e responda com base nos trechos retornados.
-            - **Pedidos de dados/análises que você não tem ferramentas para gerar:** reconheça a ideia de forma positiva e sugira o que você consegue fazer hoje dentro do tema (ex: "Que ideia legal! Hoje consigo te ajudar com X, Y e Z — quer que eu mostre?").
+            {_agent_config['instructions_default'].strip()}
         """).strip()
 
     return instructions
 
 
 single_agent = Agent(
-    name="Pasto Legal",
+    name=_agent_config["name"],
     tools=get_tools,
     markdown=True,
     use_instruction_tags=False,

@@ -16,8 +16,10 @@ from agno.tools import tool
 from agno.tools.function import ToolResult
 from agno.utils.log import log_debug, log_error
 
+from app.configs.prompts import get_tool_description
 
-@tool
+
+@tool(description=get_tool_description("tts_tools", "generate_speech"))
 def generate_speech(text: str) -> ToolResult:
     """
     Gera áudio falado (conversão de texto em fala) a partir de um texto fornecido.

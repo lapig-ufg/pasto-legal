@@ -3,10 +3,11 @@ from agno.tools import tool
 from agno.run import RunContext
 from agno.utils.log import log_debug, log_warning, log_error
 
+from app.configs.prompts import get_tool_description
 from app.database.session import SessionLocal, engine 
 from app.database.models import UserTermsAcceptance
 
-@tool
+@tool(description=get_tool_description("onboarding_tools", "accept_terms_and_conditions"))
 def accept_terms_and_conditions(run_context: RunContext) -> str:
     """
     Records the user's formal acceptance of the Pasto Legal Terms and Conditions in the database.

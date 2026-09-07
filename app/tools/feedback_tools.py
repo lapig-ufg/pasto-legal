@@ -6,6 +6,7 @@ from agno.agent import Agent
 from agno.models.google import Gemini
 from agno.utils.log import log_debug, log_warning, log_error
 
+from app.configs.prompts import get_tool_description
 from app.database.session import SessionLocal, engine
 from app.database.models import NegativeFeedback, AnalysisFeedback
 
@@ -73,7 +74,7 @@ def _get_sanitized_history(run_context: RunContext) -> str:
     # 3. Fallback Determinístico (Camada 2 - Regex)
     return _mask_pii(sanitized_history)
 
-@tool
+@tool(description=get_tool_description("feedback_tools", "record_frustration_feedback"))
 def record_frustration_feedback(
     reason_frustration: str, 
     desired_answer: str,
@@ -114,7 +115,7 @@ def record_frustration_feedback(
     finally:
         db.close()
 
-@tool
+@tool(description=get_tool_description("feedback_tools", "record_analisys_feedback"))
 def record_analisys_feedback(
     original_question: str, 
     desired_analysis: str,

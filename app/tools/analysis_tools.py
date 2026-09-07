@@ -10,6 +10,7 @@ from agno.run import RunContext
 from agno.media import File, Image, Video
 from agno.utils.log import log_debug, log_warning, log_error
 
+from app.configs.prompts import get_tool_description
 from app.hooks.tool_hooks import validate_selected_property_hook
 from app.services.video import gif_bytes_to_mp4_bytes
 from app.services.geospatial.image import append_continuous_colorbar, draw_corner_label
@@ -32,7 +33,7 @@ from app.schemas.rural_property import RuralProperty
 import ee
 
 
-@tool(tool_hooks=[validate_selected_property_hook])
+@tool(tool_hooks=[validate_selected_property_hook], description=get_tool_description("analysis_tools", "generate_property_image"))
 def generate_property_image(run_context: RunContext, car_codes: list[str]) -> ToolResult:
     """
     Gera uma imagem de satélite em alta resolução (RGB) da propriedade rural,
@@ -71,7 +72,7 @@ def generate_property_image(run_context: RunContext, car_codes: list[str]) -> To
         return ToolResult(content=f"Erro ao gerar imagem: {str(e)}")
 
 
-@tool(tool_hooks=[validate_selected_property_hook])
+@tool(tool_hooks=[validate_selected_property_hook], description=get_tool_description("analysis_tools", "generate_biomass_image"))
 def generate_biomass_image(run_context: RunContext, car_codes: list[str]) -> ToolResult:
     """
     Gera um mapa temático da biomassa (matéria seca) sobre os limites da propriedade rural.
@@ -351,7 +352,7 @@ def generate_pasture_classification_image(run_context: RunContext, car_codes: li
         return ToolResult(content=str(e))
 
 
-@tool(tool_hooks=[validate_selected_property_hook])
+@tool(tool_hooks=[validate_selected_property_hook], description=get_tool_description("analysis_tools", "generate_soil_texture_image"))
 def generate_soil_texture_image(run_context: RunContext, car_codes: list[str]) -> ToolResult:
     """
     Gera um mapa temático da textura do solo sobre os limites da propriedade rural na profundidade de 0 a 30cm.
@@ -387,7 +388,7 @@ def generate_soil_texture_image(run_context: RunContext, car_codes: list[str]) -
         return ToolResult(content=str(e))
 
 
-@tool(tool_hooks=[validate_selected_property_hook])
+@tool(tool_hooks=[validate_selected_property_hook], description=get_tool_description("analysis_tools", "get_pasture_stats"))
 def get_pasture_stats(run_context: RunContext, car_codes: list[str]):
     """
     Recupera estatísticas de bimoassa, vigor vegetativo, idade da pastagem e classificação de uso do solo mais recentes.
@@ -428,7 +429,7 @@ def get_pasture_stats(run_context: RunContext, car_codes: list[str]):
         return ToolResult(content=str(e))
     
 
-@tool(tool_hooks=[validate_selected_property_hook])
+@tool(tool_hooks=[validate_selected_property_hook], description=get_tool_description("analysis_tools", "get_topographic_stats"))
 def get_topographic_stats(run_context: RunContext, car_codes: list[str]):
     """
     Recupera estatísticas de topografia da propriedade (altimetria e declividade).
@@ -472,7 +473,7 @@ def _safe_fetch_image(label: str, fetch_fn):
         return None
 
 
-@tool(tool_hooks=[validate_selected_property_hook])
+@tool(tool_hooks=[validate_selected_property_hook], description=get_tool_description("analysis_tools", "generate_property_boletim"))
 def generate_property_boletim(run_context: RunContext, car_codes: list[str]) -> ToolResult:
     """
     Gera um boletim em PDF consolidando as análises da propriedade rural — localização,
