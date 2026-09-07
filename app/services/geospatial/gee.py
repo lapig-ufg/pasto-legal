@@ -61,6 +61,7 @@ def _get_base_image(roi: ee.Geometry, year: int = None) -> ee.Image:
 
         # Função de escalonamento para Landsat C2 L2
         def apply_scale_landsat(image: ee.Image):
+            """Applies the scale/offset factors to the optical bands (SR_B.*) of a Landsat Collection 2 Level-2 image."""
             optical_bands = image.select('SR_B.').multiply(0.0000275).add(-0.2)
             return image.addBands(optical_bands, None, True)
 
@@ -138,7 +139,16 @@ def _get_base_image(roi: ee.Geometry, year: int = None) -> ee.Image:
         )
 
 
-def _draw_feature_boundaries(roi):
+def _draw_feature_boundaries(roi) -> ee.Image:
+    """
+    Draws a red outline of a polygon on an empty image.
+
+    Args:
+        roi (ee.Geometry): Region of interest to be outlined.
+
+    Returns:
+        ee.Image: RGB image containing only the outline (red, 3px width).
+    """
     empty = ee.Image().byte()
     outline = empty.paint(ee.FeatureCollection([ee.Feature(roi)]), 1, 3)
     outline = outline.updateMask(outline)
@@ -396,6 +406,26 @@ def _get_t2g_biomass_image(
     end_month: int,
     end_day: int,
 ):
+    """
+    Computes the accumulated dry biomass image (ton/ha) from UGPP productivity.
+
+    Uses the Time2Graze collection (10m UGPP) accumulated over the given period,
+    multiplied by the scale factor, LUEmax, the IPCC factor (C -> dry biomass) and
+    the ton/ha conversion factor, masked by Global Pasture Watch grassland areas.
+
+    Args:
+        roi (ee.Geometry): Region of interest (farm polygon).
+        start_year (int): Start year of the accumulation period.
+        start_month (int): Start month of the accumulation period.
+        start_day (int): Start day of the accumulation period.
+        end_year (int): End year (exclusive) of the accumulation period.
+        end_month (int): End month (exclusive) of the accumulation period.
+        end_day (int): End day (exclusive) of the accumulation period.
+
+    Returns:
+        tuple[ee.Image, int, int]: (biomass image 'tonC_hec', start year, start month),
+        or None if there is no UGPP data for the period/region.
+    """
     UGPP_SCALE_FACTOR = 0.1
 
     # Maximum light use efficiency (LUEmax) 
@@ -435,7 +465,26 @@ def _get_t2g_biomass_image(
     return grassland_image, start_year, start_month
     
 
-def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int, year: int) -> PIL.Image.Image | None:
+def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int, year: int) -> tuple[PIL.Image.Image, int, int] | None:
+    """
+    Generates a satellite image with the T2G (Time2Graze) biomass layer overlaid,
+    relative to the reference month (the month before the one given), with a colorbar.
+
+    Args:
+        coords: List of coordinates representing the farm MultiPolygon.
+        month (int): Reference month (the accumulation uses the previous month).
+        year (int): Reference year.
+
+    Returns:
+        tuple[PIL.Image.Image, int, int]: (final image with satellite, biomass,
+        outline and colorbar, effective accumulation year and month), or None
+        when no UGPP data is available for the period.
+
+    Raises:
+        ValueError: If the area contains no mapped pasture with computable biomass.
+        RuntimeError: On processing, server, connection or unexpected failures
+            (with a message ready to be relayed to the user).
+    """
     try:
         roi = ee.Geometry.MultiPolygon(coords)
 
@@ -522,7 +571,22 @@ def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int
             "Peça ao usuário que tente novamente mais tarde."
         )
 
-def retrieve_feature_soil_texture_image(coords: List[List[List[List[float]]]]):
+def retrieve_feature_soil_texture_image(coords: List[List[List[List[float]]]]) -> PIL.Image.Image:
+    """
+    Generates a satellite image with the soil texture layer (0-30cm, MapBiomas
+    Collection 3) overlaid, with a discrete legend of the texture classes.
+
+    Args:
+        coords: List of coordinates representing the farm MultiPolygon.
+
+    Returns:
+        PIL.Image: Final blended image containing satellite, soil texture,
+        outline and legend.
+
+    Raises:
+        RuntimeError: On Earth Engine processing, image server, connection,
+            image format or unexpected failures.
+    """
     try:
         PALETTE = {
             'Afloramento':'#707070',
@@ -663,7 +727,23 @@ def retrieve_pasture_vigor_image(coords: List[List[List[List[float]]]], year: in
         )
 
 
-def get_biomass(roi: ee.Geometry, month: int, year: int) -> 'BiomassStats':
+def get_biomass(roi: ee.Geometry, month: int, year: int) -> BiomassStats:
+    """
+    Computes pasture dry biomass accumulated in the reference month (the month
+    before the one given), using the Time2Graze collection (10m UGPP).
+
+    When there is no UGPP data for the period/region, falls back to the MapBiomas
+    asset (2024 annual biomass, 0.09 scale, value accumulated over the year).
+
+    Args:
+        roi (ee.Geometry): Region of interest (farm polygon).
+        month (int): Reference month (the accumulation uses the previous month).
+        year (int): Reference year.
+
+    Returns:
+        BiomassStats: Observation year and accumulated value with unit
+        ("tonelada(s) de matéria seca acumulada no mês ..." or "... no ano").
+    """
     start_date, end_date = _reference_period(year, month)
     result = _get_t2g_biomass_image(
         roi,
@@ -706,7 +786,20 @@ def get_biomass(roi: ee.Geometry, month: int, year: int) -> 'BiomassStats':
         return BiomassStats(observation_year=target_year, amount=Value(value=biomass_value, unity=f"tonelada(s) de matéria seca acumulada no mês de {month_dict[target_month]}"))
 
 
-def get_pasture_age(roi: ee.Geometry, year: int, month: int = None) -> List['AgeStats']:
+def get_pasture_age(roi: ee.Geometry, year: int, month: int = None) -> AgeStats:
+    """
+    Computes pasture area (ha) per age class via MapBiomas (Collection 10).
+
+    Raw ages are reclassified into 4 ranges: 1-10, 10-20, 20-30 and 30-40 years.
+
+    Args:
+        roi (ee.Geometry): Region of interest (farm polygon).
+        year (int): Reference year of the mapping (band `year - 2000`).
+        month (int, optional): Ignored; kept for signature compatibility.
+
+    Returns:
+        AgeStats: Observation year and list of areas per age range (ha).
+    """
     AGE_DICT = {'1':'1-10', '2':'10-20', '3':'20-30', '4':'30-40'}
 
     age_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_age_v2')
@@ -742,7 +835,21 @@ def get_pasture_age(roi: ee.Geometry, year: int, month: int = None) -> List['Age
 
     return AgeStats(observation_year=2024, data=age_data_list)
 
-def get_pasture_vigor(roi: ee.Geometry, year: int, month: int = None) -> List['VigorStats']:
+def get_pasture_vigor(roi: ee.Geometry, year: int, month: int = None) -> VigorStats:
+    """
+    Computes pasture area (ha) per vigor class via MapBiomas (Collection 10).
+
+    Classes: 1 = Low (severe degradation, potentially biological),
+    2 = Medium (moderate degradation), 3 = High (high vegetative vigor).
+
+    Args:
+        roi (ee.Geometry): Region of interest (farm polygon).
+        year (int): Reference year of the mapping (band `year - 2000`).
+        month (int, optional): Ignored; kept for signature compatibility.
+
+    Returns:
+        VigorStats: Observation year and list of areas per vigor class (ha).
+    """
     VIGOR_DICT = {
         '1':'Baixo: pastagens com baixo vigor vegetativo e indícios de degradação severa, potencialmente biológica.',
         '2':'Médio: pastagens com médio vigor vegativo e indícios de degração moderada.',
@@ -774,7 +881,19 @@ def get_pasture_vigor(roi: ee.Geometry, year: int, month: int = None) -> List['V
 
     return VigorStats(observation_year=2024, data=vigor_data_list)
 
-def get_land_use_land_cover(roi: ee.Geometry, year: int, month: int = None) -> List['LULCStats']:
+def get_land_use_land_cover(roi: ee.Geometry, year: int, month: int = None) -> LULCStats:
+    """
+    Computes area (ha) per land use and land cover class via MapBiomas
+    (Collection 10, annual integration).
+
+    Args:
+        roi (ee.Geometry): Region of interest (farm polygon).
+        year (int): Reference year of the mapping (band `year - 2000`).
+        month (int, optional): Ignored; kept for signature compatibility.
+
+    Returns:
+        LULCStats: Observation year and list of areas per LULC class (ha).
+    """
     CLASSES = {
         '3':'Formação Florestal', '4':'Formação Savânica', '5':'Mangue',
         '6':'Floresta Alagável', '9':'Silvicultura', '11':'Campo Alagado e Área Pantanosa',
@@ -816,7 +935,20 @@ def get_land_use_land_cover(roi: ee.Geometry, year: int, month: int = None) -> L
 
 def query_pasture_statistics(coords: List[List[List[List[float]]]], month: int, year: int) -> PropertyStats:
     """
-    Extração de estatísticas de pastagem (biomassa, vigor, idade e chuva).
+    Extracts pasture statistics (biomass, age, vigor and land use/land cover).
+
+    Args:
+        coords: List of coordinates representing the farm MultiPolygon.
+        month (int): Reference month (biomass accumulates the previous month).
+        year (int): Reference year.
+
+    Returns:
+        PropertyStats: PastureStats object combining BiomassStats, AgeStats,
+        VigorStats and LULCStats.
+
+    Raises:
+        RuntimeError: On processing, server, connection or unexpected failures
+            (with a message ready to be relayed to the user).
     """
     try:
         roi = ee.Geometry.MultiPolygon(coords)
@@ -867,7 +999,17 @@ def query_pasture_statistics(coords: List[List[List[List[float]]]], month: int, 
         )
     
 
-def query_topographic_stats(coords: List[List[List[List[float]]]]):
+def query_topographic_stats(coords: List[List[List[List[float]]]]) -> TopographicStats:
+    """
+    Computes average topographic statistics for the property using Copernicus
+    DEM GLO30 (mean elevation in meters and mean slope in degrees).
+
+    Args:
+        coords: List of coordinates representing the farm MultiPolygon.
+
+    Returns:
+        TopographicStats: Mean elevation (meters) and mean slope (degrees).
+    """
     from app.schemas.property_stats import Value
 
     roi = ee.Geometry.MultiPolygon(coords)
