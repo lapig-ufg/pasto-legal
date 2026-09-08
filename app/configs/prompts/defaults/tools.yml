@@ -115,6 +115,40 @@ analysis_tools:
       Return:
           ToolResult: Year -> average biomass (t/ha) table and a PNG trend chart.
 
+  get_pasture_age_on_the_fly:
+    description: |
+      Estimates pasture age (in years) on-the-fly for the most recent possible year,
+      combining MapBiomas age at the latest available year with the on-the-fly pasture
+      classification for the following year (areas that remain pasture gain +1 year;
+      new pasture starts at 1 year). Generates a color-coded age-range map.
+
+      Use when the user asks about pasture age and wants the most current data
+      possible, not locked to MapBiomas's latest year.
+
+      params:
+          car_codes (list[str]): List of CAR codes of the property.
+
+      Return:
+          ToolResult: Area (ha) per age range and a PNG map of the property.
+
+  get_pasture_vigor_on_the_fly:
+    description: |
+      Estimates pasture vigor (Low/Medium/High) on-the-fly for the most recent possible
+      year, using harmonic regression over NDVI (Sentinel-2 + Cloud Score+) calibrated,
+      within the property itself, against MapBiomas's static vigor asset at the latest
+      available year. This is our own heuristic estimate, not MapBiomas's official
+      methodology — warn the user about this when delivering the result, especially if
+      calibration falls back to a fixed threshold.
+
+      Use when the user asks about pasture vigor and wants the most current data
+      possible, not locked to MapBiomas's latest year.
+
+      params:
+          car_codes (list[str]): List of CAR codes of the property.
+
+      Return:
+          ToolResult: Area (ha) per vigor class and a PNG map of the property.
+
 tts_tools:
   generate_speech:
     description: |

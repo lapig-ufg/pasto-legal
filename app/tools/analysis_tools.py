@@ -22,6 +22,8 @@ from app.services.geospatial.gee import (
     )
 from app.services.geospatial.pasture_classification import classify_pasture_on_the_fly
 from app.services.geospatial.pasture_biomass import estimate_pasture_biomass_history
+from app.services.geospatial.pasture_age import estimate_pasture_age_on_the_fly
+from app.services.geospatial.pasture_vigor import estimate_pasture_vigor_on_the_fly
 from app.services.boletim_scripts import build_boletim_chat_summary, build_boletim_story
 from app.services.pdf_scripts import render_document
 from app.schemas.property_stats import PastureStats, PropertyStats, TopographicStats
@@ -414,4 +416,104 @@ def get_pasture_biomass_history(run_context: RunContext, car_codes: list[str]) -
 
     except Exception as e:
         log_error(f"get_pasture_biomass_history: {e}")
+        return ToolResult(content=str(e))
+
+
+@tool(tool_hooks=[validate_selected_property_hook], description=get_tool_description("analysis_tools", "get_pasture_age_on_the_fly"))
+def get_pasture_age_on_the_fly(run_context: RunContext, car_codes: list[str]) -> ToolResult:
+    """
+    Estima a idade da pastagem (anos) on-the-fly para o ano mais recente possível,
+    combinando a idade do MapBiomas com a classificação de pastagem on-the-fly do ano
+    seguinte, e gera um mapa colorido por faixa de idade.
+
+    Use quando o usuário perguntar pela idade da pastagem e quiser o dado mais atual.
+
+    params:
+        car_codes (list[str]): Lista de códigos CAR da propriedade.
+
+    Return:
+        ToolResult: Área (ha) por faixa de idade e um mapa PNG da propriedade.
+    """
+    log_debug(f"get_pasture_age_on_the_fly: car_codes={car_codes}")
+    try:
+        all_properties = run_context.session_state['all_properties']
+        selected_property = next((prop for prop in all_properties if prop["car_code"] == ', '.join(car_codes)), None)
+        if selected_property is None:
+            log_warning(f"Propriedade não encontrada: {car_codes}")
+            return ToolResult(content=f"Propriedade não encontrada: {', '.join(car_codes)}")
+        selected_property = RuralProperty.model_validate(selected_property)
+
+        roi = ee.Geometry.MultiPolygon(selected_property.get_coords())
+        result = estimate_pasture_age_on_the_fly(roi=roi, car_code=selected_property.car_code)
+
+        lines = [f"- {age_range} anos: {area} ha" for age_range, area in sorted(result["area_by_age_class_ha"].items())]
+        content = (
+            f"Idade da pastagem estimada para {result['pred_year']} "
+            f"(base MapBiomas {result['train_year']} + classificação on-the-fly):\n"
+            + ("\n".join(lines) if lines else "Nenhuma área de pastagem mapeada.")
+        )
+
+        buffer = BytesIO()
+        result["imagem"].save(buffer, format="PNG")
+
+        log_debug(f"get_pasture_age_on_the_fly: idade gerada ({selected_property.car_code})")
+        return ToolResult(content=content, images=[Image(content=buffer.getvalue())])
+
+    except Exception as e:
+        log_error(f"get_pasture_age_on_the_fly: {e}")
+        return ToolResult(content=str(e))
+
+
+@tool(tool_hooks=[validate_selected_property_hook], description=get_tool_description("analysis_tools", "get_pasture_vigor_on_the_fly"))
+def get_pasture_vigor_on_the_fly(run_context: RunContext, car_codes: list[str]) -> ToolResult:
+    """
+    Estima o vigor da pastagem (Baixo/Médio/Alto) on-the-fly para o ano mais recente
+    possível, via regressão harmônica de NDVI calibrada contra o asset estático do
+    MapBiomas dentro da própria propriedade, e gera um mapa colorido por classe.
+
+    IMPORTANTE: é uma estimativa heurística própria, não a metodologia oficial do
+    MapBiomas — avise o usuário disso, principalmente se a calibração cair no modo
+    de limiar fixo (fallback).
+
+    Use quando o usuário perguntar pelo vigor da pastagem e quiser o dado mais atual.
+
+    params:
+        car_codes (list[str]): Lista de códigos CAR da propriedade.
+
+    Return:
+        ToolResult: Área (ha) por classe de vigor e um mapa PNG da propriedade.
+    """
+    log_debug(f"get_pasture_vigor_on_the_fly: car_codes={car_codes}")
+    try:
+        all_properties = run_context.session_state['all_properties']
+        selected_property = next((prop for prop in all_properties if prop["car_code"] == ', '.join(car_codes)), None)
+        if selected_property is None:
+            log_warning(f"Propriedade não encontrada: {car_codes}")
+            return ToolResult(content=f"Propriedade não encontrada: {', '.join(car_codes)}")
+        selected_property = RuralProperty.model_validate(selected_property)
+
+        roi = ee.Geometry.MultiPolygon(selected_property.get_coords())
+        result = estimate_pasture_vigor_on_the_fly(roi=roi, car_code=selected_property.car_code)
+
+        lines = [f"- {vigor_label}: {area} ha" for vigor_label, area in result["area_by_vigor_class_ha"].items()]
+        disclaimer = (
+            "\n\nAVISO: estimativa heurística própria (não é a metodologia oficial do MapBiomas)."
+            if result["calibration_status"] == "fallback"
+            else "\n\nEstimativa heurística própria, calibrada com o dado oficial do MapBiomas para esta propriedade."
+        )
+        content = (
+            f"Vigor da pastagem estimado para {result['pred_year']} "
+            f"(base MapBiomas {result['train_year']} + classificação on-the-fly):\n"
+            + ("\n".join(lines) if lines else "Nenhuma área de pastagem mapeada.")
+            + disclaimer
+        )
+
+        buffer = BytesIO()
+        result["imagem"].save(buffer, format="PNG")
+
+        log_debug(f"get_pasture_vigor_on_the_fly: vigor gerado ({selected_property.car_code})")
+        return ToolResult(content=content, images=[Image(content=buffer.getvalue())])
+
+    except Exception as e:
+        log_error(f"get_pasture_vigor_on_the_fly: {e}")
         return ToolResult(content=str(e))

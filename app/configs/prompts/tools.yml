@@ -110,6 +110,40 @@ analysis_tools:
       Return:
           ToolResult: Tabela ano -> biomassa média (t/ha) e um gráfico de tendência em PNG.
 
+  get_pasture_age_on_the_fly:
+    description: |
+      Estima a idade da pastagem (em anos) on-the-fly para o ano mais recente possível,
+      combinando a idade do MapBiomas no último ano disponível com a classificação de
+      pastagem on-the-fly do ano seguinte (áreas que continuam pastagem ganham +1 ano;
+      pastagem nova começa em 1 ano). Gera um mapa colorido por faixa de idade.
+
+      Use quando o usuário perguntar pela idade da pastagem e quiser o dado mais atual
+      possível, não travado no último ano do MapBiomas.
+
+      params:
+          car_codes (list[str]): Lista de códigos CAR da propriedade.
+
+      Return:
+          ToolResult: Área (ha) por faixa de idade e um mapa PNG da propriedade.
+
+  get_pasture_vigor_on_the_fly:
+    description: |
+      Estima o vigor da pastagem (Baixo/Médio/Alto) on-the-fly para o ano mais recente
+      possível, usando regressão harmônica sobre NDVI (Sentinel-2 + Cloud Score+)
+      calibrada, dentro da própria propriedade, contra o asset estático de vigor do
+      MapBiomas no último ano disponível. É uma estimativa heurística própria, não a
+      metodologia oficial do MapBiomas — avise o usuário disso ao entregar o resultado,
+      especialmente se a calibração cair no modo de limiar fixo (fallback).
+
+      Use quando o usuário perguntar pelo vigor da pastagem e quiser o dado mais atual
+      possível, não travado no último ano do MapBiomas.
+
+      params:
+          car_codes (list[str]): Lista de códigos CAR da propriedade.
+
+      Return:
+          ToolResult: Área (ha) por classe de vigor e um mapa PNG da propriedade.
+
 tts_tools:
   generate_speech:
     description: |

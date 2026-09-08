@@ -146,6 +146,30 @@ def _render_classification_image(roi: ee.Geometry, classified: ee.Image, base_ye
     return PIL.Image.open(BytesIO(response.content))
 
 
+def _classify(roi: ee.Geometry, train_year: int, pred_year: int) -> Tuple[ee.Image, ee.Image]:
+    """
+    Train the RandomForest on `train_year` samples and classify `pred_year`'s embedding.
+
+    Args:
+        roi (ee.Geometry): Property geometry.
+        train_year (int): Training year (MapBiomas samples + embedding).
+        pred_year (int): Target year for classification.
+
+    Returns:
+        Tuple[ee.Image, ee.Image]: (classified binary "pasto" image, the pred_year
+        embedding image used for it — reused elsewhere as the CRS/grid reference).
+    """
+    embedding_check = _embedding(roi=roi, year=pred_year)
+    if embedding_check.getInfo() is None:
+        raise ValueError(f"Satellite Embedding {pred_year} not yet available for this property.")
+
+    fc, bandnames = _samples(roi=roi, train_year=train_year)
+    classifier = ee.Classifier.smileRandomForest(_RF_TREES).train(fc, "pasto", bandnames)
+    classified = embedding_check.classify(classifier).rename("pasto").clip(roi)
+
+    return classified, embedding_check
+
+
 def classify_pasture_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int = None, train_year: int = None) -> Dict:
     """
     Classify pasture/not-pasture for the most recent available year and map the property.
@@ -187,13 +211,7 @@ def classify_pasture_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int 
 
         start = time.perf_counter()
 
-        embedding_check = _embedding(roi=roi, year=pred_year)
-        if embedding_check.getInfo() is None:
-            raise ValueError(f"Satellite Embedding {pred_year} not yet available for this property.")
-
-        fc, bandnames = _samples(roi=roi, train_year=train_year)
-        classifier = ee.Classifier.smileRandomForest(_RF_TREES).train(fc, "pasto", bandnames)
-        classified = (embedding_check.classify(classifier).rename("pasto").clip(roi))
+        classified, embedding_check = _classify(roi=roi, train_year=train_year, pred_year=pred_year)
 
         ts = ee.Date(f"{pred_year}-01-01").millis()
         collection = ee.ImageCollection([classified.set("system:time_start", ts)])

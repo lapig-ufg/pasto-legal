@@ -17,8 +17,10 @@ from app.tools.analysis_tools import (
     generate_property_image,
     generate_property_boletim,
     generate_soil_texture_image,
+    get_pasture_age_on_the_fly,
     get_pasture_biomass_history,
     get_pasture_stats,
+    get_pasture_vigor_on_the_fly,
     get_topographic_stats,
 )
 from app.tools.property_tools import (
@@ -59,6 +61,8 @@ _ANALYST_TOOLS = [
     get_pasture_stats,
     get_topographic_stats,
     get_pasture_biomass_history,
+    get_pasture_age_on_the_fly,
+    get_pasture_vigor_on_the_fly,
     generate_property_image,
     generate_biomass_image,
     generate_soil_texture_image,
