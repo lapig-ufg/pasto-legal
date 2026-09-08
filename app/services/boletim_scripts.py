@@ -3,7 +3,7 @@ from typing import List, Optional
 
 from reportlab.platypus import Flowable
 
-from app.schemas.rural_property import RuralProperty
+from app.schemas.property_feature import PropertyFeature
 from app.schemas.property_stats import (
     AgeData,
     AgeStats,
@@ -123,7 +123,7 @@ def _build_biomass_blocks(pasture_stats: Optional[PastureStats]) -> List[Flowabl
 
 
 def build_boletim_story(
-    rural_property: RuralProperty,
+    rural_property: PropertyFeature,
     property_stats: PropertyStats,
     location_image_bytes: bytes,
     pasture_map_image_bytes: bytes,
@@ -137,12 +137,12 @@ def build_boletim_story(
     numéricos logo abaixo.
     """
     emission_date = emission_date or date.today()
-    farm_name = rural_property.nickname or rural_property.car_code
+    farm_name = rural_property.id
     pasture_stats_list = property_stats.list_pasture_stats or []
     latest_pasture_stats = pasture_stats_list[-1] if pasture_stats_list else None
 
     story: List[Flowable] = [
-        pdf.masthead(farm_name, f"Data de Emissão: {emission_date.strftime('%d/%m/%Y')} · CAR: {rural_property.car_code}"),
+        pdf.masthead(farm_name, f"Data de Emissão: {emission_date.strftime('%d/%m/%Y')} · ID: {rural_property.id}"),
         pdf.spacer(4),
         pdf.warning_box(
             "A biomassa é calculada para o mês/ano atual. Idade, vigor e uso do solo (LULC) "
@@ -182,12 +182,12 @@ def build_boletim_story(
     return story
 
 
-def build_boletim_chat_summary(rural_property: RuralProperty, pasture_stats: PastureStats) -> str:
+def build_boletim_chat_summary(rural_property: PropertyFeature, pasture_stats: PastureStats) -> str:
     """Monta a mensagem de chat que acompanha o PDF, pronta em Python (sem depender da LLM
     compor um resumo criativo) — reduz o boletim a uma única chamada de tool cujo resultado
     a LLM só precisa repassar ao usuário.
     """
-    farm_name = rural_property.nickname or rural_property.car_code
+    farm_name = rural_property.id
 
     reference_year = None
     pasture_area_ha = None

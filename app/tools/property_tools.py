@@ -18,7 +18,14 @@ from app.services.geospatial.sicar import (
     )
 from app.services.geospatial.image import create_vertical_mosaic
 from app.services.geospatial.gee import retrieve_feature_images
-from app.schemas.rural_property import RuralProperty
+from app.services.geospatial.geometry import build_buffered_area
+from app.schemas.property_feature import PropertyFeature, RuralProperty, validate_feature_record
+from app.utils.feature_utils import find_feature_record
+
+# Bounds of the buffer radius accepted by start_registration_by_buffer (meters).
+_MIN_RADIUS_METERS = 50
+_MAX_RADIUS_METERS = 1000
+_DEFAULT_RADIUS_METERS = 200
 
 
 @tool(description=get_tool_description("property_tools", "start_registration_by_coordinate"))
@@ -174,6 +181,60 @@ def start_registration_by_car(run_context: RunContext, car_codes: List[str]):
         return ToolResult(content=str(e))
 
 
+@tool(description=get_tool_description("property_tools", "start_registration_by_buffer"))
+def start_registration_by_buffer(run_context: RunContext, latitude: float, longitude: float, radius: int = _DEFAULT_RADIUS_METERS):
+    """
+    Iniciar o registro de uma nova área baseando-se em um ponto (coordenada)
+    e um raio em metros, gerando um buffer circular ao redor do ponto.
+
+    Use esta ferramenta quando o usuário indicar um ponto de interesse no mapa
+    e quiser registrar a área ao redor dele, sem possuir um código CAR.
+    Nenhuma busca no CAR é realizada; a área é gerada localmente.
+
+    Args:
+        latitude (float): Latitude em graus decimais do ponto central.
+        longitude (float): Longitude em graus decimais do ponto central.
+        radius (int): Raio do buffer em metros (50 a 1000). Padrão: 200.
+
+    Returns:
+        ToolResult: Resultado contendo imagem e instruções para o próximo passo.
+    """
+    log_debug(f"start_registration_by_buffer: lat={latitude}, lon={longitude}, radius={radius}")
+    try:
+        if not (_MIN_RADIUS_METERS <= radius <= _MAX_RADIUS_METERS):
+            log_warning(f"Raio fora do intervalo permitido: {radius}")
+            return ToolResult(
+                content=(
+                    f"Peça desculpas ao usuário e informe que o raio deve estar entre "
+                    f"{_MIN_RADIUS_METERS} e {_MAX_RADIUS_METERS} metros."
+                )
+            )
+
+        buffered_area = build_buffered_area(latitude=latitude, longitude=longitude, radius=radius)
+
+        imgs = retrieve_feature_images(buffered_area.get_coords())
+
+        run_context.session_state["candidate_properties"] = [buffered_area.model_dump()]
+
+        run_context.session_state["registration_state"] = "pending"
+
+        img = imgs[0]
+
+        buffer_stream = BytesIO()
+        img.save(buffer_stream, format="PNG")
+
+        result_text = f"> {buffered_area.describe()}"
+
+        log_debug(f"start_registration_by_buffer: área gerada ({buffered_area.id}, {radius} m)")
+        return ToolResult(
+            content=f"Pergunte ao usuário se a seguinte área é a correta:\n{result_text}",
+            images=[Image(content=buffer_stream.getvalue())]
+            )
+    except Exception as e:
+        log_error(f"start_registration_by_buffer: {e}")
+        return ToolResult(content=str(e))
+
+
 @tool(description=get_tool_description("property_tools", "start_registration_by_url"))
 def start_registration_by_url(run_context: RunContext, url: str) -> ToolResult:
     """
@@ -293,10 +354,11 @@ def select_car_from_list(run_context: RunContext, selection: int):
 
         run_context.session_state["registration_state"] = "final"
 
-        log_debug(f"select_car_from_list: CAR {selected_property['car_code']} selecionado")
+        selected_id = validate_feature_record(selected_property).id
+        log_debug(f"select_car_from_list: feição {selected_id} selecionada")
         return ToolResult(
             content=(
-                f"A propriedade de identificador CAR {selected_property["car_code"]} foi registrada com sucesso."
+                f"A propriedade de identificador {selected_id} foi registrada com sucesso."
                 "Seja proativo, pergunte ao usuário se ele gostaria de atribuir um nome para a propriedade.\n"
             )
         )
@@ -325,10 +387,11 @@ def confirm_car_selection(run_context: RunContext):
         selected_property = candidate_properties[0]
         run_context.session_state['candidate_properties'] = [selected_property]
 
-        log_debug(f"confirm_car_selection: CAR {selected_property['car_code']} confirmado")
+        selected_id = validate_feature_record(selected_property).id
+        log_debug(f"confirm_car_selection: feição {selected_id} confirmada")
         return ToolResult(
             content=(
-                f"A propriedade de identificador CAR {selected_property["car_code"]} foi registrada com sucesso."
+                f"A propriedade de identificador {selected_id} foi registrada com sucesso."
                 "Seja proativo, pergunte ao usuário se ele gostaria de atribuir um nome para a propriedade.\n"
             )
         )
@@ -349,7 +412,8 @@ def complete_registration(run_context: RunContext, name: str):
         candidate_properties = run_context.session_state.get('candidate_properties', None)
 
         selected_property = candidate_properties[0]
-        selected_property["nickname"] = name
+        # The user-chosen name becomes the feature id.
+        selected_property["feature_id"] = name
 
         all_properties = run_context.session_state.get("all_properties", [])
         all_properties.append(selected_property)
@@ -358,16 +422,17 @@ def complete_registration(run_context: RunContext, name: str):
         run_context.session_state["registration_state"] = None
         run_context.session_state['candidate_properties'] = None
 
-        log_debug(f"complete_registration: registro concluído ({selected_property['car_code']})")
+        registered_id = validate_feature_record(selected_property).id
+        log_debug(f"complete_registration: registro concluído ({registered_id})")
         return ToolResult(
             content=(
                 "Propriedade registrada com sucesso."
                 f"\nNome: {name}"
-                f"\nCAR: {selected_property["car_code"]}\n\n"
+                f"\nIdentificador: {registered_id}\n\n"
                 "INSTRUÇÃO AO AGENTE: O cadastro foi concluído. Agora você deve entregar "
                 "ao usuário o primeiro diagnóstico da propriedade. Para isso:"
                 "\n1. Chame imediatamente a ferramenta `get_pasture_stats` passando o "
-                f"CAR `{selected_property['car_code']}`."
+                f"identificador `{registered_id}`."
                 "\n2. Com os dados retornados, escreva UM único parágrafo contínuo (2 a 3 "
                 "frases fluidas, sem bullet points, títulos ou quebras de linha) confirmando "
                 "o cadastro e entregando um insight valioso cruzando as métricas "
@@ -404,31 +469,32 @@ def cancel_registration(run_context: RunContext):
 
 
 @tool(description=get_tool_description("property_tools", "set_property_name"))
-def set_property_name(run_context: RunContext, car_codes: List[str], name: str):
+def set_property_name(run_context: RunContext, feature_id: str, name: str):
     """
     Atualizar o nome propriedade registrada no sistema.
 
     Args:
-        car_codes(str): Códigos CAR da propriedade.
+        feature_id (str): Identificador (id) da feição registrada.
         name (str): Nome da propriedade.
     """
-    log_debug(f"set_property_name: car_codes={car_codes}, name={name}")
+    log_debug(f"set_property_name: feature_id={feature_id}, name={name}")
     try:
         all_properties: List[dict] = run_context.session_state.get('all_properties', [])
-        selected_property = next((prop for prop in all_properties if prop["car_code"] == ', '.join(car_codes)), None)
+        selected_property = find_feature_record(run_context, feature_id)
 
         if selected_property is None:
-            log_warning(f"Propriedade não encontrada para renomear: {car_codes}")
+            log_warning(f"Propriedade não encontrada para renomear: {feature_id}")
             return ToolResult(content="Não foi possível registrar o nome da propriedade.")
 
         updated_selected_property = selected_property
-        updated_selected_property["nickname"] = name
+        # The new name replaces the feature id.
+        updated_selected_property["feature_id"] = name
 
         all_properties.remove(selected_property)
         all_properties.append(updated_selected_property)
         run_context.session_state["all_properties"] = all_properties
 
-        log_debug(f"set_property_name: nome atualizado ({', '.join(car_codes)})")
+        log_debug(f"set_property_name: nome atualizado ({feature_id} -> {name})")
         return ToolResult(
             content=(
                 "O nome da propriedade foi alterado com sucesso.\n"
@@ -441,38 +507,40 @@ def set_property_name(run_context: RunContext, car_codes: List[str], name: str):
 
 
 @tool(description=get_tool_description("property_tools", "remove_property"))
-def remove_property(car: str, run_context: RunContext) -> str:
+def remove_property(feature_id: str, run_context: RunContext) -> str:
     """
     Remove a propriedade selecionada do sistema.
 
     Args:
-        car(str): Código de Cadastro Ambiental Rural (CAR)
+        feature_id (str): Identificador (id) da feição registrada.
     """
-    log_debug(f"remove_property: car={car}")
+    log_debug(f"remove_property: feature_id={feature_id}")
     try:
         all_properties = run_context.session_state.get('all_properties', [])
 
-        flag=False
+        target_record = find_feature_record(run_context, feature_id)
+
+        if target_record is None:
+            log_warning(f"Propriedade não encontrada para remoção: {feature_id}")
+            return "A propriedade não foi encontrada no sistema."
+
         new_all_properties = []
         for prop in all_properties:
-            if prop.get("car_code") == car:
-                flag=True
+            if prop is target_record:
                 continue
 
             new_all_properties.append(prop)
 
-        if not flag:
-            log_warning(f"Propriedade não encontrada para remoção: {car}")
-            return "A propriedade não foi encontrada no sistema."
-
+        removed_feature = validate_feature_record(target_record)
         selected_car = run_context.session_state.get('selected_property', None)
         if selected_car is not None:
-            if selected_car.get("car_code") == car:
+            selected_feature = validate_feature_record(selected_car)
+            if selected_feature.id == removed_feature.id:
                 run_context.session_state['selected_property'] = new_all_properties[-1] if new_all_properties else None
 
         run_context.session_state['all_properties'] = new_all_properties
 
-        log_debug(f"remove_property: CAR {car} removido")
+        log_debug(f"remove_property: feição {feature_id} removida")
         return "A propriedade foi removida com sucesso."
     except Exception as e:
         log_error(f"remove_property: {e}")

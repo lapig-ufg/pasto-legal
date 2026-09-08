@@ -29,12 +29,12 @@ from app.services.geospatial.pasture_classification import classify_pasture_on_t
 from app.services.boletim_scripts import build_boletim_chat_summary, build_boletim_story
 from app.services.pdf_scripts import render_document
 from app.schemas.property_stats import PastureStats, PropertyStats, TopographicStats
-from app.schemas.rural_property import RuralProperty
+from app.utils.feature_utils import resolve_feature
 import ee
 
 
 @tool(tool_hooks=[validate_selected_property_hook], description=get_tool_description("analysis_tools", "generate_property_image"))
-def generate_property_image(run_context: RunContext, car_codes: list[str]) -> ToolResult:
+def generate_property_image(run_context: RunContext, feature_id: str) -> ToolResult:
     """
     Gera uma imagem de satélite em alta resolução (RGB) da propriedade rural,
     incluindo a delimitação geográfica, com base nos últimos dois meses.
@@ -42,26 +42,24 @@ def generate_property_image(run_context: RunContext, car_codes: list[str]) -> To
     Use apenas quando o usuário pedir para visualizar a propriedade.
 
     params:
-        car_codes (list[str]): Lista de códigos CAR da propriedade.
+        feature_id (str): Identificador (id) da feição registrada.
 
     Return:
         ToolResult: Imagem PNG da visão aérea com delimitação geográfica.
     """
-    log_debug(f"generate_property_image: car_codes={car_codes}")
+    log_debug(f"generate_property_image: feature_id={feature_id}")
     try:
-        all_properties = run_context.session_state['all_properties']
-        selected_property = next((prop for prop in all_properties if prop["car_code"] == ', '.join(car_codes)), None)
+        selected_property = resolve_feature(run_context, feature_id)
         if selected_property is None:
-            log_warning(f"Propriedade não encontrada: {car_codes}")
-            return ToolResult(content=f"Propriedade não encontrada: {', '.join(car_codes)}")
-        selected_property = RuralProperty.model_validate(selected_property)
+            log_warning(f"Feição não encontrada: {feature_id}")
+            return ToolResult(content=f"Feição não encontrada: {feature_id}")
 
         img = retrieve_feature_images(coords=selected_property.get_coords())[0]
 
         buffer = BytesIO()
         img.save(buffer, format="PNG")
 
-        log_debug(f"generate_property_image: imagem gerada ({selected_property.car_code})")
+        log_debug(f"generate_property_image: imagem gerada ({selected_property.id})")
         return ToolResult(
             content="O contorno vermelho indica a delimitação geográfica da propriedade rural.",
             images=[Image(content=buffer.getvalue())]
@@ -73,24 +71,22 @@ def generate_property_image(run_context: RunContext, car_codes: list[str]) -> To
 
 
 @tool(tool_hooks=[validate_selected_property_hook], description=get_tool_description("analysis_tools", "generate_biomass_image"))
-def generate_biomass_image(run_context: RunContext, car_codes: list[str]) -> ToolResult:
+def generate_biomass_image(run_context: RunContext, feature_id: str) -> ToolResult:
     """
     Gera um mapa temático da biomassa (matéria seca) sobre os limites da propriedade rural.
 
     params:
-        car_codes (list[str]): Lista de códigos CAR da propriedade.
+        feature_id (str): Identificador (id) da feição registrada.
 
     Return:
         ToolResult: Mapa renderizado em formato PNG.
     """
-    log_debug(f"generate_biomass_image: car_codes={car_codes}")
+    log_debug(f"generate_biomass_image: feature_id={feature_id}")
     try:
-        all_properties = run_context.session_state['all_properties']
-        selected_property = next((prop for prop in all_properties if prop["car_code"] == ', '.join(car_codes)), None)
+        selected_property = resolve_feature(run_context, feature_id)
         if selected_property is None:
-            log_warning(f"Propriedade não encontrada: {car_codes}")
-            return ToolResult(content=f"Propriedade não encontrada: {', '.join(car_codes)}")
-        selected_property = RuralProperty.model_validate(selected_property)
+            log_warning(f"Feição não encontrada: {feature_id}")
+            return ToolResult(content=f"Feição não encontrada: {feature_id}")
 
         today = datetime.date.today()
 
@@ -102,7 +98,7 @@ def generate_biomass_image(run_context: RunContext, car_codes: list[str]) -> Too
             buffer = BytesIO()
             biomass_img.save(buffer, format="PNG")
 
-            log_debug(f"generate_biomass_image: mapa t2g gerado ({selected_property.car_code}, {_target_month}/{_target_year})")
+            log_debug(f"generate_biomass_image: mapa t2g gerado ({selected_property.id}, {_target_month}/{_target_year})")
             return ToolResult(
                 content=(f"Legenda: Acumulado de biomassa no mês de referência. Azul claro (Alta concentração) a Roxo escuro (Baixa concentração). Data referência: mês {_target_month}, ano {_target_year}"),
                 images=[Image(content=buffer.getvalue())]
@@ -113,7 +109,7 @@ def generate_biomass_image(run_context: RunContext, car_codes: list[str]) -> Too
         buffer = BytesIO()
         img.save(buffer, format="PNG")
 
-        log_debug(f"generate_biomass_image: mapa mapbiomas gerado ({selected_property.car_code})")
+        log_debug(f"generate_biomass_image: mapa mapbiomas gerado ({selected_property.id})")
         return ToolResult(
             content=("Legenda: Acumulado de biomassa no ano de referência. Azul claro (Alta concentração) a Roxo escuro (Baixa concentração). Data referência: ano 2024"),
             images=[Image(content=buffer.getvalue())]
@@ -212,7 +208,7 @@ def _overlay_fixed_colorbar(
 @tool(tool_hooks=[validate_selected_property_hook])
 def generate_biomass_video(
     run_context: RunContext,
-    car_codes: list[str],
+    feature_id: str,
     start_year: int,
     start_month: int,
     end_year: int,
@@ -236,7 +232,7 @@ def generate_biomass_video(
     animação ou evolução temporal da biomassa.
 
     params:
-        car_codes (list[str]): Lista de códigos CAR da propriedade.
+        feature_id (str): Identificador (id) da feição registrada.
         start_year (int): Ano inicial do vídeo (mínimo 2025).
         start_month (int): Mês inicial (1 a 12).
         end_year (int): Ano final (limitado ao mês atual).
@@ -246,16 +242,14 @@ def generate_biomass_video(
         ToolResult: Vídeo MP4 da evolução mensal da biomassa.
     """
     log_debug(
-        f"generate_biomass_video: car_codes={car_codes}, "
+        f"generate_biomass_video: feature_id={feature_id}, "
         f"period={start_month}/{start_year} - {end_month}/{end_year}"
     )
     try:
-        all_properties = run_context.session_state['all_properties']
-        selected_property = next((prop for prop in all_properties if prop["car_code"] == ', '.join(car_codes)), None)
+        selected_property = resolve_feature(run_context, feature_id)
         if selected_property is None:
-            log_warning(f"Propriedade não encontrada: {car_codes}")
-            return ToolResult(content=f"Propriedade não encontrada: {', '.join(car_codes)}")
-        selected_property = RuralProperty.model_validate(selected_property)
+            log_warning(f"Feição não encontrada: {feature_id}")
+            return ToolResult(content=f"Feição não encontrada: {feature_id}")
 
         result = retrieve_t2g_biomass_video(
             coords=selected_property.get_coords(),
@@ -266,7 +260,7 @@ def generate_biomass_video(
         )
 
         if result is None:
-            log_warning(f"generate_biomass_video: sem dados UGPP suficientes ({selected_property.car_code})")
+            log_warning(f"generate_biomass_video: sem dados UGPP suficientes ({selected_property.id})")
             return ToolResult(
                 content=(
                     "Não há dados de biomassa suficientes (pelo menos dois meses) para gerar o vídeo "
@@ -289,7 +283,7 @@ def generate_biomass_video(
         mp4_bytes = gif_bytes_to_mp4_bytes(gif_bytes)
 
         log_debug(
-            f"generate_biomass_video: vídeo gerado ({selected_property.car_code}, "
+            f"generate_biomass_video: vídeo gerado ({selected_property.id}, "
             f"{effective_start[1]}/{effective_start[0]} - {effective_end[1]}/{effective_end[0]})"
         )
         return ToolResult(
@@ -310,7 +304,7 @@ def generate_biomass_video(
 
 
 @tool(tool_hooks=[validate_selected_property_hook])
-def generate_pasture_classification_image(run_context: RunContext, car_codes: list[str]) -> ToolResult:
+def generate_pasture_classification_image(run_context: RunContext, feature_id: str) -> ToolResult:
     """
     Gera o mapa de classificação de pastagem (pasto x não-pasto) da propriedade rural,
     calculado sob demanda ("on-the-fly") para o ano mais recente disponível.
@@ -321,27 +315,25 @@ def generate_pasture_classification_image(run_context: RunContext, car_codes: li
     de uso do solo mais atualizado possível.
 
     params:
-        car_codes (list[str]): Lista de códigos CAR da propriedade.
+        feature_id (str): Identificador (id) da feição registrada.
 
     Return:
         ToolResult: Mapa em PNG (verde = pastagem) e a área de pastagem em hectares.
     """
-    log_debug(f"generate_pasture_classification_image: car_codes={car_codes}")
+    log_debug(f"generate_pasture_classification_image: feature_id={feature_id}")
     try:
-        all_properties = run_context.session_state['all_properties']
-        selected_property = next((prop for prop in all_properties if prop["car_code"] == ', '.join(car_codes)), None)
+        selected_property = resolve_feature(run_context, feature_id)
         if selected_property is None:
-            log_warning(f"Propriedade não encontrada: {car_codes}")
-            return ToolResult(content=f"Propriedade não encontrada: {', '.join(car_codes)}")
-        selected_property = RuralProperty.model_validate(selected_property)
+            log_warning(f"Feição não encontrada: {feature_id}")
+            return ToolResult(content=f"Feição não encontrada: {feature_id}")
 
         roi = ee.Geometry.MultiPolygon(selected_property.get_coords())
-        result = classify_pasture_on_the_fly(roi=roi, car_code=selected_property.car_code)
+        result = classify_pasture_on_the_fly(roi=roi, feature_id=selected_property.id)
 
         buffer = BytesIO()
         result["imagem"].save(buffer, format="PNG")
 
-        log_debug(f"generate_pasture_classification_image: classificação gerada ({selected_property.car_code}, {result['area_pasto_ha']} ha)")
+        log_debug(f"generate_pasture_classification_image: classificação gerada ({selected_property.id}, {result['area_pasto_ha']} ha)")
         return ToolResult(
             content=(
                 f"Área de pastagem classificada (ano {result['pred_year']}): "
@@ -356,31 +348,29 @@ def generate_pasture_classification_image(run_context: RunContext, car_codes: li
 
 
 @tool(tool_hooks=[validate_selected_property_hook], description=get_tool_description("analysis_tools", "generate_soil_texture_image"))
-def generate_soil_texture_image(run_context: RunContext, car_codes: list[str]) -> ToolResult:
+def generate_soil_texture_image(run_context: RunContext, feature_id: str) -> ToolResult:
     """
     Gera um mapa temático da textura do solo sobre os limites da propriedade rural na profundidade de 0 a 30cm.
 
     params:
-        car_codes (list[str]): Lista de códigos CAR da propriedade.
+        feature_id (str): Identificador (id) da feição registrada.
 
     Return:
         ToolResult: Mapa renderizado em formato PNG.
     """
-    log_debug(f"generate_soil_texture_image: car_codes={car_codes}")
+    log_debug(f"generate_soil_texture_image: feature_id={feature_id}")
     try:
-        all_properties = run_context.session_state['all_properties']
-        selected_property = next((prop for prop in all_properties if prop["car_code"] == ', '.join(car_codes)), None)
+        selected_property = resolve_feature(run_context, feature_id)
         if selected_property is None:
-            log_warning(f"Propriedade não encontrada: {car_codes}")
-            return ToolResult(content=f"Propriedade não encontrada: {', '.join(car_codes)}")
-        selected_property = RuralProperty.model_validate(selected_property)
+            log_warning(f"Feição não encontrada: {feature_id}")
+            return ToolResult(content=f"Feição não encontrada: {feature_id}")
 
         img = retrieve_feature_soil_texture_image(coords=selected_property.get_coords())
 
         buffer = BytesIO()
         img.save(buffer, format="PNG")
 
-        log_debug(f"generate_soil_texture_image: mapa de solo gerado ({selected_property.car_code})")
+        log_debug(f"generate_soil_texture_image: mapa de solo gerado ({selected_property.id})")
         return ToolResult(
             content="Legenda: Afloramento (#707070), Muito Argiloso (#9B0F06), Argila (#BFA28C), Siltoso (#D8F467), Arenoso (#FFD400) e Médio (#F0CFA1).",
             images=[Image(content=buffer.getvalue())]
@@ -392,10 +382,10 @@ def generate_soil_texture_image(run_context: RunContext, car_codes: list[str]) -
 
 
 @tool(tool_hooks=[validate_selected_property_hook], description=get_tool_description("analysis_tools", "get_pasture_stats"))
-def get_pasture_stats(run_context: RunContext, car_codes: list[str]):
+def get_pasture_stats(run_context: RunContext, feature_id: str):
     """
     Recupera estatísticas de bimoassa, vigor vegetativo, idade da pastagem e classificação de uso do solo mais recentes.
-   
+
     Use esta ferramenta quando o usuário perguntar sobre:
     - Saúde ou qualidade da pastagem (degradação, vigor).
     - Quantidade de biomassa disponível.
@@ -403,19 +393,17 @@ def get_pasture_stats(run_context: RunContext, car_codes: list[str]):
     - Idade da pastagem.
 
     params:
-        car_codes (list[str]): Lista de códigos CAR da propriedade.
+        feature_id (str): Identificador (id) da feição registrada.
 
     Return:
         Dicionário contendo a área de biomassa, vigor da pastagem, idade e uso e cobertura do solo.
     """
-    log_debug(f"get_pasture_stats: car_codes={car_codes}")
+    log_debug(f"get_pasture_stats: feature_id={feature_id}")
     try:
-        all_properties = run_context.session_state["all_properties"]
-        selected_property = next((prop for prop in all_properties if prop["car_code"] == ', '.join(car_codes)))
+        selected_property = resolve_feature(run_context, feature_id)
         if selected_property is None:
-            log_warning(f"Propriedade não encontrada: {car_codes}")
-            return ToolResult(content=f"Propriedade não encontrada: {', '.join(car_codes)}")
-        selected_property = RuralProperty.model_validate(selected_property)
+            log_warning(f"Feição não encontrada: {feature_id}")
+            return ToolResult(content=f"Feição não encontrada: {feature_id}")
 
         today = datetime.date.today()
 
@@ -425,36 +413,34 @@ def get_pasture_stats(run_context: RunContext, car_codes: list[str]):
             year=today.year
         )
 
-        log_debug(f"get_pasture_stats: stats recuperadas ({selected_property.car_code})")
+        log_debug(f"get_pasture_stats: stats recuperadas ({selected_property.id})")
         return ToolResult(content=str(new_pasture_stats))
     except Exception as e:
         log_error(f"get_pasture_stats: {e}")
         return ToolResult(content=str(e))
-    
+
 
 @tool(tool_hooks=[validate_selected_property_hook], description=get_tool_description("analysis_tools", "get_topographic_stats"))
-def get_topographic_stats(run_context: RunContext, car_codes: list[str]):
+def get_topographic_stats(run_context: RunContext, feature_id: str):
     """
     Recupera estatísticas de topografia da propriedade (altimetria e declividade).
 
     params:
-        car_codes (list[str]): Lista de códigos CAR da propriedade.
+        feature_id (str): Identificador (id) da feição registrada.
 
     Return:
         Dicionário contendo as informações de altimetria e declividade.
     """
-    log_debug(f"get_topographic_stats: car_codes={car_codes}")
+    log_debug(f"get_topographic_stats: feature_id={feature_id}")
     try:
-        all_properties = run_context.session_state["all_properties"]
-        selected_property = next((prop for prop in all_properties if prop["car_code"] == ', '.join(car_codes)))
+        selected_property = resolve_feature(run_context, feature_id)
         if selected_property is None:
-            log_warning(f"Propriedade não encontrada: {car_codes}")
-            return ToolResult(content=f"Propriedade não encontrada: {', '.join(car_codes)}")
-        selected_property = RuralProperty.model_validate(selected_property)
+            log_warning(f"Feição não encontrada: {feature_id}")
+            return ToolResult(content=f"Feição não encontrada: {feature_id}")
 
         new_topographic_stats: TopographicStats = query_topographic_stats(coords=selected_property.get_coords())
 
-        log_debug(f"get_topographic_stats: stats recuperadas ({selected_property.car_code})")
+        log_debug(f"get_topographic_stats: stats recuperadas ({selected_property.id})")
         return ToolResult(content=str(new_topographic_stats))
     except Exception as e:
         log_error(f"get_topographic_stats: {e}")
@@ -477,7 +463,7 @@ def _safe_fetch_image(label: str, fetch_fn):
 
 
 @tool(tool_hooks=[validate_selected_property_hook], description=get_tool_description("analysis_tools", "generate_property_boletim"))
-def generate_property_boletim(run_context: RunContext, car_codes: list[str]) -> ToolResult:
+def generate_property_boletim(run_context: RunContext, feature_id: str) -> ToolResult:
     """
     Gera um boletim em PDF consolidando as análises da propriedade rural — localização,
     classificação de pastagem, biomassa, vigor e tipos de solo — com os mapas
@@ -492,30 +478,28 @@ def generate_property_boletim(run_context: RunContext, car_codes: list[str]) -> 
     tempo real, podendo levar dezenas de segundos.
 
     params:
-        car_codes (list[str]): Lista de códigos CAR da propriedade.
+        feature_id (str): Identificador (id) da feição registrada.
 
     Return:
         ToolResult: Arquivo PDF do boletim com dados e mapas reais da propriedade.
     """
-    log_debug(f"generate_property_boletim: car_codes={car_codes}")
+    log_debug(f"generate_property_boletim: feature_id={feature_id}")
     try:
-        all_properties = run_context.session_state['all_properties']
-        selected_property = next((prop for prop in all_properties if prop["car_code"] == ', '.join(car_codes)), None)
+        selected_property = resolve_feature(run_context, feature_id)
         if selected_property is None:
-            log_warning(f"Propriedade não encontrada: {car_codes}")
-            return ToolResult(content=f"Propriedade não encontrada: {', '.join(car_codes)}")
-        selected_property = RuralProperty.model_validate(selected_property)
+            log_warning(f"Feição não encontrada: {feature_id}")
+            return ToolResult(content=f"Feição não encontrada: {feature_id}")
 
         coords = selected_property.get_coords()
         today = datetime.date.today()
 
         pasture_stats = query_pasture_statistics(coords=coords, month=today.month, year=today.year)
-        stats = PropertyStats(car_code=selected_property.car_code, list_pasture_stats=[pasture_stats])
+        stats = PropertyStats(car_code=selected_property.id, list_pasture_stats=[pasture_stats])
 
         location_image = retrieve_feature_images(coords)[0]
 
         roi = ee.Geometry.MultiPolygon(coords)
-        pasture_result = classify_pasture_on_the_fly(roi=roi, car_code=selected_property.car_code)
+        pasture_result = classify_pasture_on_the_fly(roi=roi, feature_id=selected_property.id)
         pasture_map_image = pasture_result["imagem"]
 
         def _fetch_biomass_image():
@@ -540,14 +524,14 @@ def generate_property_boletim(run_context: RunContext, car_codes: list[str]) -> 
         )
         pdf_bytes = render_document(story)
 
-        log_debug(f"generate_property_boletim: boletim gerado ({selected_property.car_code})")
+        log_debug(f"generate_property_boletim: boletim gerado ({selected_property.id})")
         return ToolResult(
             content=build_boletim_chat_summary(selected_property, pasture_stats),
             files=[File(
                 content=pdf_bytes,
                 format="pdf",
                 mime_type="application/pdf",
-                name=f"boletim_{selected_property.car_code}.pdf",
+                name=f"boletim_{selected_property.id}.pdf",
             )],
         )
 

@@ -9,7 +9,7 @@ from agno.utils.log import log_debug
 from app.configs.config import config
 from app.configs.prompts import get_agent_config
 from app.knowledge.pasto_legal_kb import pasto_legal_kb
-from app.schemas.rural_property import RuralProperty
+from app.schemas.property_feature import validate_feature_record
 from app.schemas.user_persona import UserPersona
 from app.tools.analysis_tools import (
     generate_biomass_image,
@@ -29,6 +29,7 @@ from app.tools.property_tools import (
     remove_property,
     select_car_from_list,
     set_property_name,
+    start_registration_by_buffer,
     start_registration_by_car,
     start_registration_by_coordinate,
     start_registration_by_url,
@@ -83,7 +84,7 @@ def get_tools(run_context: RunContext):
     # ==========================================
     if registration_state == "pending":
         candidate_properties = [
-            RuralProperty.model_validate(prop)
+            validate_feature_record(prop)
             for prop in session_state.get("candidate_properties", [])
         ]
 
@@ -111,6 +112,7 @@ def get_tools(run_context: RunContext):
             start_registration_by_url,
             start_registration_by_car,
             start_registration_by_coordinate,
+            start_registration_by_buffer,
             *_ANALYST_TOOLS
         ])
 
@@ -131,7 +133,7 @@ def _persona_text(session_state) -> str:
 
 def _registrations_text(session_state) -> str:
     all_properties = [
-        RuralProperty.model_validate(record)
+        validate_feature_record(record)
         for record in session_state.get("all_properties", [])
     ]
     if all_properties:
@@ -175,7 +177,7 @@ def get_instructions(run_context: RunContext) -> str:
     # ==========================================
     if registration_state == "pending":
         candidate_properties = [
-            RuralProperty.model_validate(prop)
+            validate_feature_record(prop)
             for prop in session_state.get("candidate_properties", [])
         ]
 
@@ -207,7 +209,7 @@ def get_instructions(run_context: RunContext) -> str:
     # ==========================================
     elif registration_state == "final":
         candidate_properties = [
-            RuralProperty.model_validate(prop)
+            validate_feature_record(prop)
             for prop in session_state.get("candidate_properties", [])
         ]
         candidate_text = str(candidate_properties[0]) if candidate_properties else _agent_config["final_candidate_fallback"].strip()

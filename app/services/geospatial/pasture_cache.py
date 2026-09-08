@@ -28,10 +28,10 @@ def _s3_filesystem() -> s3fs.S3FileSystem:
     return s3fs.S3FileSystem(**_s3_storage_options())
 
 
-def _cache_paths(car_code: str, pred_year: int) -> Tuple[str, str]:
+def _cache_paths(feature_id: str, pred_year: int) -> Tuple[str, str]:
     """Caminhos do zarr (dado) e do png (imagem) em cache para o imóvel/ano."""
-    safe_code = car_code.replace(",", "_").replace(" ", "")
-    stem = f"{safe_code}_{pred_year}"
+    safe_feature_id = feature_id.replace(",", "_").replace(" ", "_")
+    stem = f"{safe_feature_id}_{pred_year}"
 
     if config.APP_ENV in _S3_ENVS:
         base = f"{config.S3_BUCKET}/{config.APP_ENV}/pasture_cache"
@@ -40,9 +40,9 @@ def _cache_paths(car_code: str, pred_year: int) -> Tuple[str, str]:
     return str(_LOCAL_CACHE_DIR / f"{stem}.zarr"), str(_LOCAL_CACHE_DIR / f"{stem}.png")
 
 
-def cache_exists(car_code: str, pred_year: int) -> bool:
+def cache_exists(feature_id: str, pred_year: int) -> bool:
     """Se já existe zarr + png em cache para o imóvel/ano."""
-    zarr_path, png_path = _cache_paths(car_code, pred_year)
+    zarr_path, png_path = _cache_paths(feature_id, pred_year)
 
     if config.APP_ENV in _S3_ENVS:
         fs = _s3_filesystem()
@@ -51,9 +51,9 @@ def cache_exists(car_code: str, pred_year: int) -> bool:
     return Path(zarr_path).exists() and Path(png_path).exists()
 
 
-def load_cache(car_code: str, pred_year: int) -> Tuple[xr.Dataset, "PIL.Image.Image"]:
+def load_cache(feature_id: str, pred_year: int) -> Tuple[xr.Dataset, "PIL.Image.Image"]:
     """Lê o dataset (zarr) e a imagem (png) do cache."""
-    zarr_path, png_path = _cache_paths(car_code, pred_year)
+    zarr_path, png_path = _cache_paths(feature_id, pred_year)
 
     if config.APP_ENV in _S3_ENVS:
         dataset = xr.open_zarr(zarr_path, storage_options=_s3_storage_options())
@@ -64,9 +64,9 @@ def load_cache(car_code: str, pred_year: int) -> Tuple[xr.Dataset, "PIL.Image.Im
     return xr.open_zarr(zarr_path), PIL.Image.open(png_path)
 
 
-def save_cache(car_code: str, pred_year: int, dataset: xr.Dataset, image: "PIL.Image.Image") -> None:
+def save_cache(feature_id: str, pred_year: int, dataset: xr.Dataset, image: "PIL.Image.Image") -> None:
     """Persiste o dataset (zarr) e a imagem (png) no cache."""
-    zarr_path, png_path = _cache_paths(car_code, pred_year)
+    zarr_path, png_path = _cache_paths(feature_id, pred_year)
 
     if config.APP_ENV in _S3_ENVS:
         dataset.to_zarr(zarr_path, mode="w", storage_options=_s3_storage_options())

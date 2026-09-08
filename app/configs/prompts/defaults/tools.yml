@@ -24,7 +24,7 @@ analysis_tools:
       Use only when the user asks to visualize the property.
 
       params:
-          car_codes (list[str]): List of CAR codes of the property.
+          feature_id (str): Identifier (id) of the registered feature.
 
       Return:
           ToolResult: PNG image of the aerial view with the geographic boundary.
@@ -32,7 +32,7 @@ analysis_tools:
     description: |
       Generates a thematic map of the biomass (dry matter) over the rural property boundaries.
       params:
-          car_codes (list[str]): List of CAR codes of the property.
+          feature_id (str): Identifier (id) of the registered feature.
 
       Return:
           ToolResult: Map rendered in PNG format.
@@ -47,7 +47,7 @@ analysis_tools:
       most up-to-date land-use mapping possible.
 
       params:
-          car_codes (list[str]): List of CAR codes of the property.
+          feature_id (str): Identifier (id) of the registered feature.
 
       Return:
           ToolResult: PNG map (green = pasture) and the pasture area in hectares.
@@ -55,7 +55,7 @@ analysis_tools:
     description: |
       Generates a thematic map of the soil texture over the rural property boundaries at the 0-30cm depth.
       params:
-          car_codes (list[str]): List of CAR codes of the property.
+          feature_id (str): Identifier (id) of the registered feature.
 
       Return:
           ToolResult: Map rendered in PNG format.
@@ -69,7 +69,7 @@ analysis_tools:
       - Pasture age.
 
       params:
-          car_codes (list[str]): List of CAR codes of the property.
+          feature_id (str): Identifier (id) of the registered feature.
 
       Return:
           Dictionary containing the biomass area, pasture vigor, age and land use and cover.
@@ -77,7 +77,7 @@ analysis_tools:
     description: |
       Retrieves topographic statistics of the property (altimetry and slope).
       params:
-          car_codes (list[str]): List of CAR codes of the property.
+          feature_id (str): Identifier (id) of the registered feature.
 
       Return:
           Dictionary containing the altimetry and slope information.
@@ -96,7 +96,7 @@ analysis_tools:
       real time, and can take tens of seconds.
 
       params:
-          car_codes (list[str]): List of CAR codes of the property.
+          feature_id (str): Identifier (id) of the registered feature.
 
       Return:
           ToolResult: PDF file of the bulletin with real property data and maps.
@@ -133,7 +133,7 @@ weather_tools:
       Retrieves the monthly precipitation forecast (mm) for the rural property.
 
       params:
-          car_codes (list[str]): List of CAR codes for the property.
+          feature_id (str): Identifier (id) of the registered feature.
           months (int): Number of months to forecast, between 1 and 7. Defaults to 7.
 
       Return:
@@ -143,7 +143,7 @@ weather_tools:
       Retrieves the precipitation forecast (mm) for a specific target day of the rural property.
 
       params:
-          car_codes (list[str]): List of CAR codes for the property.
+          feature_id (str): Identifier (id) of the registered feature.
           forecast_days (int): Target day to forecast, between 1 and 36. Defaults to 1.
 
       Return:
@@ -153,7 +153,7 @@ weather_tools:
       Predicts the start date of the rainy season for the rural property.
 
       params:
-          car_codes (list[str]): List of CAR codes for the property.
+          feature_id (str): Identifier (id) of the registered feature.
 
       Return:
           ToolResult: Predicted rain onset date (YYYY-MM-DD), or a message
@@ -163,7 +163,7 @@ weather_tools:
       Predicts the start date of the dry season (end of rains) for the rural property.
 
       params:
-          car_codes (list[str]): List of CAR codes for the property.
+          feature_id (str): Identifier (id) of the registered feature.
 
       Return:
           ToolResult: Predicted dry-season onset date (YYYY-MM-DD), or a
@@ -174,7 +174,7 @@ weather_tools:
       Retrieves the daily maximum and minimum temperature forecast (°C) for the rural property.
 
       params:
-          car_codes (list[str]): List of CAR codes for the property.
+          feature_id (str): Identifier (id) of the registered feature.
           forecast_days (int): Number of forecast days, between 1 and 16. Defaults to 16.
 
       Return:
@@ -312,14 +312,30 @@ property_tools:
       Updates the name of the property registered in the system.
 
       Args:
-          car_codes(str): CAR codes of the property.
+          feature_id (str): Identifier (id) of the registered feature.
           name (str): Name of the property.
   remove_property:
     description: |
       Removes the selected property from the system.
 
       Args:
-          car(str): Rural Environmental Registry code (CAR)
+          feature_id (str): Identifier (id) of the registered feature.
   remove_all_properties:
     description: |
       Removes all properties registered in the system.
+  start_registration_by_buffer:
+    description: |
+      Starts the registration of a new area based on a point (coordinate) and a
+      radius in meters, generating a circular buffer around the point.
+
+      Use this tool when the user indicates a point of interest on the map and
+      wants to register the area around it, without owning a CAR code.
+      No CAR lookup is performed; the area is generated locally.
+
+      Args:
+          latitude (float): Latitude in decimal degrees of the center point.
+          longitude (float): Longitude in decimal degrees of the center point.
+          radius (int): Buffer radius in meters (50 to 1000). Defaults to 200.
+
+      Returns:
+          ToolResult: Result containing an image and instructions for the next step.

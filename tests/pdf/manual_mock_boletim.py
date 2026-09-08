@@ -13,7 +13,7 @@ from pathlib import Path
 
 from PIL import Image as PILImage
 
-from app.schemas.rural_property import RuralProperty, SpatialFeatures
+from app.schemas.property_feature import RuralProperty, SpatialFeatures
 from app.services.boletim_scripts import build_boletim_story, build_placeholder_property_stats
 from app.services.pdf_scripts import render_document
 
@@ -26,7 +26,7 @@ def _mock_image_bytes(color) -> bytes:
 
 def main() -> None:
     rural_property = RuralProperty(
-        nickname="Fazenda Blue (mock)",
+        feature_id="Fazenda Blue (mock)",
         car_code="GO-5205703-5B18B6DF441C4B7FA9444DDC127CF6C0",
         spatial_features=SpatialFeatures(
             total_area=23.4674,

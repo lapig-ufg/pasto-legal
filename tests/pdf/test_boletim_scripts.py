@@ -12,7 +12,7 @@ from io import BytesIO
 from PIL import Image as PILImage
 from pypdf import PdfReader
 
-from app.schemas.rural_property import RuralProperty, SpatialFeatures
+from app.schemas.property_feature import RuralProperty, SpatialFeatures
 from app.services.boletim_scripts import build_boletim_story, build_placeholder_property_stats
 from app.services.pdf_scripts import render_document
 
@@ -25,7 +25,7 @@ def _sample_image_bytes(color=(80, 150, 90)) -> bytes:
 
 def _build_sample_property() -> RuralProperty:
     return RuralProperty(
-        nickname="Fazenda Blue",
+        feature_id="Fazenda Blue",
         car_code="GO-5205703-5B18B6DF441C4B7FA9444DDC127CF6C0",
         spatial_features=SpatialFeatures(
             total_area=23.4674,
@@ -73,7 +73,7 @@ def test_build_boletim_story_renders_valid_pdf_with_expected_content():
 
     assert "Fazenda Blue" in text
     assert "Data de Emissão" in text
-    assert rural_property.car_code in text
+    assert rural_property.id in text
     assert "Localização da Propriedade" in text
     assert "Dados de Pastagem" in text
     assert "Análise de Biomassa" in text
@@ -96,9 +96,9 @@ def test_build_boletim_story_falls_back_gracefully_without_optional_maps():
     assert pdf_bytes.startswith(b"%PDF-")
 
 
-def test_build_boletim_story_falls_back_gracefully_without_nickname():
+def test_build_boletim_story_falls_back_to_car_code_without_feature_id():
     rural_property = _build_sample_property()
-    rural_property.nickname = None
+    rural_property.feature_id = None
     stats = build_placeholder_property_stats(rural_property.car_code)
 
     story = _build_full_story(rural_property, stats)

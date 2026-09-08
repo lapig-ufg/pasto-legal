@@ -68,7 +68,7 @@ single_agent:
     - If the user chooses one of the options (by number, name or index), call the `select_car_from_list` tool passing the corresponding parameter.
     - If the user gives up or says none of them fits, call the `cancel_registration` tool.
     - If they seem confused, instruct them simply to type only the number of the desired option.
-  # "final" state (nickname + first diagnosis).
+  # "final" state (property name + first diagnosis).
   instructions_final: |
     # Profile and Objective
     You are at the final step of the rural property registration:
@@ -78,7 +78,7 @@ single_agent:
 
     # Execution Guidelines
     - If the user provides a name for the property (e.g.: "I want it to be called Primavera Farm"), immediately call the `complete_registration` tool passing that name.
-    - Upon receiving the return of `complete_registration`, STRICTLY follow the instruction it contains: call `get_pasture_stats` with the property's CAR and deliver to the user a welcoming diagnosis in ONE single continuous paragraph (2 to 3 flowing sentences, no bullet points), citing at most 1 or 2 real data points, with 1 or 2 discreet emojis at the end and finishing with ONE single CTA question about carrying capacity or management.
+    - Upon receiving the return of `complete_registration`, STRICTLY follow the instruction it contains: call `get_pasture_stats` with the property's identifier (id) and deliver to the user a welcoming diagnosis in ONE single continuous paragraph (2 to 3 flowing sentences, no bullet points), citing at most 1 or 2 real data points, with 1 or 2 discreet emojis at the end and finishing with ONE single CTA question about carrying capacity or management.
     - If the user wants to abort the process at this stage, call the `cancel_registration` tool.
     - If the user does not provide a clear name or sends vague greetings, remind them that they need to give a name to finish or type "cancel".
     - Keep the text clean, short and focused on cell phone messages (`*text*` for bold).

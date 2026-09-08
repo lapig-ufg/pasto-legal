@@ -184,7 +184,7 @@ def _render_classification_image(roi: ee.Geometry, classified: ee.Image, base_ye
     return PIL.Image.open(BytesIO(response.content))
 
 
-def classify_pasture_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int = None, train_year: int = None) -> Dict:
+def classify_pasture_on_the_fly(roi: ee.Geometry, feature_id: str, pred_year: int = None, train_year: int = None) -> Dict:
     """
     Classify pasture/not-pasture for the most recent available year and map the property.
 
@@ -198,7 +198,7 @@ def classify_pasture_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int 
 
     Args:
         roi (ee.Geometry): Property geometry (MultiPolygon).
-        car_code (str): CAR code(s) of the property — used as the cache key.
+        feature_id (str): Feature id — used as the cache key.
         pred_year (int, optional): Target year for classification. Defaults to train_year + 1.
         train_year (int, optional): Training year (MapBiomas samples + embedding). Defaults to the most recent year available in MapBiomas.
 
@@ -210,11 +210,11 @@ def classify_pasture_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int 
         train_year = train_year or _latest_mapbiomas_year()
         pred_year = pred_year or (train_year + 1)
 
-        if cache_exists(car_code, pred_year):
-            dataset, image = load_cache(car_code, pred_year)
+        if cache_exists(feature_id, pred_year):
+            dataset, image = load_cache(feature_id, pred_year)
             pasto = dataset["pasto"].isel(time=0)
             area_ha = _area_ha_from_pasto(pasto)
-            log_info(f"[{car_code}] pasture cache hit ({pred_year}): {area_ha} ha")
+            log_info(f"[{feature_id}] pasture cache hit ({pred_year}): {area_ha} ha")
             return {
                 "imagem": image,
                 "area_pasto_ha": round(area_ha, 4),
@@ -247,9 +247,9 @@ def classify_pasture_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int 
         area_ha = _area_ha_from_pasto(pasto)
 
         image = _render_classification_image(roi=roi, classified=classified, base_year=pred_year)
-        save_cache(car_code, pred_year, dataset, image)
+        save_cache(feature_id, pred_year, dataset, image)
 
-        log_info(f"[{car_code}] classify_pasture_on_the_fly {pred_year}: {area_ha} ha em {time.perf_counter() - start:.2f}s")
+        log_info(f"[{feature_id}] classify_pasture_on_the_fly {pred_year}: {area_ha} ha em {time.perf_counter() - start:.2f}s")
 
         return {
             "imagem": image,
@@ -261,10 +261,10 @@ def classify_pasture_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int 
 
     except ValueError as error:
         log_error(traceback.format_exc())
-        raise RuntimeError(f"[{car_code}] {error}")
+        raise RuntimeError(f"[{feature_id}] {error}")
     except ee.EEException as error:
         log_error(traceback.format_exc())
-        raise RuntimeError(f"[{car_code}] Earth Engine failed while classifying pasture: {error}")
+        raise RuntimeError(f"[{feature_id}] Earth Engine failed while classifying pasture: {error}")
     except Exception as error:
         log_error(traceback.format_exc())
-        raise RuntimeError(f"[{car_code}] Unexpected error while classifying pasture: {error}")
+        raise RuntimeError(f"[{feature_id}] Unexpected error while classifying pasture: {error}")

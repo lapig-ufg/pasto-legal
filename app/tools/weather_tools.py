@@ -13,7 +13,8 @@ from agno.run import RunContext
 from agno.utils.log import log_debug, log_warning, log_error
 
 from app.configs.prompts import get_tool_description
-from app.schemas.rural_property import RuralProperty
+from app.schemas.property_feature import PropertyFeature
+from app.utils.feature_utils import resolve_feature
 from app.services.geospatial.season_forecast import (
     get_dry_season_onset as _get_dry_season_onset,
     get_rain_onset as _get_rain_onset,
@@ -43,42 +44,38 @@ def _daily_dates(daily) -> list[datetime.date]:
     return dates
 
 
-def _resolve_property(run_context: RunContext, car_codes: list[str]) -> RuralProperty:
-    all_properties = run_context.session_state["all_properties"]
-    selected_property = next(
-        (prop for prop in all_properties if prop["car_code"] == ', '.join(car_codes)),
-        None,
-    )
+def _resolve_property(run_context: RunContext, feature_id: str) -> PropertyFeature:
+    selected_property = resolve_feature(run_context, feature_id)
     if selected_property is None:
         raise ValueError(
-            f"Property with CAR {', '.join(car_codes)} not found in the system."
+            f"Property with id {feature_id} not found in the system."
         )
-    return RuralProperty.model_validate(selected_property)
+    return selected_property
 
 
 @tool(description=get_tool_description("weather_tools", "get_monthly_precipitation_forecast"))
 def get_monthly_precipitation_forecast(
-    run_context: RunContext, car_codes: list[str], months: int = 7
+    run_context: RunContext, feature_id: str, months: int = 7
 ) -> ToolResult:
     """
     Retrieves the monthly precipitation forecast (mm) for the rural property.
 
     params:
-        car_codes (list[str]): List of CAR codes for the property.
+        feature_id (str): Identifier (id) of the registered feature.
         months (int): Number of months to forecast, between 1 and 7. Defaults to 7.
 
     Return:
         ToolResult: Text with the monthly precipitation forecast (date + mean mm).
     """
     try:
-        log_debug(f"get_monthly_precipitation_forecast: car_codes={car_codes}, months={months}")
+        log_debug(f"get_monthly_precipitation_forecast: feature_id={feature_id}, months={months}")
         if not 1 <= months <= 7:
             log_warning(f"months fora do intervalo permitido: {months}")
             raise ValueError(
                 f"months must be between 1 and 7 (received: {months})."
             )
 
-        property_obj = _resolve_property(run_context, car_codes)
+        property_obj = _resolve_property(run_context, feature_id)
         latitude, longitude = property_obj.get_centroid()
 
         forecast_days = months * 31
@@ -117,11 +114,11 @@ def get_monthly_precipitation_forecast(
 
         content = (
             f"Monthly precipitation forecast (seasonal) for property "
-            f"{property_obj.car_code} ({latitude:.4f}, {longitude:.4f}):\n"
+            f"{property_obj.id} ({latitude:.4f}, {longitude:.4f}):\n"
             + "\n".join(lines)
         )
 
-        log_debug(f"get_monthly_precipitation_forecast: {len(lines)} meses retornados ({property_obj.car_code})")
+        log_debug(f"get_monthly_precipitation_forecast: {len(lines)} meses retornados ({property_obj.id})")
         return ToolResult(content=content)
 
     except Exception as e:
@@ -131,27 +128,27 @@ def get_monthly_precipitation_forecast(
 
 @tool(description=get_tool_description("weather_tools", "get_daily_precipitation_forecast"))
 def get_daily_precipitation_forecast(
-    run_context: RunContext, car_codes: list[str], forecast_days: int = 1
+    run_context: RunContext, feature_id: str, forecast_days: int = 1
 ) -> ToolResult:
     """
     Retrieves the precipitation forecast (mm) for a specific target day of the rural property.
 
     params:
-        car_codes (list[str]): List of CAR codes for the property.
+        feature_id (str): Identifier (id) of the registered feature.
         forecast_days (int): Target day to forecast, between 1 and 36. Defaults to 1.
 
     Return:
         ToolResult: Text with the precipitation forecast for the chosen day.
     """
     try:
-        log_debug(f"get_daily_precipitation_forecast: car_codes={car_codes}, forecast_days={forecast_days}")
+        log_debug(f"get_daily_precipitation_forecast: feature_id={feature_id}, forecast_days={forecast_days}")
         if not 1 <= forecast_days <= 36:
             log_warning(f"forecast_days fora do intervalo permitido: {forecast_days}")
             raise ValueError(
                 f"forecast_days must be between 1 and 36 (received: {forecast_days})."
             )
 
-        property_obj = _resolve_property(run_context, car_codes)
+        property_obj = _resolve_property(run_context, feature_id)
         latitude, longitude = property_obj.get_centroid()
 
         params = {
@@ -189,12 +186,12 @@ def get_daily_precipitation_forecast(
 
         content = (
             f"Daily precipitation forecast (ensemble quartiles) for property "
-            f"{property_obj.car_code} ({latitude:.4f}, {longitude:.4f}) "
+            f"{property_obj.id} ({latitude:.4f}, {longitude:.4f}) "
             f"on {target_date} (day {forecast_days}):\n"
             f"Q1 (lower): {q1:.1f} mm / Q3 (upper): {q3:.1f} mm"
         )
 
-        log_debug(f"get_daily_precipitation_forecast: Q1={q1:.1f}mm Q3={q3:.1f}mm ({property_obj.car_code})")
+        log_debug(f"get_daily_precipitation_forecast: Q1={q1:.1f}mm Q3={q3:.1f}mm ({property_obj.id})")
         return ToolResult(content=content)
 
     except Exception as e:
@@ -204,32 +201,32 @@ def get_daily_precipitation_forecast(
 
 @tool(description=get_tool_description("weather_tools", "get_rain_season_onset_forecast"))
 def get_rain_season_onset_forecast(
-    run_context: RunContext, car_codes: list[str]
+    run_context: RunContext, feature_id: str
 ) -> ToolResult:
     """
     Predicts the start date of the rainy season for the rural property.
 
     params:
-        car_codes (list[str]): List of CAR codes for the property.
+        feature_id (str): Identifier (id) of the registered feature.
 
     Return:
         ToolResult: Predicted rain onset date (YYYY-MM-DD), or a message
         indicating the rainy season has already begun / is unavailable.
     """
     try:
-        log_debug(f"get_rain_season_onset_forecast: car_codes={car_codes}")
-        property_obj = _resolve_property(run_context, car_codes)
+        log_debug(f"get_rain_season_onset_forecast: feature_id={feature_id}")
+        property_obj = _resolve_property(run_context, feature_id)
         latitude, longitude = property_obj.get_centroid()
 
         today = datetime.date.today()
         result = _get_rain_onset(latitude, longitude, today)
 
         content = (
-            f"Rain onset forecast for property {property_obj.car_code} "
+            f"Rain onset forecast for property {property_obj.id} "
             f"({latitude:.4f}, {longitude:.4f}): {result}"
         )
 
-        log_debug(f"get_rain_season_onset_forecast: {result} ({property_obj.car_code})")
+        log_debug(f"get_rain_season_onset_forecast: {result} ({property_obj.id})")
         return ToolResult(content=content)
 
     except Exception as e:
@@ -239,13 +236,13 @@ def get_rain_season_onset_forecast(
 
 @tool(description=get_tool_description("weather_tools", "get_dry_season_onset_forecast"))
 def get_dry_season_onset_forecast(
-    run_context: RunContext, car_codes: list[str]
+    run_context: RunContext, feature_id: str
 ) -> ToolResult:
     """
     Predicts the start date of the dry season (end of rains) for the rural property.
 
     params:
-        car_codes (list[str]): List of CAR codes for the property.
+        feature_id (str): Identifier (id) of the registered feature.
 
     Return:
         ToolResult: Predicted dry-season onset date (YYYY-MM-DD), or a
@@ -253,19 +250,19 @@ def get_dry_season_onset_forecast(
         horizon does not extend far enough.
     """
     try:
-        log_debug(f"get_dry_season_onset_forecast: car_codes={car_codes}")
-        property_obj = _resolve_property(run_context, car_codes)
+        log_debug(f"get_dry_season_onset_forecast: feature_id={feature_id}")
+        property_obj = _resolve_property(run_context, feature_id)
         latitude, longitude = property_obj.get_centroid()
 
         today = datetime.date.today()
         result = _get_dry_season_onset(latitude, longitude, today)
 
         content = (
-            f"Dry season onset forecast for property {property_obj.car_code} "
+            f"Dry season onset forecast for property {property_obj.id} "
             f"({latitude:.4f}, {longitude:.4f}): {result}"
         )
 
-        log_debug(f"get_dry_season_onset_forecast: {result} ({property_obj.car_code})")
+        log_debug(f"get_dry_season_onset_forecast: {result} ({property_obj.id})")
         return ToolResult(content=content)
 
     except Exception as e:
@@ -275,27 +272,27 @@ def get_dry_season_onset_forecast(
 
 @tool(description=get_tool_description("weather_tools", "get_temperature_forecast"))
 def get_temperature_forecast(
-    run_context: RunContext, car_codes: list[str], forecast_days: int = 16
+    run_context: RunContext, feature_id: str, forecast_days: int = 16
 ) -> ToolResult:
     """
     Retrieves the daily maximum and minimum temperature forecast (°C) for the rural property.
 
     params:
-        car_codes (list[str]): List of CAR codes for the property.
+        feature_id (str): Identifier (id) of the registered feature.
         forecast_days (int): Number of forecast days, between 1 and 16. Defaults to 16.
 
     Return:
         ToolResult: Text with the daily temperature forecast (date, max, min).
     """
     try:
-        log_debug(f"get_temperature_forecast: car_codes={car_codes}, forecast_days={forecast_days}")
+        log_debug(f"get_temperature_forecast: feature_id={feature_id}, forecast_days={forecast_days}")
         if not 1 <= forecast_days <= 16:
             log_warning(f"forecast_days fora do intervalo permitido: {forecast_days}")
             raise ValueError(
                 f"forecast_days must be between 1 and 16 (received: {forecast_days})."
             )
 
-        property_obj = _resolve_property(run_context, car_codes)
+        property_obj = _resolve_property(run_context, feature_id)
         latitude, longitude = property_obj.get_centroid()
 
         params = {
@@ -322,11 +319,11 @@ def get_temperature_forecast(
 
         content = (
             f"Temperature forecast for property "
-            f"{property_obj.car_code} ({latitude:.4f}, {longitude:.4f}):\n"
+            f"{property_obj.id} ({latitude:.4f}, {longitude:.4f}):\n"
             + "\n".join(lines)
         )
 
-        log_debug(f"get_temperature_forecast: {len(lines)} dias retornados ({property_obj.car_code})")
+        log_debug(f"get_temperature_forecast: {len(lines)} dias retornados ({property_obj.id})")
         return ToolResult(content=content)
 
     except Exception as e:

@@ -11,7 +11,7 @@ mesmo não chamando o GEE de fato. Mesma ressalva de tests/ee_scripts/test_pastu
 from agno.run import RunContext
 
 from app.tools.analysis_tools import generate_property_boletim
-from app.schemas.rural_property import RuralProperty, SpatialFeatures
+from app.schemas.property_feature import RuralProperty, SpatialFeatures
 
 
 def _build_context_with_property(rural_property: RuralProperty) -> RunContext:
@@ -24,7 +24,7 @@ def _build_context_with_property(rural_property: RuralProperty) -> RunContext:
 
 def test_generate_property_boletim_returns_valid_pdf_file():
     rural_property = RuralProperty(
-        nickname="Fazenda Blue",
+        feature_id="Fazenda Blue",
         car_code="GO-5205703-5B18B6DF441C4B7FA9444DDC127CF6C0",
         spatial_features=SpatialFeatures(
             total_area=23.4674,
@@ -34,7 +34,7 @@ def test_generate_property_boletim_returns_valid_pdf_file():
     )
     run_context = _build_context_with_property(rural_property)
 
-    result = generate_property_boletim.entrypoint(run_context=run_context, car_codes=[rural_property.car_code])
+    result = generate_property_boletim.entrypoint(run_context=run_context, feature_id=rural_property.id)
 
     assert result.files
     assert result.files[0].content[:5] == b"%PDF-"
@@ -50,6 +50,6 @@ def test_generate_property_boletim_returns_valid_pdf_file():
 def test_generate_property_boletim_reports_friendly_error_without_property():
     run_context = RunContext(run_id="test-run", session_id="test-session", session_state={})
 
-    result = generate_property_boletim.entrypoint(run_context=run_context, car_codes=["GO-0000000-00000000000000000000000000000000"])
+    result = generate_property_boletim.entrypoint(run_context=run_context, feature_id="Nenhuma Propriedade")
 
     assert not getattr(result, "files", None) or result.files is None
