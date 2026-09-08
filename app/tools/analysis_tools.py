@@ -139,7 +139,9 @@ def _overlay_fixed_colorbar(
         gif_bytes (bytes): Conteúdo do GIF animado de entrada.
         vmin (float): Valor mínimo global da escala (ton/ha).
         vmax (float): Valor máximo global da escala (ton/ha).
-        title (str): Título exibido acima da barra de cores.
+        title (str): Título exibido acima da imagem; a barra de cores abaixo
+            indica os valores mínimo, intermediário e máximo, com a unidade
+            (ton/ha) no rótulo máximo.
         frame_dates (list[str] | None): Rótulo de data para cada frame
             (ex.: "08/2025"), na ordem dos frames. None omite os rótulos.
 
@@ -179,6 +181,7 @@ def _overlay_fixed_colorbar(
                     title=title,
                     vmin=round(vmin),
                     vmax=round(vmax),
+                    unit="ton/ha",
                     palette=BIOMASS_VIDEO_PALETTE,
                 )
             )
@@ -280,7 +283,7 @@ def generate_biomass_video(
             gif_bytes,
             vmin=global_min,
             vmax=global_max,
-            title="Biomassa (T2G)\nton/ha",
+            title="Biomassa (T2G)",
             frame_dates=frame_dates,
         )
         mp4_bytes = gif_bytes_to_mp4_bytes(gif_bytes)

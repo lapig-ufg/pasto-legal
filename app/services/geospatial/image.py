@@ -59,24 +59,24 @@ def append_continuous_colorbar(
     title: str, 
     vmin: Union[int, float], 
     vmax: Union[int, float], 
+    unit: str,
     palette: List[str],
     font_path: str = "assets/fonts/DejaVuSans-Bold.ttf"
 ) -> Image.Image:
     """
-    Appends a continuous color gradient bar to the right side of an image.
-    Handles multi-line titles dynamically without overlapping text.
+    Appends a continuous color gradient bar below the image, with the title
+    centered above it. The bar is horizontal with min, mid and max ticks
+    (the unit is shown only on the max label).
     """
     width, height = image.size
     
     # 1. Dynamic sizing based on image dimensions
-    legend_width = max(150, int(width * 0.25)) 
+    cb_width = max(150, int(width * 0.6))
     margin = max(10, int(width * 0.02))
     
     base_font_size = max(12, int(height * 0.025))
     title_font_size = int(base_font_size * 1.2)
-    
-    cb_width = max(15, int(legend_width * 0.15))
-    cb_height = int(height * 0.55) # Slightly reduced to guarantee room for multi-line text
+    cb_height = base_font_size
     
     try:
         font = ImageFont.truetype(font_path, base_font_size)
@@ -84,31 +84,39 @@ def append_continuous_colorbar(
     except IOError:
         font = ImageFont.load_default()
         title_font = ImageFont.load_default()
-        
-    # 2. Create new expanded image canvas
-    new_width = width + legend_width
-    new_image = Image.new("RGB", (new_width, height), "white")
-    new_image.paste(image, (0, 0))
+    
+    # 2. Create new expanded canvas: title band on top, legend band below
+    probe = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    title_bbox = probe.multiline_textbbox((0, 0), title, font=title_font)
+    title_height = title_bbox[3] - title_bbox[1]
+    font_height = base_font_size
+    
+    top_band = title_height + (margin * 2)
+    bottom_band = cb_height + font_height + (margin * 3)
+    new_width = width
+    new_height = height + top_band + bottom_band
+    
+    new_image = Image.new("RGB", (new_width, new_height), "white")
+    new_image.paste(image, (0, top_band))
     
     draw = ImageDraw.Draw(new_image)
     
-    # 3. Position elements on the right
-    x_offset = width + margin
-    y_offset = margin
+    # 3. Title centered above the image
+    draw.multiline_text(
+        (new_width // 2, top_band // 2),
+        title,
+        fill="black",
+        font=title_font,
+        anchor="mm",
+        align="center"
+    )
     
-    # Draw Title
-    draw.text((x_offset, y_offset), title, fill="black", font=title_font)
+    # 4. Horizontal gradient colorbar centered below the image
+    x_offset = (new_width - cb_width) // 2
+    y_offset = new_height - bottom_band + margin
     
-    # FIX: Calculate exact height of the title block (handles single or multi-line)
-    title_bbox = draw.textbbox((x_offset, y_offset), title, font=title_font)
-    title_height = title_bbox[3] - title_bbox[1]
-    
-    # Push the colorbar down past the calculated title height + a safe margin
-    y_offset += title_height + margin
-    
-    # Draw continuous gradient colorbar
-    for y in range(cb_height):
-        ratio = 1 - (y / (cb_height - 1)) if cb_height > 1 else 0
+    for x in range(cb_width):
+        ratio = x / (cb_width - 1) if cb_width > 1 else 0
         n = len(palette) - 1
         idx = max(0, min(int(ratio * n), n - 1))
         local_ratio = (ratio * n) - idx
@@ -119,7 +127,7 @@ def append_continuous_colorbar(
         rgb = tuple(int(c1[i] + (c2[i] - c1[i]) * local_ratio) for i in range(3))
         
         draw.line(
-            [x_offset, y_offset + y, x_offset + cb_width, y_offset + y], 
+            [x_offset + x, y_offset, x_offset + x, y_offset + cb_height], 
             fill=rgb
         )
         
@@ -130,18 +138,33 @@ def append_continuous_colorbar(
         width=1
     )
 
-    # 4. Draw labels (vmax at the top, vmin at the bottom)
-    text_x_offset = x_offset + cb_width + int(margin * 0.8)
+    # 5. Draw labels (vmin left, mid centered, vmax + unit right)
+    text_y = y_offset + cb_height + margin // 2
+    mid = vmin + (vmax - vmin) / 2
     
-    # Get exact height of the value font to align vmin perfectly to the bottom line
-    vmin_bbox = draw.textbbox((text_x_offset, y_offset), str(vmin), font=font)
-    font_height = vmin_bbox[3] - vmin_bbox[1]
+    draw.text(
+        (x_offset, text_y),
+        str(vmin),
+        fill="black",
+        font=font,
+        anchor="la"
+    )
     
-    # vmax aligned with the top of the colorbar
-    draw.text((text_x_offset, y_offset), str(vmax), fill="black", font=font)
+    draw.text(
+        (x_offset + cb_width // 2, text_y),
+        str(round(mid)),
+        fill="black",
+        font=font,
+        anchor="ma"
+    )
     
-    # vmin aligned precisely with the bottom edge of the colorbar
-    draw.text((text_x_offset, y_offset + cb_height - font_height), str(vmin), fill="black", font=font)
+    draw.text(
+        (x_offset + cb_width, text_y),
+        f"{vmax} {unit}",
+        fill="black",
+        font=font,
+        anchor="ra"
+    )
     
     return new_image
 
@@ -153,18 +176,18 @@ def append_discrete_legend(
     font_path: str = "assets/fonts/DejaVuSans-Bold.ttf"
 ) -> Image.Image:
     """
-    Appends a discrete legend to the right side of an image.
-    Updated with the same multi-line title fix for consistency.
+    Appends a discrete legend below the image, with the title centered above
+    it. Legend items (color patch + label) are laid out horizontally.
     """
     width, height = image.size
     
-    legend_width = max(150, int(width * 0.25))
     margin = max(10, int(width * 0.02))
     
     base_font_size = max(12, int(height * 0.025))
     title_font_size = int(base_font_size * 1.2)
     patch_size = int(base_font_size * 1.2)
     item_height = int(base_font_size * 1.8)
+    item_gap = int(margin * 1.5)
     
     try:
         font = ImageFont.truetype(font_path, base_font_size)
@@ -173,36 +196,79 @@ def append_discrete_legend(
         font = ImageFont.load_default()
         title_font = ImageFont.load_default()
 
-    new_width = width + legend_width
-    new_image = Image.new("RGB", (new_width, height), "white")
-    new_image.paste(image, (0, 0))
+    # 1. Measure title height for the top band
+    probe = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    title_bbox = probe.multiline_textbbox((0, 0), title, font=title_font)
+    title_height = title_bbox[3] - title_bbox[1]
+    
+    top_band = title_height + (margin * 2)
+    new_width = width
+    
+    # 2. Legend items laid out horizontally below the image, wrapped in
+    # centered rows when they do not fit on a single line
+    margin_half = margin // 2
+    probe = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    items = [(label, color, probe.textlength(label, font=font)) for label, color in class_colors.items()]
+    item_widths = [patch_size + margin_half + int(text_width) for _, _, text_width in items]
+    
+    rows, current_row, current_width = [], [], 0
+    for item, item_width in zip(items, item_widths):
+        width_with_item = current_width + item_width + (item_gap if current_row else 0)
+        if current_row and width_with_item > new_width - (margin * 2):
+            rows.append(current_row)
+            current_row, current_width = [], 0
+        current_row.append(item)
+        current_width = current_width + item_width + (item_gap if len(current_row) > 1 else 0)
+    if current_row:
+        rows.append(current_row)
+    
+    # 3. Create expanded canvas sized to fit title band + all legend rows
+    row_height = item_height + margin // 2
+    bottom_band = (row_height * len(rows)) + margin
+    new_height = height + top_band + bottom_band
+    
+    new_image = Image.new("RGB", (new_width, new_height), "white")
+    new_image.paste(image, (0, top_band))
     
     draw = ImageDraw.Draw(new_image)
     
-    x_offset = width + margin
-    y_offset = margin
+    # 4. Title centered above the image
+    draw.multiline_text(
+        (new_width // 2, top_band // 2),
+        title,
+        fill="black",
+        font=title_font,
+        anchor="mm",
+        align="center"
+    )
     
-    # Draw Title
-    draw.text((x_offset, y_offset), title, fill="black", font=title_font)
-    
-    # FIX: Calculate exact height of the title block dynamically
-    title_bbox = draw.textbbox((x_offset, y_offset), title, font=title_font)
-    title_height = title_bbox[3] - title_bbox[1]
-    y_offset += title_height + margin 
-    
-    # Draw legend items
-    for label, color in class_colors.items():
-        draw.rectangle(
-            [x_offset, y_offset, x_offset + patch_size, y_offset + patch_size],
-            fill=color, 
-            outline="black",
-            width=1
-        )
+    # 5. Draw each legend row centered horizontally
+    y_offset = new_height - bottom_band + margin // 2
+    for row in rows:
+        row_width = sum(patch_size + margin_half + int(text_width) for _, _, text_width in row)
+        row_width += item_gap * (len(row) - 1)
+        x_offset = max(margin, (new_width - row_width) // 2)
         
-        text_x = x_offset + patch_size + int(margin * 0.8)
-        draw.text((text_x, y_offset), label, fill="black", font=font)
+        for label, color, text_width in row:
+            draw.rectangle(
+                [x_offset, y_offset, x_offset + patch_size, y_offset + patch_size],
+                fill=color, 
+                outline="black",
+                width=1
+            )
+            
+            text_x = x_offset + patch_size + margin_half
+            draw.text(
+                (text_x, y_offset + patch_size // 2),
+                label,
+                fill="black",
+                font=font,
+                anchor="lm"
+            )
+            
+            x_offset += patch_size + margin_half + int(text_width) + item_gap
         
-        y_offset += item_height
+        y_offset += row_height
         
     return new_image
 

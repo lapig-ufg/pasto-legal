@@ -343,9 +343,10 @@ def retrieve_mapbiomas_biomass_image(coords: List[List[List[List[float]]]], year
 
         img = append_continuous_colorbar(
             img, 
-            title=f"Biomassa\n({str(year)})", 
+            title=f"Biomassa ({str(year)})", 
             vmin=round(float(min_bio_val) * 0.09),
             vmax=round(float(max_bio_val) * 0.09),
+            unit="ton/ha",
             palette=palette
         )
 
@@ -535,9 +536,10 @@ def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int
 
         img = append_continuous_colorbar(
             img, 
-            title=f"Biomassa\n({str(_target_year)}/{str(_target_month)}) - T2G", 
+            title=f"Biomassa ({str(_target_year)}/{str(_target_month)}) - T2G", 
             vmin=round(min_bio_val),
             vmax=round(max_bio_val),
+            unit="ton/ha",
             palette=palette
         )
 
