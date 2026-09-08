@@ -479,7 +479,8 @@ def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int
     Returns:
         tuple[PIL.Image.Image, int, int]: (final image with satellite, biomass,
         outline and colorbar, effective accumulation year and month), or None
-        when no UGPP data is available for the period.
+        when no UGPP data is available for the period. If the chosen month has
+        no data, falls back once to the previous month before returning None.
 
     Raises:
         ValueError: If the area contains no mapped pasture with computable biomass.
@@ -497,7 +498,20 @@ def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int
         )
 
         if result is None:
-            return None
+            fallback_month, fallback_year = (12, year - 1) if month == 1 else (month - 1, year)
+            log_warning(
+                f"retrieve_t2g_biomass_image: no UGPP data for reference period of {month}/{year}; "
+                f"falling back to previous month {fallback_month}/{fallback_year}"
+            )
+            start_date, end_date = _reference_period(fallback_year, fallback_month)
+            result = _get_t2g_biomass_image(
+                roi,
+                start_date.year, start_date.month, start_date.day,
+                end_date.year, end_date.month, end_date.day
+            )
+
+            if result is None:
+                return None
 
         biomass_img, _target_year, _target_month = result
         
