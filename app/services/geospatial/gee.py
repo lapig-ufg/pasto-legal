@@ -445,7 +445,7 @@ def _get_t2g_biomass_image(
 
     n_days = ee.Number(end_date.difference(start_date, 'day'))
 
-    ugpp = ee.ImageCollection("projects/wri-lcl-time2graze/assets/ugpp_prod_10m_v1")
+    ugpp = ee.ImageCollection("projects/wri-lcl-time2graze/assets/ugpp_cf_10m_v1").filter(ee.Filter.date('2025-07-03', '2025-07-04').Not())
     ugpp_col = ugpp.filterBounds(roi).filterDate(start_date, end_date)
 
     grassland_asset = ee.ImageCollection("projects/global-pasture-watch/assets/ggc-30m/v1-1/grassland_c");
@@ -766,10 +766,10 @@ def retrieve_t2g_biomass_video(
             "format": "gif",
         })
 
-        resposta = requests.get(url, timeout=120)
-        resposta.raise_for_status()
+        response = requests.get(url, timeout=120)
+        response.raise_for_status()
 
-        return resposta.content, effective_start, effective_end, frame_months, global_min, global_max
+        return response.content, effective_start, effective_end, frame_months, global_min, global_max
 
     except ValueError as error:
         raise error
