@@ -4,7 +4,7 @@ Cobrem os detectores determinísticos, o RG por formato, a camada de intenção,
 o orquestrador, a mensagem e o mascaramento. Tudo determinístico — sem LLM/rede.
 """
 
-from app.guardrails.pii_gate import (
+from semente.guardrails.pii_gate import (
     detecta_cpf, detecta_cnpj, detecta_cartao, detecta_email, detecta_rg,
     check_pii, mensagem_bloqueio, mascarar_pii,
 )

@@ -8,8 +8,8 @@ os.environ["POSTGRES_DBNAME"] = "mock_db"
 import pytest
 import re
 
-from app.guardrails.pii_detection_guardrail import custom_patterns
-from app.tools.feedback_tools import _mask_pii
+from semente.guardrails.pii_gate import custom_patterns
+from semente.tools.feedback_tools import _mask_pii
 
 
 

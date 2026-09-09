@@ -8,10 +8,10 @@ mesmo não chamando o GEE de fato. Mesma ressalva de tests/ee_scripts/test_pastu
 
     .venv/bin/python -m pytest tests/pdf/test_generate_property_boletim_tool.py -v
 """
-from agno.run import RunContext
+from semente.context import Context as RunContext
 
-from app.tools.analysis_tools import generate_property_boletim
-from app.schemas.property_feature import RuralProperty, SpatialFeatures
+from domain.tools.analysis_tools import generate_property_boletim
+from domain.schemas.property_feature import RuralProperty, SpatialFeatures
 
 
 def _build_context_with_property(rural_property: RuralProperty) -> RunContext:

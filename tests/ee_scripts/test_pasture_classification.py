@@ -15,7 +15,7 @@ from pathlib import Path
 import ee
 import pytest
 
-from app.services.geospatial.pasture_classification import (
+from domain.services.geospatial.pasture_classification import (
     _cache_paths,
     _latest_mapbiomas_year,
     classify_pasture_on_the_fly,

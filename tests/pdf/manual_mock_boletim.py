@@ -13,9 +13,9 @@ from pathlib import Path
 
 from PIL import Image as PILImage
 
-from app.schemas.property_feature import RuralProperty, SpatialFeatures
-from app.services.boletim_scripts import build_boletim_story, build_placeholder_property_stats
-from app.services.pdf_scripts import render_document
+from domain.schemas.property_feature import RuralProperty, SpatialFeatures
+from domain.services.boletim_scripts import build_boletim_story, build_placeholder_property_stats
+from domain.services.pdf_scripts import render_document
 
 
 def _mock_image_bytes(color) -> bytes:

@@ -1,0 +1,13 @@
+name: pasto-legal
+language: pt-BR
+domain_module: domain
+prompts_dir: domain/prompts
+channels: [whatsapp, streamlit]
+features:
+  tts: true
+  feedback_workflow: true
+  summarization: true
+  pii_guardrail: true
+models:
+  primary: { provider: google, id: gemini-3.5-flash-lite }
+  fallback: { provider: ollama, id: gemma4:31b-cloud }

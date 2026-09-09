@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from agno.utils.log import logger as agno_logger
 
-import app.configs.prompts as prompts
+import semente.configs.prompts as prompts
 
 
 @pytest.fixture

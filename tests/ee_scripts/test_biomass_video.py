@@ -22,12 +22,12 @@ import pytest
 from PIL import Image as PILImage
 from PIL import ImageChops
 
-from app.services.geospatial.gee import (
+from domain.services.geospatial.gee import (
     BIOMASS_VIDEO_MIN_YEAR,
     _iterate_reference_months,
     retrieve_t2g_biomass_video,
 )
-from app.services.video import gif_bytes_to_mp4_bytes
+from domain.services.video import gif_bytes_to_mp4_bytes
 
 def _ffmpeg_available() -> bool:
     if shutil.which("ffmpeg"):
@@ -150,7 +150,7 @@ def test_gif_to_mp4_raises_on_invalid_input():
 
 # --- _overlay_fixed_colorbar: rótulos de data por frame ---
 def test_overlay_colorbar_draws_per_frame_dates():
-    from app.tools.analysis_tools import _overlay_fixed_colorbar
+    from domain.tools.analysis_tools import _overlay_fixed_colorbar
 
     gif_bytes = _make_animated_gif(frames=2, size=(128, 96))
 
@@ -187,7 +187,7 @@ def test_overlay_colorbar_draws_per_frame_dates():
 
 
 def test_overlay_colorbar_rejects_mismatched_dates():
-    from app.tools.analysis_tools import _overlay_fixed_colorbar
+    from domain.tools.analysis_tools import _overlay_fixed_colorbar
 
     gif_bytes = _make_animated_gif(frames=2, size=(64, 48))
 
@@ -247,7 +247,7 @@ def test_retrieve_t2g_biomass_video_real_gee():
         f"Frame parece não ter fundo de satélite ({len(frame_colors) if frame_colors else '>100000'} cores)"
 
     # Pipeline completo da tool: datas por frame + colorbar fixa
-    from app.tools.analysis_tools import _overlay_fixed_colorbar
+    from domain.tools.analysis_tools import _overlay_fixed_colorbar
 
     frame_dates = [f"{acc_month:02d}/{acc_year}" for acc_year, acc_month in frame_months]
     dated_gif_bytes = _overlay_fixed_colorbar(

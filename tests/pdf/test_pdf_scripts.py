@@ -8,7 +8,7 @@ from io import BytesIO
 from PIL import Image as PILImage
 from pypdf import PdfReader
 
-from app.services import pdf_scripts as pdf
+from domain.services import pdf_scripts as pdf
 
 
 def _sample_image_bytes(color=(80, 150, 90)) -> bytes:

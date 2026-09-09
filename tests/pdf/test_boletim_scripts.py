@@ -12,9 +12,9 @@ from io import BytesIO
 from PIL import Image as PILImage
 from pypdf import PdfReader
 
-from app.schemas.property_feature import RuralProperty, SpatialFeatures
-from app.services.boletim_scripts import build_boletim_story, build_placeholder_property_stats
-from app.services.pdf_scripts import render_document
+from domain.schemas.property_feature import RuralProperty, SpatialFeatures
+from domain.services.boletim_scripts import build_boletim_story, build_placeholder_property_stats
+from domain.services.pdf_scripts import render_document
 
 
 def _sample_image_bytes(color=(80, 150, 90)) -> bytes:
