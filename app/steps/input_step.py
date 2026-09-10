@@ -4,6 +4,11 @@ Executes the transcription agent for audio and the description agent for
 images, consolidating everything into a single text for the following
 steps (PII guardrail and business agents).
 
+A transcrição e a descrição são redigidas AQUI, e não no passo seguinte: a
+saída de cada step fica gravada em `step_results` da run, que é persistida.
+Redigir só no guardrail deixaria uma cópia crua do dado no banco. O texto
+digitado já chega redigido (MessageContent.__post_init__, whatsapp/helpers).
+
 On transcription/description failure, logs the error and continues with
 whatever text is available (resilient fallback).
 
@@ -15,6 +20,7 @@ from agno.workflow import Step
 from agno.workflow.types import StepInput, StepOutput
 
 from app.agents import audio_transcription_agent, image_description_agent
+from app.guardrails.pii_gate import redigir_pii
 
 
 def _input_processing_executor(step_input: StepInput) -> StepOutput:
@@ -28,7 +34,7 @@ def _input_processing_executor(step_input: StepInput) -> StepOutput:
     if step_input.images:
         try:
             response = image_description_agent.run("", images=step_input.images)
-            description = response.content or ""
+            description, _ = redigir_pii(response.content or "")
             if description:
                 parts.append(f"[IMAGEM]{description}[/IMAGEM]")
         except Exception as e:
@@ -37,7 +43,7 @@ def _input_processing_executor(step_input: StepInput) -> StepOutput:
     if step_input.audio:
         try:
             response = audio_transcription_agent.run("", audio=step_input.audio)
-            transcription = response.content or ""
+            transcription, _ = redigir_pii(response.content or "")
             if transcription:
                 parts.append(transcription)
         except Exception as e:

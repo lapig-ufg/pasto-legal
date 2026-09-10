@@ -1,41 +1,40 @@
-"""PII guardrail step: scans the consolidated input text for personal data.
+"""Sanitização de PII: remove dados pessoais do texto antes dos agentes.
 
-Reuses the text assembled by the previous input-processing step. If PII is
-found, blocks execution and returns a warning to the user (as audio when
-the user sent audio, as text otherwise). Otherwise passes the clean text
-through to the following agents.
+Substitui o dado por um marcador (`[CPF_OCULTO]`) e deixa a mensagem seguir,
+em vez de recusá-la. Assim o produtor não perde os pedidos que fez na mesma
+mensagem, e o dado não chega ao agente.
 
-External interface:
-    _guardrail_pii_executor  -- StepExecutor consumed by main_workflow.
+O texto digitado já é redigido na entrada (MessageContent.__post_init__, em
+whatsapp/helpers.py). Este passo cobre o que só vira texto dentro do workflow:
+a transcrição do áudio e a descrição da imagem, produzidas pelo input_step.
+
+Interface externa:
+    _guardrail_pii_executor  -- StepExecutor consumido por pasto_legal_workflow.
 """
-from agno.utils.log import log_error
+from agno.utils.log import log_info
 from agno.workflow import Step
 from agno.workflow.types import StepInput, StepOutput
 
-from app.guardrails.pii_gate import check_pii, mensagem_bloqueio
-from app.services.audio.tts import generate_speech
+from app.guardrails.pii_gate import redigir_pii
 
 
 def _guardrail_pii_executor(step_input: StepInput) -> StepOutput:
-    """Guardrail de PII que reusa o texto montado pelo passo anterior."""
-    text = step_input.get_input_as_string() or ""
+    """Redige dados pessoais do texto consolidado pelo passo anterior.
 
-    pii_types = check_pii(text)
-    if not pii_types:
-        return StepOutput(content=text)
+    Lê `previous_step_content` e não `get_input_as_string()`: esta última
+    devolve o input ORIGINAL do workflow (agno/workflow/types.py:257), o que
+    deixaria a transcrição do áudio e a descrição da imagem fora da varredura.
+    """
+    conteudo = step_input.previous_step_content or step_input.get_input_as_string() or ""
+    text = conteudo if isinstance(conteudo, str) else str(conteudo)
 
-    pii_warning = mensagem_bloqueio(pii_types)
+    limpo, tipos = redigir_pii(text)
 
-    if step_input.audio:
-        try:
-            user_id = step_input.workflow_session.user_id if step_input.workflow_session else "default"
-            audio = generate_speech(pii_warning, user_id=user_id)
-            if audio:
-                return StepOutput(content=pii_warning, audio=[audio], stop=True, success=False)
-        except Exception as e:
-            log_error(f"guardrail TTS failed: {e}")
+    if tipos:
+        # Só os tipos, nunca o valor.
+        log_info(f"guardrail PII: dados removidos ({', '.join(tipos)})")
 
-    return StepOutput(content=pii_warning, stop=True, success=False)
+    return StepOutput(content=limpo)
 
 
 guardrails_step = Step(
