@@ -341,7 +341,6 @@ def format_message(text: str) -> str:
 async def send_whatsapp_message_async(
     recipient: str, message: Any, config: WhatsAppConfig, italics: bool = False
 ) -> None:
-    # output_schema responses arrive as pydantic models; coerce to string for WhatsApp
     if message is not None and not isinstance(message, str):
         from pydantic import BaseModel
 
@@ -349,22 +348,26 @@ async def send_whatsapp_message_async(
     if not message or not message.strip():
         return
 
-    message = format_message(message)
+    import re
+    
+    message_chunks = [chunk.strip() for chunk in re.split(r'\s*\[PAUS[EA]\]\s*', message, flags=re.IGNORECASE) if chunk.strip()]
 
     def _format(text: str) -> str:
+        formatted = format_message(text)
         if italics:
-            return "\n".join([f"_{line}_" for line in text.split("\n")])
-        return text
+            return "\n".join([f"_{line}_" for line in formatted.split("\n")])
+        return formatted
 
-    # WhatsApp limit is 4096 chars; split at 4000 to leave room for batch prefix
-    if len(message) <= 4096:
-        await _send_text(recipient=recipient, text=_format(message), config=config)
-        return
-
-    message_batches = [message[i : i + 4000] for i in range(0, len(message), 4000)]
-    for i, batch in enumerate(message_batches, 1):
-        batch_message = f"[{i}/{len(message_batches)}] {batch}"
-        await _send_text(recipient=recipient, text=_format(batch_message), config=config)
+    for chunk in message_chunks:
+        formatted_chunk = _format(chunk)
+        
+        if len(formatted_chunk) <= 4096:
+            await _send_text(recipient=recipient, text=formatted_chunk, config=config)
+        else:
+            message_batches = [formatted_chunk[i : i + 4000] for i in range(0, len(formatted_chunk), 4000)]
+            for i, batch in enumerate(message_batches, 1):
+                batch_message = f"[{i}/{len(message_batches)}] {batch}"
+                await _send_text(recipient=recipient, text=batch_message, config=config)
 
 
 async def upload_and_send_media_async(

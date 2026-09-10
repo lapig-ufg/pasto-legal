@@ -154,9 +154,23 @@ if "debug_messages" not in st.session_state:
     st.session_state.debug_messages = []
 
 # Exibe mensagens anteriores
+import re
 for msg_idx, message in enumerate(st.session_state.messages):
     with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+        # A variável precisa nascer aqui para TODAS as mensagens
+        proactive_text = None 
+        
+        if message["role"] == "assistant" and message.get("content"):
+            chunks = [c.strip() for c in re.split(r'\s*\[PAUS[EA]\]\s*', message["content"], maxsplit=1, flags=re.IGNORECASE) if c.strip()]
+            if chunks:
+                st.markdown(chunks[0])
+                if len(chunks) > 1:
+                    proactive_text = chunks[1]
+            else:
+                st.markdown(message["content"])
+        else:
+            st.markdown(message["content"])
+        
         if "images" in message:
             for img in message["images"]:
                 if img is not None:
@@ -178,6 +192,10 @@ for msg_idx, message in enumerate(st.session_state.messages):
                     mime=f["mime_type"] or "application/octet-stream",
                     key=f"dl_hist_{msg_idx}_{file_idx}",
                 )
+        
+    
+        if proactive_text:
+            st.info(f"💡 {proactive_text}")
 
 # Inputs do usuário
 if 'file_uploader_key' not in st.session_state:
@@ -324,8 +342,17 @@ if user_query:
                             mime=f.mime_type or "application/octet-stream",
                             key=f"dl_{st.session_state.session_id}_{len(st.session_state.messages)}_{file_idx}",
                         )
+            
             # Exibe a resposta final
-            message_placeholder.markdown(full_response)
+            import re
+            chunks = [c.strip() for c in re.split(r'\s*\[PAUS[EA]\]\s*', full_response, maxsplit=1, flags=re.IGNORECASE) if c.strip()]
+            
+            if chunks:
+                message_placeholder.markdown(chunks[0])
+                if len(chunks) > 1:
+                    st.info(f"💡 {chunks[1]}")
+            else:
+                message_placeholder.markdown(full_response)
 
         except Exception as e:
             import traceback
