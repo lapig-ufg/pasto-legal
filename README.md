@@ -40,7 +40,7 @@ Pasto Legal is a **[Semente](https://github.com/semente-ai/semente) app** — th
 | WhatsApp + Streamlit channels, message debouncing & chunking | Weather forecast tools (Open-Meteo) |
 | Session store, history, summarization, TTS | EMBRAPA knowledge base (`docs/knowledge/`) |
 | i18n YAML prompt loader & neutral English defaults | pt-BR domain prompts (`domain/prompts/`) |
-| Engine port — swappable agent engine (Agno, ADK, pi) | UA-calculator skill |
+| Engine port — swappable agent engine (Agno, ADK, bare) | UA-calculator skill |
 
 In practice: this repository contains a `domain/` package plus a `semente.yaml` manifest. Semente assembles the entire application from them — including the engine (Agno by default), configurable via `engine:` in the manifest or the `SEMENTE_ENGINE` environment variable.
 
@@ -124,7 +124,7 @@ graph TD
 | Layer | Technology |
 |---|---|
 | **Application framework** | [Semente AI](https://github.com/semente-ai/semente) 0.3 — multi-agent chat framework for land use (engine-free domain API) |
-| **Agent engine** | [Agno](https://github.com/agno-agi/agno) 2.6 (default; swappable via `SEMENTE_ENGINE` — ADK and pi backends also available) |
+| **Agent engine** | [Agno](https://github.com/agno-agi/agno) 2.6 (default; swappable via `SEMENTE_ENGINE` — ADK and bare backends also available) |
 | **Language** | Python 3.12+ |
 | **LLM** | Google Gemini (`gemini-3.5-flash-lite` by default) — configurable to Ollama for local models |
 | **TTS** | Google Gemini TTS (`gemini-3.1-flash-tts-preview`) |
@@ -217,7 +217,7 @@ The WhatsApp channel additionally requires `WHATSAPP_*` and `VALKEY_*` variables
 **Switching the engine (optional):**
 
 ```bash
-SEMENTE_ENGINE=adk python main.py   # or pi — see Semente's "Engines" docs
+SEMENTE_ENGINE=adk python main.py   # or bare — see Semente's "Engines" docs
 ```
 
 ### 5. Docker

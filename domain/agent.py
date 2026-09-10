@@ -205,4 +205,6 @@ def get_instructions(run_context: RunContext) -> str:
             {_agent_config['instructions_default'].strip()}
         """).strip()
 
-    return instructions
+    # Hard output contract on every state: the model applies the directive
+    # logic silently — it never narrates its reasoning to the user.
+    return instructions + "\n\n" + _agent_config["output_contract"].strip()

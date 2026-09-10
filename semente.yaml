@@ -1,6 +1,7 @@
 name: pasto-legal
 language: pt-BR
 domain_module: domain
+engine: agno
 prompts_dir: domain/prompts
 channels: [whatsapp, streamlit]
 features:
