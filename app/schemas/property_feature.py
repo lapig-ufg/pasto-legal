@@ -131,6 +131,11 @@ class PropertyFeature(BaseModel):
     def id(self) -> str:
         raise NotImplementedError
 
+    @property
+    def feature_type(self) -> str:
+        """Neutral key identifying the concrete feature type (never localized)."""
+        raise NotImplementedError
+
     def describe(self) -> str:
         raise NotImplementedError
 
@@ -176,6 +181,10 @@ class RuralProperty(PropertyFeature):
     @property
     def id(self) -> str:
         return self.feature_id or self.car_code
+
+    @property
+    def feature_type(self) -> str:
+        return "rural_property"
 
     def describe(self):
         return (
@@ -227,6 +236,10 @@ class BufferedArea(PropertyFeature):
     @property
     def id(self) -> str:
         return self.feature_id
+
+    @property
+    def feature_type(self) -> str:
+        return "buffer_area"
 
     def describe(self):
         return (

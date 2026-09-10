@@ -19,13 +19,77 @@ from app.services.geospatial.sicar import (
 from app.services.geospatial.image import create_vertical_mosaic
 from app.services.geospatial.gee import retrieve_feature_images
 from app.services.geospatial.geometry import build_buffered_area
-from app.schemas.property_feature import PropertyFeature, RuralProperty, validate_feature_record
+from app.schemas.property_feature import PropertyFeature, RuralProperty, BufferedArea, validate_feature_record
 from app.utils.feature_utils import find_feature_record
 
-# Bounds of the buffer radius accepted by start_registration_by_buffer (meters).
+# Bounds of the buffer radius accepted by the buffer registration tools (meters).
 _MIN_RADIUS_METERS = 50
 _MAX_RADIUS_METERS = 1000
 _DEFAULT_RADIUS_METERS = 200
+
+# Instruction appended when a SICAR lookup finds nothing and the buffer
+# fallback registers an area instead (see _register_buffer_candidate).
+_SICAR_MISS_BUFFER_FALLBACK_TEXT = (
+    "Nenhuma propriedade foi encontrada na base do SICAR para esta localização.\n"
+    "Informe ao usuário que, por não haver um imóvel registrado no SICAR, o sistema "
+    "registrará no lugar uma área de buffer ao redor do ponto indicado.\n"
+    "Mostre a imagem e pergunte ao usuário se ele deseja continuar com o registro "
+    "dessa área de buffer ou cancelar a operação."
+)
+
+
+def _register_buffer_candidate(
+    run_context: RunContext,
+    latitude: float,
+    longitude: float,
+    radius: int = _DEFAULT_RADIUS_METERS,
+) -> tuple[BufferedArea, bytes] | ToolResult:
+    """
+    Builds a BufferedArea candidate from a coordinate and radius, stores it in
+    the session as the pending registration and renders its image.
+
+    Shared by the buffer registration tools and by the SICAR tools fallback
+    (when no property exists in the SICAR database). Does not validate the
+    radius bounds; callers must do it beforehand.
+
+    Returns:
+        Tuple (BufferedArea, PNG image bytes) on success, or a ToolResult with
+        the error instructions on failure.
+    """
+    try:
+        buffered_area = build_buffered_area(latitude=latitude, longitude=longitude, radius=radius)
+
+        imgs = retrieve_feature_images(buffered_area.get_coords())
+
+        run_context.session_state["candidate_properties"] = [buffered_area.model_dump()]
+
+        run_context.session_state["registration_state"] = "pending"
+
+        img = imgs[0]
+
+        buffer_stream = BytesIO()
+        img.save(buffer_stream, format="PNG")
+
+        return buffered_area, buffer_stream.getvalue()
+    except Exception as e:
+        log_error(f"_register_buffer_candidate: {e}")
+        return ToolResult(content=str(e))
+
+
+def _validate_buffer_radius(radius: int) -> ToolResult | None:
+    """
+    Returns a ToolResult with the out-of-range instructions when the radius is
+    outside [_MIN_RADIUS_METERS, _MAX_RADIUS_METERS], or None when valid.
+    """
+    if not (_MIN_RADIUS_METERS <= radius <= _MAX_RADIUS_METERS):
+        log_warning(f"Raio fora do intervalo permitido: {radius}")
+        return ToolResult(
+            content=(
+                f"Peça desculpas ao usuário e informe que o raio deve estar entre "
+                f"{_MIN_RADIUS_METERS} e {_MAX_RADIUS_METERS} metros."
+            )
+        )
+    return None
 
 
 @tool(description=get_tool_description("property_tools", "start_registration_by_coordinate"))
@@ -48,9 +112,14 @@ def start_registration_by_coordinate(run_context: RunContext, latitude: float, l
 
         if not properties:
             log_warning(f"Nenhuma propriedade encontrada para lat={latitude}, lon={longitude}")
-            return (
-                "Peça desculpas ao usuário e informe que nenhuma propriedade foi encontrada nesta coordenada.\n"
-                "Peça que tente novamente e verificar se as coordenadas estão corretas."
+            fallback = _register_buffer_candidate(run_context, latitude=latitude, longitude=longitude)
+            if isinstance(fallback, ToolResult):
+                return fallback
+
+            _, img_bytes = fallback
+            return ToolResult(
+                content=_SICAR_MISS_BUFFER_FALLBACK_TEXT,
+                images=[Image(content=img_bytes)]
             )
 
         registered_map = {prop["car_code"]: prop for prop in run_context.session_state.get("all_properties", [])}
@@ -140,8 +209,12 @@ def start_registration_by_car(run_context: RunContext, car_codes: List[str]):
             log_warning(f"Nenhuma propriedade encontrada para CARs={car_codes}")
             return ToolResult(
                 content=(
-                    "Peça desculpas ao usuário e informe que nenhuma propriedade foi encontrada nesta coordenada.\n"
-                    "Peça que tente novamente e verificar se as coordenadas estão corretas."
+                    "Nenhuma propriedade foi encontrada na base do SICAR para o(s) CAR(s) informado(s).\n"
+                    "Como não há imóvel registrado no SICAR, o registro só pode ser feito como área de buffer.\n"
+                    "Explique isso ao usuário e peça que ele envie um link de compartilhamento do Google Maps "
+                    "ou as coordenadas (latitude/longitude) do local.\n"
+                    "Em seguida, registre a área chamando a ferramenta `start_buffer_registration_by_url` "
+                    "(para o link) ou `start_buffer_registration_by_coordinate` (para as coordenadas)."
                 )
             )
 
@@ -181,11 +254,11 @@ def start_registration_by_car(run_context: RunContext, car_codes: List[str]):
         return ToolResult(content=str(e))
 
 
-@tool(description=get_tool_description("property_tools", "start_registration_by_buffer"))
-def start_registration_by_buffer(run_context: RunContext, latitude: float, longitude: float, radius: int = _DEFAULT_RADIUS_METERS):
+@tool(description=get_tool_description("property_tools", "start_buffer_registration_by_coordinate"))
+def start_buffer_registration_by_coordinate(run_context: RunContext, latitude: float, longitude: float, radius: int = _DEFAULT_RADIUS_METERS):
     """
-    Iniciar o registro de uma nova área baseando-se em um ponto (coordenada)
-    e um raio em metros, gerando um buffer circular ao redor do ponto.
+    Iniciar o registro de uma nova área de buffer baseando-se em um ponto
+    (coordenada) e um raio em metros, gerando um buffer circular ao redor do ponto.
 
     Use esta ferramenta quando o usuário indicar um ponto de interesse no mapa
     e quiser registrar a área ao redor dele, sem possuir um código CAR.
@@ -199,39 +272,84 @@ def start_registration_by_buffer(run_context: RunContext, latitude: float, longi
     Returns:
         ToolResult: Resultado contendo imagem e instruções para o próximo passo.
     """
-    log_debug(f"start_registration_by_buffer: lat={latitude}, lon={longitude}, radius={radius}")
+    log_debug(f"start_buffer_registration_by_coordinate: lat={latitude}, lon={longitude}, radius={radius}")
     try:
-        if not (_MIN_RADIUS_METERS <= radius <= _MAX_RADIUS_METERS):
-            log_warning(f"Raio fora do intervalo permitido: {radius}")
-            return ToolResult(
-                content=(
-                    f"Peça desculpas ao usuário e informe que o raio deve estar entre "
-                    f"{_MIN_RADIUS_METERS} e {_MAX_RADIUS_METERS} metros."
-                )
-            )
+        invalid_radius = _validate_buffer_radius(radius)
+        if invalid_radius is not None:
+            return invalid_radius
 
-        buffered_area = build_buffered_area(latitude=latitude, longitude=longitude, radius=radius)
+        result = _register_buffer_candidate(run_context, latitude=latitude, longitude=longitude, radius=radius)
+        if isinstance(result, ToolResult):
+            return result
 
-        imgs = retrieve_feature_images(buffered_area.get_coords())
-
-        run_context.session_state["candidate_properties"] = [buffered_area.model_dump()]
-
-        run_context.session_state["registration_state"] = "pending"
-
-        img = imgs[0]
-
-        buffer_stream = BytesIO()
-        img.save(buffer_stream, format="PNG")
+        buffered_area, img_bytes = result
 
         result_text = f"> {buffered_area.describe()}"
 
-        log_debug(f"start_registration_by_buffer: área gerada ({buffered_area.id}, {radius} m)")
+        log_debug(f"start_buffer_registration_by_coordinate: área gerada ({buffered_area.id}, {radius} m)")
         return ToolResult(
             content=f"Pergunte ao usuário se a seguinte área é a correta:\n{result_text}",
-            images=[Image(content=buffer_stream.getvalue())]
+            images=[Image(content=img_bytes)]
             )
     except Exception as e:
-        log_error(f"start_registration_by_buffer: {e}")
+        log_error(f"start_buffer_registration_by_coordinate: {e}")
+        return ToolResult(content=str(e))
+
+
+@tool(description=get_tool_description("property_tools", "start_buffer_registration_by_url"))
+def start_buffer_registration_by_url(run_context: RunContext, url: str, radius: int = _DEFAULT_RADIUS_METERS) -> ToolResult:
+    """
+    Inicia o registro de uma nova área de buffer baseando-se na URL de
+    compartilhamento do Google Maps e em um raio em metros, gerando um buffer
+    circular ao redor do ponto indicado na URL.
+
+    Use esta ferramenta quando o usuário fornecer uma URL de compartilhamento
+    do Google Maps e quiser registrar a área ao redor do ponto, sem possuir um
+    código CAR. Nenhuma busca no CAR é realizada; a área é gerada localmente.
+
+    Args:
+        url (str): URL de compartilhamento do Google Maps.
+        radius (int): Raio do buffer em metros (50 a 1000). Padrão: 200.
+
+    Returns:
+        ToolResult: Resultado contendo imagem e instruções para o próximo passo.
+    """
+    log_debug(f"start_buffer_registration_by_url: url={url}, radius={radius}")
+    try:
+        invalid_radius = _validate_buffer_radius(radius)
+        if invalid_radius is not None:
+            return invalid_radius
+
+        latitude, longitude = fetch_coordinates_by_url(url=url)
+
+        if latitude is None or longitude is None:
+            log_warning(f"Não foi possível extrair coordenadas da URL: {url}")
+            return ToolResult(
+                content=(
+                    "Peça desculpas ao usuário e informe que não foi possível extrair coordenadas geográficas válidas deste link.\n"
+                    "Sugira ao usuário que envie o link novamente (verificando se é um link de compartilhamento do Google Maps)"
+                )
+            )
+    except Exception as error:
+        log_error(f"start_buffer_registration_by_url (url parse): {error}")
+        return ToolResult(content=str(error))
+
+    try:
+        result = _register_buffer_candidate(run_context, latitude=latitude, longitude=longitude, radius=radius)
+        if isinstance(result, ToolResult):
+            return result
+
+        buffered_area, img_bytes = result
+
+        result_text = f"> {buffered_area.describe()}"
+
+        log_debug(f"start_buffer_registration_by_url: área gerada ({buffered_area.id}, {radius} m)")
+        return ToolResult(
+            content=f"Pergunte ao usuário se a seguinte área é a correta:\n{result_text}",
+            images=[Image(content=img_bytes)]
+            )
+    except Exception as e:
+        log_error(f"start_buffer_registration_by_url: {e}")
         return ToolResult(content=str(e))
 
 
@@ -269,9 +387,14 @@ def start_registration_by_url(run_context: RunContext, url: str) -> ToolResult:
 
         if not properties:
             log_warning(f"Nenhuma propriedade encontrada para lat={latitude}, lon={longitude}")
-            return (
-                "Peça desculpas ao usuário e informe que nenhuma propriedade foi encontrada nesta coordenada.\n"
-                "Peça que tente novamente e verificar se as coordenadas estão corretas."
+            fallback = _register_buffer_candidate(run_context, latitude=latitude, longitude=longitude)
+            if isinstance(fallback, ToolResult):
+                return fallback
+
+            _, img_bytes = fallback
+            return ToolResult(
+                content=_SICAR_MISS_BUFFER_FALLBACK_TEXT,
+                images=[Image(content=img_bytes)]
             )
 
         registered_map = {

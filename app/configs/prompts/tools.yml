@@ -318,18 +318,36 @@ property_tools:
   remove_all_properties:
     description: |
       Remove todas as propriedades registradas no sistema.
-  start_registration_by_buffer:
+  start_buffer_registration_by_coordinate:
     description: |
-      Iniciar o registro de uma nova área baseando-se em um ponto (coordenada)
-      e um raio em metros, gerando um buffer circular ao redor do ponto.
+      Iniciar o registro de uma nova área de buffer baseando-se em um ponto
+      (coordenada) e um raio em metros, gerando um buffer circular ao redor do ponto.
 
       Use esta ferramenta quando o usuário indicar um ponto de interesse no mapa
-      e quiser registrar a área ao redor dele, sem possuir um código CAR.
-      Nenhuma busca no CAR é realizada; a área é gerada localmente.
+      e quiser registrar a área ao redor dele, sem possuir um código CAR e sem
+      imóvel registrado na base do SICAR. Nenhuma busca no SICAR é realizada;
+      a área é gerada localmente.
 
       Args:
           latitude (float): Latitude em graus decimais do ponto central.
           longitude (float): Longitude em graus decimais do ponto central.
+          radius (int): Raio do buffer em metros (50 a 1000). Padrão: 200.
+
+      Returns:
+          ToolResult: Resultado contendo imagem e instruções para o próximo passo.
+  start_buffer_registration_by_url:
+    description: |
+      Iniciar o registro de uma nova área de buffer baseando-se na URL de
+      compartilhamento do Google Maps e em um raio em metros, gerando um buffer
+      circular ao redor do ponto indicado na URL.
+
+      Use esta ferramenta quando o usuário fornecer uma URL de compartilhamento
+      do Google Maps e quiser registrar a área ao redor do ponto, sem possuir um
+      código CAR e sem imóvel registrado na base do SICAR. Nenhuma busca no SICAR
+      é realizada; a área é gerada localmente.
+
+      Args:
+          url (str): URL de compartilhamento do Google Maps.
           radius (int): Raio do buffer em metros (50 a 1000). Padrão: 200.
 
       Returns:

@@ -323,18 +323,36 @@ property_tools:
   remove_all_properties:
     description: |
       Removes all properties registered in the system.
-  start_registration_by_buffer:
+  start_buffer_registration_by_coordinate:
     description: |
-      Starts the registration of a new area based on a point (coordinate) and a
-      radius in meters, generating a circular buffer around the point.
+      Starts the registration of a new buffer area based on a point (coordinate)
+      and a radius in meters, generating a circular buffer around the point.
 
       Use this tool when the user indicates a point of interest on the map and
-      wants to register the area around it, without owning a CAR code.
-      No CAR lookup is performed; the area is generated locally.
+      wants to register the area around it, without owning a CAR code and with
+      no feature in the SICAR database. No SICAR lookup is performed; the area
+      is generated locally.
 
       Args:
           latitude (float): Latitude in decimal degrees of the center point.
           longitude (float): Longitude in decimal degrees of the center point.
+          radius (int): Buffer radius in meters (50 to 1000). Defaults to 200.
+
+      Returns:
+          ToolResult: Result containing an image and instructions for the next step.
+  start_buffer_registration_by_url:
+    description: |
+      Starts the registration of a new buffer area based on a Google Maps
+      sharing URL and a radius in meters, generating a circular buffer around
+      the point indicated in the URL.
+
+      Use this tool when the user provides a Google Maps sharing URL and wants
+      to register the area around the point, without owning a CAR code and with
+      no feature in the SICAR database. No SICAR lookup is performed; the area
+      is generated locally.
+
+      Args:
+          url (str): Google Maps sharing URL.
           radius (int): Buffer radius in meters (50 to 1000). Defaults to 200.
 
       Returns:
