@@ -1,6 +1,17 @@
 import re
 import pytest
-from app.schemas.proactive_suggestion import ProactiveSuggestion
+
+from typing import Optional
+from pydantic import BaseModel, Field
+
+class ProactiveSuggestion(BaseModel):
+    main_response: str = Field(
+        description="Texto principal contendo o diagnóstico ou resposta base."
+    )
+    proactive_suggestion: Optional[str] = Field(
+        default=None,
+        description="Pergunta instigante, CTA ou sugestão de continuidade."
+    )
 
 def parse_proactive_response(text: str) -> ProactiveSuggestion:
     chunks = re.split(r'\s*\[PAUS[EA]\]\s*', text, maxsplit=1, flags=re.IGNORECASE)
