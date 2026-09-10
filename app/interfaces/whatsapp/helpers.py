@@ -1,7 +1,7 @@
 import io
 import mimetypes
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, List, Optional, Tuple, Union
 
 import httpx
@@ -9,6 +9,8 @@ import httpx
 from agno.utils.audio import pcm_to_wav_bytes
 from agno.utils.log import log_error, log_info, log_warning
 from agno.utils.media import get_image_type
+
+from app.guardrails.pii_gate import mascarar_pii, redigir_pii
 
 _BASE_URL = "https://graph.facebook.com"
 _API_VERSION = "v22.0"
@@ -59,15 +61,24 @@ class MessageContent:
     video_id: Optional[str] = None
     audio_id: Optional[str] = None
     doc_id: Optional[str] = None
+    # Tipos de dado pessoal removidos do texto, se houve algum.
+    pii_removida: list = field(default_factory=list)
+
+    def __post_init__(self):
+        # Redige aqui, e não em cada ramo do extract_message_content: o texto
+        # cru nunca chega ao log, ao Valkey nem ao banco. Vale para os ramos
+        # de hoje e para qualquer um que venha depois.
+        self.text, self.pii_removida = redigir_pii(self.text or "")
 
 
 def extract_message_content(message: dict) -> Optional[MessageContent]:
-    log_info(message)
+    # Mascarado: este log roda antes da redação, com o payload cru da Meta.
+    log_info(mascarar_pii(str(message)))
     msg_type = message.get("type")
 
     if msg_type == "text":
         text = message["text"]["body"]
-        log_info(text)
+        log_info(mascarar_pii(text))
         return MessageContent(text=text)
     
     if msg_type == "location":

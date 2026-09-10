@@ -8,6 +8,7 @@ from typing import List
 from agno.media import Image, Audio
 
 from app.configs.config import config
+from app.guardrails.pii_gate import redigir_pii
 from app.interfaces.streamlit.debug_helpers import extract_workflow_debug_data, extract_session_state
 from app.interfaces.streamlit.debug_panel import render_debug_panel
 from app.workflows.pasto_legal_workflow import pasto_legal_workflow
@@ -220,6 +221,11 @@ def process_uploaded_files(uploaded_files) -> List[str]:
     return file_paths
 
 if user_query:
+    # Mesma redação que o WhatsApp aplica no MessageContent.__post_init__.
+    # Sem isso o texto cru entra no workflow e fica gravado no campo `input`
+    # da run, que é persistido — o guardrail limpa depois, tarde demais.
+    user_query, _pii_removida = redigir_pii(user_query)
+
     st.session_state.messages.append({"role": "user", "content": user_query})
     with st.chat_message("user"):
         st.markdown(user_query)
