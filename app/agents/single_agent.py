@@ -34,6 +34,7 @@ from app.tools.property_tools import (
     start_registration_by_coordinate,
     start_registration_by_url,
 )
+from app.tools.persona_tools import update_persona_name, update_persona_role
 from app.tools.tts_tools import generate_speech
 from app.tools.weather_tools import (
     get_monthly_precipitation_forecast,
@@ -113,9 +114,11 @@ def get_tools(run_context: RunContext):
             start_registration_by_car,
             start_registration_by_coordinate,
             start_registration_by_buffer,
+            update_persona_name,
+            update_persona_role,
             *_ANALYST_TOOLS
         ])
-
+        
     return tools
 
 

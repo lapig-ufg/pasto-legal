@@ -4,6 +4,7 @@ from app.configs.config import config
 from app.configs.prompts import get_agent_config
 from app.tools.tts_tools import generate_speech
 from app.tools.onboarding_tools import accept_terms_and_conditions
+from app.tools.persona_tools import update_persona_name, update_persona_role
 
 
 _welcoming_config = get_agent_config("welcoming_agent")
@@ -18,7 +19,9 @@ welcoming_agent = Agent(
     ),
     tools=[
         generate_speech,
-        accept_terms_and_conditions
+        accept_terms_and_conditions,
+        update_persona_name,
+        update_persona_role
     ],
     model=config.model,
     fallback_models=[config.fallback_model],
