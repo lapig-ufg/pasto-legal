@@ -9,7 +9,7 @@ from agno.utils.log import log_debug
 from app.configs.config import config
 from app.configs.prompts import get_agent_config
 from app.knowledge.pasto_legal_kb import pasto_legal_kb
-from app.schemas.property_feature import validate_feature_record
+from app.schemas.feature import Feature, RegisteredFeatures
 from app.schemas.user_persona import UserPersona
 from app.tools.analysis_tools import (
     generate_biomass_image,
@@ -85,7 +85,7 @@ def get_tools(run_context: RunContext):
     # ==========================================
     if registration_state == "pending":
         candidate_properties = [
-            validate_feature_record(prop)
+            Feature.model_validate(prop)
             for prop in session_state.get("candidate_properties", [])
         ]
 
@@ -134,12 +134,15 @@ def _persona_text(session_state) -> str:
 
 
 def _registrations_text(session_state) -> str:
-    all_properties = [
-        validate_feature_record(record)
-        for record in session_state.get("all_properties", [])
-    ]
-    if all_properties:
-        return "\n".join(str(record) for record in all_properties)
+    registered_features = RegisteredFeatures(
+        features=[
+            Feature.model_validate(record)
+            for record in session_state.get("all_properties", [])
+        ]
+    )
+    prompt = registered_features.build_prompt()
+    if prompt:
+        return prompt
     return _agent_config["registrations_empty"].strip()
 
 
@@ -194,7 +197,7 @@ def get_instructions(run_context: RunContext) -> str:
     # ==========================================
     if registration_state == "pending":
         candidate_properties = [
-            validate_feature_record(prop)
+            Feature.model_validate(prop)
             for prop in session_state.get("candidate_properties", [])
         ]
 
@@ -228,7 +231,7 @@ def get_instructions(run_context: RunContext) -> str:
     # ==========================================
     elif registration_state == "final":
         candidate_properties = [
-            validate_feature_record(prop)
+            Feature.model_validate(prop)
             for prop in session_state.get("candidate_properties", [])
         ]
         candidate_text = str(candidate_properties[0]) if candidate_properties else _agent_config["final_candidate_fallback"].strip()

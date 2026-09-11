@@ -19,7 +19,7 @@ from app.services.geospatial.sicar import (
 from app.services.geospatial.image import create_vertical_mosaic
 from app.services.geospatial.gee import retrieve_feature_images
 from app.services.geospatial.geometry import build_buffered_area
-from app.schemas.property_feature import PropertyFeature, RuralProperty, BufferedArea, validate_feature_record
+from app.schemas.feature import Feature
 from app.utils.feature_utils import find_feature_record
 
 # Bounds of the buffer radius accepted by the buffer registration tools (meters).
@@ -43,9 +43,9 @@ def _register_buffer_candidate(
     latitude: float,
     longitude: float,
     radius: int = _DEFAULT_RADIUS_METERS,
-) -> tuple[BufferedArea, bytes] | ToolResult:
+) -> tuple[Feature, bytes] | ToolResult:
     """
-    Builds a BufferedArea candidate from a coordinate and radius, stores it in
+    Builds a buffer area candidate from a coordinate and radius, stores it in
     the session as the pending registration and renders its image.
 
     Shared by the buffer registration tools and by the SICAR tools fallback
@@ -53,15 +53,15 @@ def _register_buffer_candidate(
     radius bounds; callers must do it beforehand.
 
     Returns:
-        Tuple (BufferedArea, PNG image bytes) on success, or a ToolResult with
+        Tuple (Feature, PNG image bytes) on success, or a ToolResult with
         the error instructions on failure.
     """
     try:
-        buffered_area = build_buffered_area(latitude=latitude, longitude=longitude, radius=radius)
+        buffer_area = build_buffered_area(latitude=latitude, longitude=longitude, radius=radius)
 
-        imgs = retrieve_feature_images(buffered_area.get_coords())
+        imgs = retrieve_feature_images(buffer_area.get_coords())
 
-        run_context.session_state["candidate_properties"] = [buffered_area.model_dump()]
+        run_context.session_state["candidate_properties"] = [buffer_area.model_dump()]
 
         run_context.session_state["registration_state"] = "pending"
 
@@ -70,7 +70,7 @@ def _register_buffer_candidate(
         buffer_stream = BytesIO()
         img.save(buffer_stream, format="PNG")
 
-        return buffered_area, buffer_stream.getvalue()
+        return buffer_area, buffer_stream.getvalue()
     except Exception as e:
         log_error(f"_register_buffer_candidate: {e}")
         return ToolResult(content=str(e))
@@ -122,13 +122,15 @@ def start_registration_by_coordinate(run_context: RunContext, latitude: float, l
                 images=[Image(content=img_bytes)]
             )
 
-        registered_map = {prop["car_code"]: prop for prop in run_context.session_state.get("all_properties", [])}
+        registered_map = {
+            prop.get("feature_id"): prop
+            for prop in run_context.session_state.get("all_properties", [])
+        }
         for prop in properties:
-            car_code = prop.car_code
-            if car_code in registered_map:
-                record = registered_map[car_code]
-                property_record = RuralProperty.model_validate(record)
-                log_debug(f"Propriedade já registrada: {car_code}")
+            if prop.id in registered_map:
+                record = registered_map[prop.id]
+                property_record = Feature.model_validate(record)
+                log_debug(f"Propriedade já registrada: {prop.id}")
                 return ToolResult(content=str(property_record))
 
         imgs = retrieve_feature_images([prop.get_coords()[0] for prop in properties])
@@ -203,7 +205,6 @@ def start_registration_by_car(run_context: RunContext, car_codes: List[str]):
             )
 
         properties = fetch_property_by_car(car_codes=car_codes)
-        _property = RuralProperty.unify(properties)
 
         if not properties:
             log_warning(f"Nenhuma propriedade encontrada para CARs={car_codes}")
@@ -217,6 +218,8 @@ def start_registration_by_car(run_context: RunContext, car_codes: List[str]):
                     "(para o link) ou `start_buffer_registration_by_coordinate` (para as coordenadas)."
                 )
             )
+
+        _property = Feature.unify(properties)
 
         run_context.session_state["candidate_properties"] = [_property.model_dump()]
 
@@ -232,7 +235,7 @@ def start_registration_by_car(run_context: RunContext, car_codes: List[str]):
         run_context.session_state["registration_state"] = "pending"
 
         if len(properties) == 1:
-            log_debug(f"start_registration_by_car: 1 propriedade encontrada ({_property.car_code})")
+            log_debug(f"start_registration_by_car: 1 propriedade encontrada ({_property.get_metadata('car_code')})")
             return ToolResult(
                 content=(
                     f"Informe ao usuário que a seguinte propriedade foi encontrada:\n{result_text}\n"
@@ -241,7 +244,7 @@ def start_registration_by_car(run_context: RunContext, car_codes: List[str]):
                 )
 
         else:
-            log_debug(f"start_registration_by_car: {len(properties)} propriedades unificadas ({_property.car_code})")
+            log_debug(f"start_registration_by_car: {len(properties)} propriedades unificadas ({_property.get_metadata('car_code')})")
             return ToolResult(
                 content=(
                     f"Informe ao usuário que as seguintes propriedades foram encontrada:\n{result_text}\n"
@@ -282,11 +285,11 @@ def start_buffer_registration_by_coordinate(run_context: RunContext, latitude: f
         if isinstance(result, ToolResult):
             return result
 
-        buffered_area, img_bytes = result
+        buffer_area, img_bytes = result
 
-        result_text = f"> {buffered_area.describe()}"
+        result_text = f"> {buffer_area.describe()}"
 
-        log_debug(f"start_buffer_registration_by_coordinate: área gerada ({buffered_area.id}, {radius} m)")
+        log_debug(f"start_buffer_registration_by_coordinate: área gerada ({buffer_area.id}, {radius} m)")
         return ToolResult(
             content=f"Pergunte ao usuário se a seguinte área é a correta:\n{result_text}",
             images=[Image(content=img_bytes)]
@@ -339,11 +342,11 @@ def start_buffer_registration_by_url(run_context: RunContext, url: str, radius: 
         if isinstance(result, ToolResult):
             return result
 
-        buffered_area, img_bytes = result
+        buffer_area, img_bytes = result
 
-        result_text = f"> {buffered_area.describe()}"
+        result_text = f"> {buffer_area.describe()}"
 
-        log_debug(f"start_buffer_registration_by_url: área gerada ({buffered_area.id}, {radius} m)")
+        log_debug(f"start_buffer_registration_by_url: área gerada ({buffer_area.id}, {radius} m)")
         return ToolResult(
             content=f"Pergunte ao usuário se a seguinte área é a correta:\n{result_text}",
             images=[Image(content=img_bytes)]
@@ -398,15 +401,14 @@ def start_registration_by_url(run_context: RunContext, url: str) -> ToolResult:
             )
 
         registered_map = {
-            prop["car_code"]: prop
+            prop.get("feature_id"): prop
             for prop in run_context.session_state.get("all_properties", [])
         }
         for prop in properties:
-            car_code = prop.car_code
-            if car_code in registered_map:
-                record = registered_map[car_code]
-                property_record = RuralProperty.model_validate(record)
-                log_debug(f"Propriedade já registrada: {car_code}")
+            if prop.id in registered_map:
+                record = registered_map[prop.id]
+                property_record = Feature.model_validate(record)
+                log_debug(f"Propriedade já registrada: {prop.id}")
                 return ToolResult(content=str(property_record))
 
         imgs = retrieve_feature_images([prop.get_coords()[0] for prop in properties])
@@ -477,7 +479,7 @@ def select_car_from_list(run_context: RunContext, selection: int):
 
         run_context.session_state["registration_state"] = "final"
 
-        selected_id = validate_feature_record(selected_property).id
+        selected_id = Feature.model_validate(selected_property).id
         log_debug(f"select_car_from_list: feição {selected_id} selecionada")
         return ToolResult(
             content=(
@@ -510,7 +512,7 @@ def confirm_car_selection(run_context: RunContext):
         selected_property = candidate_properties[0]
         run_context.session_state['candidate_properties'] = [selected_property]
 
-        selected_id = validate_feature_record(selected_property).id
+        selected_id = Feature.model_validate(selected_property).id
         log_debug(f"confirm_car_selection: feição {selected_id} confirmada")
         return ToolResult(
             content=(
@@ -545,7 +547,7 @@ def complete_registration(run_context: RunContext, name: str):
         run_context.session_state["registration_state"] = None
         run_context.session_state['candidate_properties'] = None
 
-        registered_id = validate_feature_record(selected_property).id
+        registered_id = Feature.model_validate(selected_property).id
         log_debug(f"complete_registration: registro concluído ({registered_id})")
         return ToolResult(
             content=(
@@ -654,10 +656,10 @@ def remove_property(feature_id: str, run_context: RunContext) -> str:
 
             new_all_properties.append(prop)
 
-        removed_feature = validate_feature_record(target_record)
+        removed_feature = Feature.model_validate(target_record)
         selected_car = run_context.session_state.get('selected_property', None)
         if selected_car is not None:
-            selected_feature = validate_feature_record(selected_car)
+            selected_feature = Feature.model_validate(selected_car)
             if selected_feature.id == removed_feature.id:
                 run_context.session_state['selected_property'] = new_all_properties[-1] if new_all_properties else None
 

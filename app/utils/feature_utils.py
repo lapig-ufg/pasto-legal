@@ -1,26 +1,24 @@
 from agno.run import RunContext
 from agno.utils.log import log_warning
 
-from app.schemas.property_feature import PropertyFeature, validate_feature_record
+from app.schemas.feature import Feature
 
 
 def find_feature_record(run_context: RunContext, feature_id: str) -> dict | None:
     """
     Locates the raw record dict of a registered feature in the session state,
-    matching its ``id`` (CAR code for rural properties, generated id for
-    buffered areas).
+    matching its ``feature_id``.
     """
     all_properties = run_context.session_state.get("all_properties", [])
     for record in all_properties:
-        feature = validate_feature_record(record)
-        if feature.id == feature_id:
+        if record.get("feature_id") == feature_id:
             return record
     return None
 
 
-def resolve_feature(run_context: RunContext, feature_id: str) -> PropertyFeature | None:
+def resolve_feature(run_context: RunContext, feature_id: str) -> Feature | None:
     """
-    Resolves a registered feature by id into its typed PropertyFeature model.
+    Resolves a registered feature by id into its typed Feature model.
 
     Returns None when the feature_id is not registered in the session.
     """
@@ -28,4 +26,4 @@ def resolve_feature(run_context: RunContext, feature_id: str) -> PropertyFeature
     if record is None:
         log_warning(f"Nenhuma feição registrada encontrada para id={feature_id}")
         return None
-    return validate_feature_record(record)
+    return Feature.model_validate(record)

@@ -494,7 +494,7 @@ def generate_property_boletim(run_context: RunContext, feature_id: str) -> ToolR
         today = datetime.date.today()
 
         pasture_stats = query_pasture_statistics(coords=coords, month=today.month, year=today.year)
-        stats = PropertyStats(car_code=selected_property.id, list_pasture_stats=[pasture_stats])
+        stats = PropertyStats(car_code=selected_property.id or selected_property.get_metadata("car_code") or "", list_pasture_stats=[pasture_stats])
 
         location_image = retrieve_feature_images(coords)[0]
 

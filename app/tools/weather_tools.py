@@ -13,7 +13,7 @@ from agno.run import RunContext
 from agno.utils.log import log_debug, log_warning, log_error
 
 from app.configs.prompts import get_tool_description
-from app.schemas.property_feature import PropertyFeature
+from app.schemas.feature import Feature
 from app.utils.feature_utils import resolve_feature
 from app.services.geospatial.season_forecast import (
     get_dry_season_onset as _get_dry_season_onset,
@@ -44,7 +44,7 @@ def _daily_dates(daily) -> list[datetime.date]:
     return dates
 
 
-def _resolve_property(run_context: RunContext, feature_id: str) -> PropertyFeature:
+def _resolve_property(run_context: RunContext, feature_id: str) -> Feature:
     selected_property = resolve_feature(run_context, feature_id)
     if selected_property is None:
         raise ValueError(

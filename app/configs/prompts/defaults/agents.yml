@@ -91,7 +91,7 @@ single_agent:
   # Fallback text for the "final" state when no candidate is present.
   final_candidate_fallback: |
     Selected feature
-  # Display names of the feature types (keys come from the PropertyFeature
+  # Display names of the feature types (keys come from the Feature
   # subclasses and must not be renamed; translate only the values).
   feature_type_names:
     rural_property: "rural property"
