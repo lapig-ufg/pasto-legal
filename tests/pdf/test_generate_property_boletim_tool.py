@@ -11,14 +11,16 @@ mesmo não chamando o GEE de fato. Mesma ressalva de tests/ee_scripts/test_pastu
 from agno.run import RunContext
 
 from app.tools.analysis_tools import generate_property_boletim
-from app.schemas.feature import Feature, FeatureMetadata
+from app.schemas.feature import Feature, FeatureMetadata, RegisteredFeatures
 
 
 def _build_context_with_property(rural_property: Feature) -> RunContext:
     return RunContext(
         run_id="test-run",
         session_id="test-session",
-        session_state={"all_properties": [rural_property.model_dump()]},
+        session_state={
+            "all_properties": RegisteredFeatures(features=[rural_property]).model_dump()
+        },
     )
 
 

@@ -6,7 +6,11 @@ Testes unitários e herméticos do schema geral de feições (sem GEE, sem crede
 from agno.run import RunContext
 
 from app.schemas.feature import Feature, FeatureMetadata, RegisteredFeatures
-from app.utils.feature_utils import find_feature_record, resolve_feature
+from app.utils.feature_utils import (
+    get_registered_features,
+    resolve_feature,
+    set_registered_features,
+)
 
 
 _SQUARE_COORDS = [[[[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]]]]
@@ -65,7 +69,7 @@ def test_id_is_feature_id():
 def test_describe_includes_id_type_area_region_and_metadata():
     description = _build_rural_property().describe()
 
-    assert "Identificador: GO-5205703" in description
+    assert "Feature ID: GO-5205703" in description
     assert "Tipo: rural_property" in description
     assert "Área: 23.4674 ha" in description
     assert "Região: Corrego do Ouro" in description
@@ -136,12 +140,24 @@ def test_build_prompt_returns_empty_string_without_features():
     assert RegisteredFeatures(features=[]).build_prompt() == ""
 
 
+def test_registered_features_find_by_id():
+    registered = RegisteredFeatures(features=[_build_rural_property(), _build_buffer_area()])
+
+    found = registered.find_by_id("GO-5205703-5B18B6DF441C4B7FA9444DDC127CF6C0")
+
+    assert found is not None
+    assert found.feature_type == "rural_property"
+    assert registered.find_by_id("a1b2c3d4e5f6").feature_type == "buffer_area"
+    assert registered.find_by_id("missing") is None
+
+
 def test_feature_utils_resolves_registered_features_by_id():
     feature = _build_rural_property(feature_id="Fazenda Blue")
+    session_state = {"all_properties": RegisteredFeatures(features=[feature]).model_dump()}
     run_context = RunContext(
         run_id="test-run",
         session_id="test-session",
-        session_state={"all_properties": [feature.model_dump()]},
+        session_state=session_state,
     )
 
     resolved = resolve_feature(run_context, "Fazenda Blue")
@@ -149,5 +165,22 @@ def test_feature_utils_resolves_registered_features_by_id():
     assert resolved is not None
     assert resolved.id == "Fazenda Blue"
     assert resolved.feature_type == "rural_property"
-    assert find_feature_record(run_context, "Fazenda Blue") is not None
     assert resolve_feature(run_context, "missing") is None
+
+
+def test_get_registered_features_handles_missing_key():
+    assert get_registered_features({}).features == []
+
+
+def test_registered_features_accessors_round_trip():
+    feature = _build_rural_property(feature_id="Fazenda Blue")
+    session_state = {}
+    set_registered_features(session_state, RegisteredFeatures(features=[feature]))
+
+    # The stored value is a plain JSON-serializable dict.
+    assert isinstance(session_state["all_properties"], dict)
+    assert session_state["all_properties"]["features"][0]["feature_id"] == "Fazenda Blue"
+
+    rebuilt = get_registered_features(session_state)
+
+    assert rebuilt.find_by_id("Fazenda Blue") == feature

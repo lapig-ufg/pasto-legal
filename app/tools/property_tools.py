@@ -19,8 +19,8 @@ from app.services.geospatial.sicar import (
 from app.services.geospatial.image import create_vertical_mosaic
 from app.services.geospatial.gee import retrieve_feature_images
 from app.services.geospatial.geometry import build_buffered_area
-from app.schemas.feature import Feature
-from app.utils.feature_utils import find_feature_record
+from app.schemas.feature import Feature, RegisteredFeatures
+from app.utils.feature_utils import get_registered_features, set_registered_features
 
 # Bounds of the buffer radius accepted by the buffer registration tools (meters).
 _MIN_RADIUS_METERS = 50
@@ -122,16 +122,12 @@ def start_registration_by_coordinate(run_context: RunContext, latitude: float, l
                 images=[Image(content=img_bytes)]
             )
 
-        registered_map = {
-            prop.get("feature_id"): prop
-            for prop in run_context.session_state.get("all_properties", [])
-        }
+        registered_features = get_registered_features(run_context.session_state)
         for prop in properties:
-            if prop.id in registered_map:
-                record = registered_map[prop.id]
-                property_record = Feature.model_validate(record)
+            duplicate = registered_features.find_by_id(prop.id)
+            if duplicate is not None:
                 log_debug(f"Propriedade já registrada: {prop.id}")
-                return ToolResult(content=str(property_record))
+                return ToolResult(content=str(duplicate))
 
         imgs = retrieve_feature_images([prop.get_coords()[0] for prop in properties])
 
@@ -400,16 +396,12 @@ def start_registration_by_url(run_context: RunContext, url: str) -> ToolResult:
                 images=[Image(content=img_bytes)]
             )
 
-        registered_map = {
-            prop.get("feature_id"): prop
-            for prop in run_context.session_state.get("all_properties", [])
-        }
+        registered_features = get_registered_features(run_context.session_state)
         for prop in properties:
-            if prop.id in registered_map:
-                record = registered_map[prop.id]
-                property_record = Feature.model_validate(record)
+            duplicate = registered_features.find_by_id(prop.id)
+            if duplicate is not None:
                 log_debug(f"Propriedade já registrada: {prop.id}")
-                return ToolResult(content=str(property_record))
+                return ToolResult(content=str(duplicate))
 
         imgs = retrieve_feature_images([prop.get_coords()[0] for prop in properties])
 
@@ -536,37 +528,27 @@ def complete_registration(run_context: RunContext, name: str):
     try:
         candidate_properties = run_context.session_state.get('candidate_properties', None)
 
-        selected_property = candidate_properties[0]
         # The user-chosen name becomes the feature id.
-        selected_property["feature_id"] = name
+        registered_feature = Feature.model_validate(candidate_properties[0]).model_copy(
+            update={"feature_id": name}
+        )
 
-        all_properties = run_context.session_state.get("all_properties", [])
-        all_properties.append(selected_property)
+        registered_features = get_registered_features(run_context.session_state)
+        registered_features.features.append(registered_feature)
+        set_registered_features(run_context.session_state, registered_features)
 
-        run_context.session_state["all_properties"] = all_properties
         run_context.session_state["registration_state"] = None
         run_context.session_state['candidate_properties'] = None
 
-        registered_id = Feature.model_validate(selected_property).id
+        registered_id = registered_feature.id
         log_debug(f"complete_registration: registro concluído ({registered_id})")
         return ToolResult(
             content=(
                 "Propriedade registrada com sucesso."
                 f"\nNome: {name}"
-                f"\nIdentificador: {registered_id}\n\n"
+                f"\nFeature ID: {registered_id}\n\n"
                 "INSTRUÇÃO AO AGENTE: O cadastro foi concluído. Agora você deve entregar "
-                "ao usuário o primeiro diagnóstico da propriedade. Para isso:"
-                "\n1. Chame imediatamente a ferramenta `get_pasture_stats` passando o "
-                f"identificador `{registered_id}`."
-                "\n2. Com os dados retornados, escreva UM único parágrafo contínuo (2 a 3 "
-                "frases fluidas, sem bullet points, títulos ou quebras de linha) confirmando "
-                "o cadastro e entregando um insight valioso cruzando as métricas "
-                "(oportunidade / alerta de degradação / subutilização)."
-                "\n3. Cite no máximo 1 ou 2 dados reais (ex: área total em hectares ou idade "
-                "do pasto) para dar embasamento sem jargões."
-                "\n4. Use no máximo 1 ou 2 emojis discretos no final."
-                "\n5. Finalize com UMA única pergunta-CTA instigante focada num problema "
-                "financeiro ou de manejo (ex: calcular Unidade Animal / capacidade de suporte)."
+                "ao usuário o primeiro diagnóstico da propriedade."
             )
         )
     except Exception as e:
@@ -604,20 +586,17 @@ def set_property_name(run_context: RunContext, feature_id: str, name: str):
     """
     log_debug(f"set_property_name: feature_id={feature_id}, name={name}")
     try:
-        all_properties: List[dict] = run_context.session_state.get('all_properties', [])
-        selected_property = find_feature_record(run_context, feature_id)
+        registered_features = get_registered_features(run_context.session_state)
 
-        if selected_property is None:
+        target = registered_features.find_by_id(feature_id)
+        if target is None:
             log_warning(f"Propriedade não encontrada para renomear: {feature_id}")
             return ToolResult(content="Não foi possível registrar o nome da propriedade.")
 
-        updated_selected_property = selected_property
-        # The new name replaces the feature id.
-        updated_selected_property["feature_id"] = name
-
-        all_properties.remove(selected_property)
-        all_properties.append(updated_selected_property)
-        run_context.session_state["all_properties"] = all_properties
+        # The new name replaces the feature id, keeping the record position.
+        index = registered_features.features.index(target)
+        registered_features.features[index] = target.model_copy(update={"feature_id": name})
+        set_registered_features(run_context.session_state, registered_features)
 
         log_debug(f"set_property_name: nome atualizado ({feature_id} -> {name})")
         return ToolResult(
@@ -641,29 +620,29 @@ def remove_property(feature_id: str, run_context: RunContext) -> str:
     """
     log_debug(f"remove_property: feature_id={feature_id}")
     try:
-        all_properties = run_context.session_state.get('all_properties', [])
+        registered_features = get_registered_features(run_context.session_state)
 
-        target_record = find_feature_record(run_context, feature_id)
+        removed_feature = registered_features.find_by_id(feature_id)
 
-        if target_record is None:
+        if removed_feature is None:
             log_warning(f"Propriedade não encontrada para remoção: {feature_id}")
             return "A propriedade não foi encontrada no sistema."
 
-        new_all_properties = []
-        for prop in all_properties:
-            if prop is target_record:
-                continue
+        remaining_features = [
+            feature
+            for feature in registered_features.features
+            if feature.feature_id != feature_id
+        ]
+        registered_features.features = remaining_features
+        set_registered_features(run_context.session_state, registered_features)
 
-            new_all_properties.append(prop)
-
-        removed_feature = Feature.model_validate(target_record)
         selected_car = run_context.session_state.get('selected_property', None)
         if selected_car is not None:
             selected_feature = Feature.model_validate(selected_car)
             if selected_feature.id == removed_feature.id:
-                run_context.session_state['selected_property'] = new_all_properties[-1] if new_all_properties else None
-
-        run_context.session_state['all_properties'] = new_all_properties
+                run_context.session_state['selected_property'] = (
+                    remaining_features[-1].model_dump() if remaining_features else None
+                )
 
         log_debug(f"remove_property: feição {feature_id} removida")
         return "A propriedade foi removida com sucesso."
@@ -679,7 +658,7 @@ def remove_all_properties(run_context: RunContext) -> str:
     """
     log_debug("remove_all_properties")
     try:
-        run_context.session_state['all_properties'] = []
+        set_registered_features(run_context.session_state, RegisteredFeatures())
         run_context.session_state['selected_property'] = None
 
         log_debug("remove_all_properties: todas as propriedades removidas")

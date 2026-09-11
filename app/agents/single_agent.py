@@ -9,8 +9,9 @@ from agno.utils.log import log_debug
 from app.configs.config import config
 from app.configs.prompts import get_agent_config
 from app.knowledge.pasto_legal_kb import pasto_legal_kb
-from app.schemas.feature import Feature, RegisteredFeatures
+from app.schemas.feature import Feature
 from app.schemas.user_persona import UserPersona
+from app.utils.feature_utils import get_registered_features
 from app.tools.analysis_tools import (
     generate_biomass_image,
     generate_biomass_video,
@@ -134,13 +135,7 @@ def _persona_text(session_state) -> str:
 
 
 def _registrations_text(session_state) -> str:
-    registered_features = RegisteredFeatures(
-        features=[
-            Feature.model_validate(record)
-            for record in session_state.get("all_properties", [])
-        ]
-    )
-    prompt = registered_features.build_prompt()
+    prompt = get_registered_features(session_state).build_prompt()
     if prompt:
         return prompt
     return _agent_config["registrations_empty"].strip()

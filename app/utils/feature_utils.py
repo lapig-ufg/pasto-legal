@@ -1,29 +1,38 @@
 from agno.run import RunContext
 from agno.utils.log import log_warning
 
-from app.schemas.feature import Feature
+from app.schemas.feature import Feature, RegisteredFeatures
 
 
-def find_feature_record(run_context: RunContext, feature_id: str) -> dict | None:
+def get_registered_features(session_state) -> RegisteredFeatures:
     """
-    Locates the raw record dict of a registered feature in the session state,
-    matching its ``feature_id``.
+    Reads the registered features from the session state.
+
+    ``all_properties`` stores the serialized form of a RegisteredFeatures
+    model (plain dict) so agno can persist the session as JSON; this
+    accessor rebuilds the typed model on every read.
     """
-    all_properties = run_context.session_state.get("all_properties", [])
-    for record in all_properties:
-        if record.get("feature_id") == feature_id:
-            return record
-    return None
+    value = session_state.get("all_properties")
+    if value is None:
+        return RegisteredFeatures()
+    return RegisteredFeatures.model_validate(value)
+
+
+def set_registered_features(session_state, registered: RegisteredFeatures) -> None:
+    """
+    Writes the registered features back to the session state as a plain
+    dict (the serialized RegisteredFeatures form).
+    """
+    session_state["all_properties"] = registered.model_dump()
 
 
 def resolve_feature(run_context: RunContext, feature_id: str) -> Feature | None:
     """
-    Resolves a registered feature by id into its typed Feature model.
+    Resolves a registered feature by id.
 
     Returns None when the feature_id is not registered in the session.
     """
-    record = find_feature_record(run_context, feature_id)
-    if record is None:
+    feature = get_registered_features(run_context.session_state).find_by_id(feature_id)
+    if feature is None:
         log_warning(f"Nenhuma feição registrada encontrada para id={feature_id}")
-        return None
-    return Feature.model_validate(record)
+    return feature

@@ -153,7 +153,7 @@ class Feature(BaseModel):
         region = f", Região: {self.region}" if self.region else ""
         metadata = f", {details}" if details else ""
         return (
-            f"Identificador: {self.id}, "
+            f"Feature ID: {self.id}, "
             f"Tipo: {self.feature_type}, "
             f"Área: {self.total_area} ha.{region}{metadata}"
         )
@@ -207,6 +207,13 @@ class RegisteredFeatures(BaseModel):
         default_factory=list,
         description="Feições registradas no sistema."
     )
+
+    def find_by_id(self, feature_id: str) -> Optional[Feature]:
+        """Returns the registered feature matching ``feature_id``, or None."""
+        return next(
+            (feature for feature in self.features if feature.feature_id == feature_id),
+            None,
+        )
 
     def build_prompt(self) -> str:
         """Builds a prompt describing every registered feature, clustered
