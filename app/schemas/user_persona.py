@@ -36,7 +36,7 @@ class UserPersona(BaseModel):
         description="Lista de preferências exclusivamente focadas em como o agente deve interagir e formatar as respostas."
     )
 
-def __str__(self) -> str:
+    def __str__(self) -> str:
         preferences_text = "".join(
             f"\n- {pref.key.title()}: {pref.description}" for pref in self.communication_preferences
         )
