@@ -1,5 +1,4 @@
 import os
-import re
 import uuid
 import json
 import tempfile
@@ -8,9 +7,12 @@ import streamlit as st
 from typing import List
 from agno.media import Image, Audio
 
-from app.agents.main_team import pasto_legal_team
+from app.configs.config import config
+from app.interfaces.streamlit.debug_helpers import extract_workflow_debug_data, extract_session_state
+from app.interfaces.streamlit.debug_panel import render_debug_panel
+from app.workflows.pasto_legal_workflow import pasto_legal_workflow
 
-st.set_page_config(page_title="Pasto Legal", page_icon="🐂")
+st.set_page_config(page_title="Pasto Legal", page_icon="P")
 
 DB_FILE = "users_db.json"
 
@@ -50,6 +52,14 @@ def logout():
     st.session_state["user_name"] = None
     st.session_state["messages"] = []
 
+    # Clear debug state
+    st.session_state.debug_log = []
+    st.session_state.debug_session_state = {}
+    st.session_state.debug_agent_routing = []
+    st.session_state.debug_tool_calls = []
+    st.session_state.debug_metrics = []
+    st.session_state.debug_messages = []
+
     st.rerun()
 
 # ==================== TELA DE LOGIN ====================
@@ -58,13 +68,13 @@ if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
 if not st.session_state["logged_in"]:
-    st.title("🔐 Login - Pasto Legal")
+    st.title("Login - Pasto Legal")
 
     col1, col2, col3 = st.columns(3)
 
     # 1. Lista de Usuários Armazenados
     with col1:
-        st.subheader("📂 Histórico")
+        st.subheader("Historico")
         stored_users = get_users()
         
         if stored_users:
@@ -75,7 +85,7 @@ if not st.session_state["logged_in"]:
             )
             
             if st.button("Entrar"):
-                login_user(selected_obj['id'], selected_obj['name'])
+                login_user(selected_obj['id'], selected_obj['nickname'])
         else:
             st.info("Vazio")
 
@@ -94,7 +104,7 @@ if not st.session_state["logged_in"]:
 
     # 3. Entrar Anonimamente
     with col3:
-        st.subheader("🕵️ Anônimo")
+        st.subheader("Anonimo")
         if st.button("Entrar Anonimamente"):
             anon_id = str(uuid.uuid4())
             login_user(anon_id, "Visitante Anônimo")
@@ -107,27 +117,85 @@ if not st.session_state["logged_in"]:
 
 with st.sidebar:
     st.sidebar.title("Configurações")
-    st.write(f"👤 **Usuário:** {st.session_state.get('user_name', 'Desconhecido')}")
+    st.write(f"**Usuario:** {st.session_state.get('user_name', 'Desconhecido')}")
     st.caption(f"ID: {st.session_state['session_id']}")
     st.divider()
     if st.button("Sair / Trocar Usuário"):
         logout()
 
-st.title(f"🐂 Olá, {st.session_state.get('user_name', '')}")
+    # Debug panel (only available in debug mode)
+    if config.DEBUG_MODE:
+        st.divider()
+        st.session_state.debug_mode_enabled = st.toggle(
+            "Debug Mode",
+            value=st.session_state.get("debug_mode_enabled", True),
+            key="debug_mode_toggle",
+        )
+        if st.session_state.debug_mode_enabled:
+            render_debug_panel()
+
+st.title(f"Ola, {st.session_state.get('user_name', '')}")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# Debug state initialization
+if "debug_log" not in st.session_state:
+    st.session_state.debug_log = []
+if "debug_session_state" not in st.session_state:
+    st.session_state.debug_session_state = {}
+if "debug_agent_routing" not in st.session_state:
+    st.session_state.debug_agent_routing = []
+if "debug_tool_calls" not in st.session_state:
+    st.session_state.debug_tool_calls = []
+if "debug_metrics" not in st.session_state:
+    st.session_state.debug_metrics = []
+if "debug_messages" not in st.session_state:
+    st.session_state.debug_messages = []
+
 # Exibe mensagens anteriores
-for message in st.session_state.messages:
+import re
+for msg_idx, message in enumerate(st.session_state.messages):
     with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+        # A variável precisa nascer aqui para TODAS as mensagens
+        proactive_text = None 
+        
+        if message["role"] == "assistant" and message.get("content"):
+            chunks = [c.strip() for c in re.split(r'\s*\[PAUS[EA]\]\s*', message["content"], maxsplit=1, flags=re.IGNORECASE) if c.strip()]
+            if chunks:
+                st.markdown(chunks[0])
+                if len(chunks) > 1:
+                    proactive_text = chunks[1]
+            else:
+                st.markdown(message["content"])
+        else:
+            st.markdown(message["content"])
+        
         if "images" in message:
             for img in message["images"]:
-                st.image(img, use_container_width=True)
+                if img is not None:
+                    st.image(img, use_container_width=True)
+        if "videos" in message:
+            for vid in message["videos"]:
+                if vid is not None:
+                    st.video(vid, format="video/mp4")
         if "audio" in message:
             for aud in message["audio"]:
-                st.audio(aud)
+                if aud is not None:
+                    st.audio(aud, format="audio/ogg")
+        if "files" in message:
+            for file_idx, f in enumerate(message["files"]):
+                st.download_button(
+                    label=f"Baixar {f['name'] or 'arquivo'}",
+                    data=f["content"],
+                    file_name=f["name"] or f"arquivo_{file_idx}.pdf",
+                    mime=f["mime_type"] or "application/octet-stream",
+                    key=f"dl_hist_{msg_idx}_{file_idx}",
+                )
+        
+    
+        if proactive_text:
+            st.info(f"💡 {proactive_text}")
 
 # Inputs do usuário
 if 'file_uploader_key' not in st.session_state:
@@ -144,7 +212,7 @@ if "audio_uploader_key" not in st.session_state:
     st.session_state.audio_uploader_key = 0
 
 audio_input_value = st.audio_input(
-    "🎤 Gravar áudio",
+    "Gravar audio",
     key=f"audio_uploader_{st.session_state.audio_uploader_key}",
     )
 
@@ -152,12 +220,12 @@ chat_input_value = st.chat_input("Pergunte sobre pastagem...")
 
 col_btn, _ = st.columns([0.4, 0.6])
 with col_btn:
-    loc_input_value = st.button("📍 Enviar Localização da Propriedade")
+    loc_input_value = st.button("Enviar Localizacao da Propriedade")
 
 user_query = None
 
 if loc_input_value:
-    user_query = """Minhas coordenadas são Lat: -15.82994 S Long: -49.43353."""
+    user_query = """Minhas coordenadas são 2°46'32.94"S 48°31'41.74"W."""
 elif chat_input_value:
     user_query = chat_input_value
 elif audio_input_value:
@@ -197,6 +265,7 @@ if user_query:
         
         full_response = ""
         response = None
+        audio_to_display = []
         
         try:
             run_kwargs = {
@@ -213,94 +282,77 @@ if user_query:
 
             # TODO: Implementar files.
             with st.spinner("Analisando dados e gerando resposta..."):
-                response = pasto_legal_team.run(**run_kwargs)
+                response = pasto_legal_workflow.run(**run_kwargs)
             
             if hasattr(response, 'content'):
                 full_response = response.content
             else:
-                full_response = str(response)
+                full_response = "Erro"#str(response)
+
+            # Extract and store debug data
+            try:
+                debug_data = extract_workflow_debug_data(
+                    response=response,
+                    session_id=st.session_state.session_id,
+                    user_query=user_query,
+                )
+                st.session_state.debug_log.append(debug_data)
+                st.session_state.debug_agent_routing.extend(debug_data.get("agent_routing_trace", []))
+                st.session_state.debug_tool_calls.extend(debug_data.get("tool_calls_log", []))
+                st.session_state.debug_metrics.append(debug_data.get("metrics_summary", {}))
+                st.session_state.debug_messages.extend(debug_data.get("message_history", []))
+
+                # Get live session state from the workflow
+                try:
+                    live_state = pasto_legal_workflow.get_session_state(
+                        session_id=st.session_state.session_id
+                    )
+                    if live_state:
+                        st.session_state.debug_session_state = extract_session_state(live_state)
+                    else:
+                        st.session_state.debug_session_state = debug_data.get("session_state", {})
+                except Exception:
+                    st.session_state.debug_session_state = debug_data.get("session_state", {})
+            except Exception:
+                import traceback
+                traceback.print_exc()
 
             if response and response.images:
                 for img in response.images:
-                    st.image(img.content, use_container_width=True)
-
+                    if img.content is not None:
+                        st.image(img.content, use_container_width=True)
+            if response and getattr(response, 'videos', None):
+                for vid in response.videos:
+                    if vid.content is not None:
+                        st.video(vid.content, format="video/mp4")
             audio_to_display = []
             if response and hasattr(response, 'audio') and response.audio:
                 audio_to_display.extend(response.audio)
-            
-            # Tenta extrair áudio de tools_output se a lista principal estiver vazia
-            if not audio_to_display and hasattr(response, 'tools_output'):
-                for tool_out in response.tools_output:
-                    # Verifica se é dicionário
-                    if isinstance(tool_out, dict) and 'audio' in tool_out:
-                        audio_to_display.extend(tool_out['audio'])
-                    # Verifica se é objeto (ToolResult/ToolOutput)
-                    elif hasattr(tool_out, 'audio') and tool_out.audio:
-                        audio_to_display.extend(tool_out.audio)
+                for aud in audio_to_display:
+                    if getattr(aud, 'filepath', None):
+                        st.audio(str(aud.filepath), format="audio/ogg")
 
-            # REGEX: Extração de caminhos de áudio do texto (incluindo padrões tipo path=... ou filepath=...)
-            # Procura por caminhos Windows ou caminhos relativos/unix que terminam em extensões de áudio
-            audio_patterns = [
-                r'(?:path|filepath)\s*=\s*[\'"]?([a-zA-Z]:\\[^\s\(\)\[\]\'",]+?\.(?:ogg|mp3|wav))[\'"]?',
-                r'([a-zA-Z]:\\[^\s\(\)\[\]\'",]+?\.(?:ogg|mp3|wav))'
-            ]
-            
-            # DEBUG: Visualizar o que está acontecendo
-            with st.expander("Debug: Regex de Áudio"):
-                st.write("Regex Patterns:", audio_patterns)
-                st.code(full_response, language='text')
-
-            for pattern in audio_patterns:
-                matches = re.findall(pattern, full_response, re.IGNORECASE)
-                if matches:
-                    with st.expander(f"Debug: Matches encontrados ({pattern})"):
-                        st.write(matches)
-
-                for path in matches:
-                    # Limpa possíveis aspas residuais ou espaços
-                    clean_path = path.strip().strip("'").strip('"')
-                    
-                    if os.path.exists(clean_path):
-                         # Evita duplicatas
-                         current_paths = [getattr(a, 'filepath', getattr(a, 'path', '')) for a in audio_to_display]
-                         # Handle dicts in current_paths (audio_to_display can have dicts now)
-                         current_path_strings = []
-                         for cp in audio_to_display:
-                             if isinstance(cp, dict):
-                                 current_path_strings.append(cp.get('filepath') or cp.get('path'))
-                             else:
-                                 current_path_strings.append(getattr(cp, 'filepath', getattr(cp, 'path', '')))
-
-                         if clean_path not in current_path_strings:
-                            audio_to_display.append({'filepath': clean_path})
-                    else:
-                         with st.expander("Debug: Arquivo não encontrado"):
-                             st.write(f"Path extraído mas não existe: {clean_path}")
-
-            if audio_to_display:
-                for audio_item in audio_to_display:
-                    if isinstance(audio_item, dict):
-                        path = audio_item.get('filepath') or audio_item.get('path')
-                        content = audio_item.get('content')
-                        if path: st.audio(path)
-                        elif content: st.audio(content)
-                    else:
-                        if hasattr(audio_item, 'filepath') and audio_item.filepath:
-                            st.audio(audio_item.filepath)
-                        elif hasattr(audio_item, 'path') and audio_item.path:
-                            st.audio(audio_item.path)
-                        elif hasattr(audio_item, 'content') and audio_item.content:
-                            st.audio(audio_item.content)
-            
-            # Debug: Mostra atributos da resposta se não houver áudio
-            if not response.audio:
-                with st.expander("Debug: Resposta do Agente"):
-                    st.write("Atributos:", dir(response))
-                    if hasattr(response, 'tools_output'):
-                        st.write("Tools Output:", response.tools_output)
+            if response and getattr(response, 'files', None):
+                for file_idx, f in enumerate(response.files):
+                    if f.content:
+                        st.download_button(
+                            label=f"Baixar {f.name or 'arquivo'}",
+                            data=f.content,
+                            file_name=f.name or f"arquivo_{file_idx}.{f.format or 'bin'}",
+                            mime=f.mime_type or "application/octet-stream",
+                            key=f"dl_{st.session_state.session_id}_{len(st.session_state.messages)}_{file_idx}",
+                        )
             
             # Exibe a resposta final
-            message_placeholder.markdown(full_response)
+            import re
+            chunks = [c.strip() for c in re.split(r'\s*\[PAUS[EA]\]\s*', full_response, maxsplit=1, flags=re.IGNORECASE) if c.strip()]
+            
+            if chunks:
+                message_placeholder.markdown(chunks[0])
+                if len(chunks) > 1:
+                    st.info(f"💡 {chunks[1]}")
+            else:
+                message_placeholder.markdown(full_response)
 
         except Exception as e:
             import traceback
@@ -319,21 +371,19 @@ if user_query:
         if response:
             if response.images:
                 new_message["images"] = [img.content for img in response.images]
+            if getattr(response, 'videos', None):
+                new_message["videos"] = [
+                    vid.content for vid in response.videos if vid.content
+                ]
             if audio_to_display:
-                new_message["audio"] = []
-                for aud in audio_to_display:
-                    if isinstance(aud, dict):
-                        path = aud.get('filepath') or aud.get('path')
-                        content = aud.get('content')
-                        if path: new_message["audio"].append(path)
-                        elif content: new_message["audio"].append(content)
-                    else:
-                        if hasattr(aud, 'filepath') and aud.filepath:
-                            new_message["audio"].append(aud.filepath)
-                        elif hasattr(aud, 'path') and aud.path:
-                            new_message["audio"].append(aud.path)
-                        elif hasattr(aud, 'content') and aud.content:
-                            new_message["audio"].append(aud.content)
+                new_message["audio"] = [
+                    str(aud.filepath) for aud in audio_to_display if getattr(aud, 'filepath', None)
+                ]
+            if getattr(response, 'files', None):
+                new_message["files"] = [
+                    {"content": f.content, "name": f.name, "mime_type": f.mime_type}
+                    for f in response.files if f.content
+                ]
         
         st.session_state.messages.append(new_message)
 

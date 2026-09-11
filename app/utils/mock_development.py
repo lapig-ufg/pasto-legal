@@ -11,7 +11,7 @@ def mock_property():
         @wraps(func)
         def wrapper(*args, **kwargs):
             if config.APP_ENV == "development":
-                from app.utils.scripts.sicar_scripts import _map_feature_to_property_record
+                from app.services.geospatial.sicar import _map_feature_to_property_record
 
                 print(f"⚠️  [MOCK] Ignorando execução de: {func.__name__}", flush=True)
                 

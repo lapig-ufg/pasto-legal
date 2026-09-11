@@ -3,6 +3,9 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# Application logs (mounted from ./logs:/app/logs in Docker)
+logs/
+
 # C extensions
 *.so
 
@@ -156,6 +159,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+venv312/
 
 # Spyder project settings
 .spyderproject
@@ -223,3 +227,9 @@ data/
 global-pasture-watch-f46d09d13b4e.json
 users_db.json
 phone_numbers.in
+
+# Notas de desenvolvimento
+COMANDOS.md
+ai_project_memory.md
+EXPLICACAO.md
+RESPOSTA_ISSUE.md

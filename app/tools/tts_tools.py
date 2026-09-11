@@ -1,126 +1,42 @@
-import os
-import uuid
-import base64
-import wave
-from pathlib import Path
-from agno.tools import Toolkit
-from agno.tools.function import ToolResult
+"""Agent-facing TTS tool shim.
+
+This is a lightweight agno ``@tool`` that tags the agent response with an
+``Audio`` carrying only the transcript — it does NOT synthesize audio here.
+The actual speech synthesis happens once, at the end of the run, in
+``app.steps.input.final_output._final_output`` (and the PII guardrail), which
+call the real implementation in ``app.services.audio.tts.generate_speech``.
+
+Keeping this as a shim lets the agent "claim" it produced audio so the
+workflow knows to synthesize speech for that turn, without paying the
+synthesis cost on every intermediate agent step.
+"""
+
 from agno.media import Audio
-from google import genai
+from agno.tools import tool
+from agno.tools.function import ToolResult
+from agno.utils.log import log_debug, log_error
 
-class AudioGenerator(Toolkit):
-    def __init__(self):
-        super().__init__(name="audio_generator", stop_after_tool_call_tools=["generate_speech"])
-        
+from app.configs.prompts import get_tool_description
 
-    def generate_speech(self, text: str, user_id: str = "default") -> ToolResult:
-        """
-        Generates audio speech from the given text using Google's Gemini model.
-        
-        It must be called last; this will terminate the processing and send response to user.
-        
-        Args:
-            text (str): The text to be converted into speech.
-            
-        Returns:
-            ToolResult: The result containing the message and the audio media.
-        """
-        try:
-            client = genai.Client()
-            print("Generating speech with Gemini 3.1...", flush=True)
-            print(text, flush=True)
-            
-            # Estrutura o prompt definindo o 'Locutor' para casar com o speech_config
-            prompt = f"Diga de forma simples e direta, use o sotaque muito leve e girias do contexto agro: {text}"
-            
-            # Nova chamada de TTS utilizando client.interactions.create
-            interaction = client.interactions.create(
-                model="gemini-3.1-flash-tts-preview",
-                input=prompt,
-                response_format={"type": "audio"},
-                generation_config={
-                    "speech_config": [
-                        {"voice": "Kore"}
-                    ]
-                }
-            )
 
-            print("Gerou o áudio com sucesso!", flush=True)
-            
-            if interaction.output_audio and interaction.output_audio.data:
-                # O novo formato retorna o PCM codificado em base64 diretamente aqui
-                audio_bytes = base64.b64decode(interaction.output_audio.data)
-                
-                # Cálculo dos caminhos de diretório
-                script_dir = Path(__file__).parent.absolute()
-                project_root = script_dir.parent.parent
-                
-                storage_dir = project_root / "tmp" / "audio" / user_id
-                storage_dir.mkdir(parents=True, exist_ok=True)
-                
-                filename = f"speech{uuid.uuid4().hex[:8]}.wav"
-                file_path = storage_dir / filename
-                
-                # Grava o arquivo WAV temporário a partir do PCM retornado
-                framerate = 24000  # Taxa padrão do Gemini TTS
-                with wave.open(str(file_path), "wb") as wav_file:
-                    wav_file.setnchannels(1)      # Mono
-                    wav_file.setsampwidth(2)     # 16-bit
-                    wav_file.setframerate(framerate)
-                    wav_file.writeframes(audio_bytes)
-                
-                # --- Configuração do ambiente FFMPEG para conversão ---
-                ffmpeg_env_path = os.getenv("FFMPEG_PATH")
-                if ffmpeg_env_path:
-                    os.environ["PATH"] += os.pathsep + ffmpeg_env_path
+@tool(description=get_tool_description("tts_tools", "generate_speech"))
+def generate_speech(text: str) -> ToolResult:
+    """
+    Gera áudio falado (conversão de texto em fala) a partir de um texto fornecido.
 
-                if os.name == 'nt' and not ffmpeg_env_path:
-                    default_win_path = r"C:\Users\Solved-Blerys-Win\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.0.1-full_build\bin"
-                    if os.path.exists(default_win_path):
-                        os.environ["PATH"] += os.pathsep + default_win_path
-                
-                # --- Conversão de WAV para OGG usando Pydub ---
-                try:
-                    from pydub import AudioSegment
-                    # Carrega o arquivo WAV gerado
-                    audio = AudioSegment.from_wav(str(file_path))
-                    
-                    # Define o novo caminho com a extensão .ogg
-                    ogg_path = file_path.with_suffix(".ogg")
-                    
-                    # Exporta em OGG com o codec libopus (ideal para WhatsApp)
-                    audio.export(str(ogg_path), format="ogg", codec="libopus")
-                    
-                    # Remove o WAV temporário para poupar espaço
-                    os.remove(file_path)
-                    
-                    # Atualiza o ponteiro do arquivo final para o OGG
-                    file_path = ogg_path
+    QUANDO USAR:
+    - Chame esta ferramenta APENAS quando o usuário solicitar explicitamente uma resposta em áudio ou voz.
+    - Chame esta ferramenta se a sessão atual ou a preferência do sistema exigir respostas em áudio.
 
-                    result = ToolResult(
-                        content=text,
-                        audios=[Audio(filepath=str(file_path), mime_type="audio/ogg")]
-                    )
+    Args:
+        text (str): O texto completo do conteúdo.
 
-                    return result
-                    
-                except ImportError:
-                    print("pydub não instalado. Retornando arquivo em WAV.")
-                except Exception as e:
-                    print(f"Falha na conversão do áudio: {e}. Retornando arquivo em WAV.")
-                
-                result = ToolResult(
-                    content=text,
-                    audios=[Audio(filepath=str(file_path), mime_type="audio/ogg")]
-                )
-
-                print(f"DEBUG ToolResult: {result}", flush=True)
-                return result
-                        
-            return ToolResult(content="Falha ao gerar o conteúdo de áudio.")
-            
-        except Exception as e:
-            return ToolResult(content=f"Erro ao gerar fala: {str(e)}")
-
-audio_gen = AudioGenerator()
-audioTTS = audio_gen.generate_speech
+    Returns:
+        ToolResult: Objeto de resultado contendo a fala gerada.
+    """
+    log_debug("generate_speech: marcando turn para síntese de áudio")
+    try:
+        return ToolResult(content="Áudio gerado com sucesso!", audios=[Audio(content=bytes(), transcript=text)])
+    except Exception as e:
+        log_error(f"generate_speech: {e}")
+        return ToolResult(content=f"Erro ao gerar áudio: {str(e)}")

@@ -1,0 +1,48 @@
+# =============================================================================
+# Hook texts (runtime source of truth).
+#
+# User-facing/system messages returned or injected by the validation hooks in
+# app/hooks/. Moved 1:1 from the Python files — translate/adjust them to
+# localize the product.
+# =============================================================================
+
+pre_hooks:
+  # validate_phone_authorization: production message (replaces the user input).
+  unauthorized_production: "O usuário não está autorizado a usar o sistema. Não responda nada do que ele perguntou antes. Sua ÚNICA tarefa agora é infomar o usuário que:- Esta é uma versão de Alpha com acesso restrito. - Para ter solicitar acesso é necessário preencher o formulário em: forms.gle/sKqngW7UvjmSJFKk8."
+  # validate_phone_authorization: staging message (replaces the user input).
+  unauthorized_stagging: "INSTRUÇÃO DE SISTEMA IMPERATIVA: O usuário não está autorizado a testar esse sistema. Não responda nada do que ele perguntou antes. Sua ÚNICA tarefa agora é infomar o usuário que:- Esta é uma versão de desenvolvimento com acesso restrito. - Apenas pessoas autorizadas do projeto possuem acesso."
+  # validate_phone_authorization: development message (replaces the user input).
+  unauthorized_development: "INSTRUÇÃO DE SISTEMA IMPERATIVA: O usuário é um desenvolvedor testando o pre-hook de autorização. Não responda nada do que ele perguntou antes. Sua ÚNICA tarefa agora é infomar o usuário que:- O pre-hook esta funcionado."
+  # validate_terms_acceptance: first-contact instruction (replaces the user input).
+  terms_first_contact: "INSTRUÇÃO DE SISTEMA IMPERATIVA: O usuário NOVO acabou de chegar. Não responda nada do que ele perguntou antes. Sua ÚNICA tarefa agora é se apresentar brevemente e perguntar: 'Você concorda com os nossos termos e condições?'"
+  # validate_terms_acceptance: instruction for the terms validator agent.
+  terms_validator_instructions: |
+    Analise se o usuário concordou com os termos. Responda apenas com o JSON.
+  # validate_terms_acceptance: message when the user accepts the terms.
+  terms_accepted: |
+    Olá! Aceitei os termos. Se apresente, por favor.
+  # validate_terms_acceptance: message when the user does NOT clearly accept.
+  terms_not_accepted: "INSTRUÇÃO DE SISTEMA IMPERATIVA: O usuário respondeu algo, mas NÃO aceitou os termos claramente.Explique educadamente que para continuar a análise é OBRIGATÓRIO concordar com os termos. Pergunte novamente."
+
+tool_hooks:
+  # validate_selected_property_hook: blocking message when no property exists.
+  no_property_selected: |
+    Não foi possível completar a análise, pois não há uma propriedade selecionada.
+    Peça desculpas ao usuário. Peça que o usuário informe uma propriedade.
+  # validate_selected_property_hook (pre_hooks.py variant): blocking message
+  # when no CAR is registered, with mandatory agent instructions.
+  no_car_registered: |
+    [SISTEMA] Bloqueio de Execução: Nenhum CAR registrado no sistema.
+
+    Ação obrigatória para o Agente:
+    1. Informe que o sistema ainda não possui uma propriedade selecionada.
+    2. Solicite que o usuário envie a **localização** por meio do pino de localização do WhatsApp para que o sistema identifique o CAR automaticamente.
+  # validate_rate_limit_hook: media already delivered in this session.
+  media_already_delivered: |
+    A mídia solicitada já foi gerada com esses exatos parâmetros e entregue nesta sessão.
+  # validate_rate_limit_hook: empty media returned by the satellite.
+  media_empty: |
+    Erro: A integração com o satélite retornou uma mídia vazia. Tente novamente.
+  # validate_rate_limit_hook: external integration failure prefix.
+  media_integration_error: |
+    Erro na integração externa: Falha ao executar {function_name}. Detalhe: {error}

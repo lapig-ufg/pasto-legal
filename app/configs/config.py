@@ -6,7 +6,7 @@ from agno.models.google import Gemini
 from agno.models.ollama import Ollama
 
 # Define o caminho base do projeto (onde o .env geralmente fica)
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path.cwd()
 
 # Carrega as variáveis do arquivo .env para o ambiente
 load_dotenv(dotenv_path=BASE_DIR / ".env")
@@ -25,6 +25,12 @@ class BaseConfig:
     POSTGRES_USER: str = os.getenv("POSTGRES_USER", None)
     POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", None)
 
+    PGVECTOR_HOST: str = os.getenv("PGVECTOR_HOST", None)
+    PGVECTOR_PORT: str = os.getenv("PGVECTOR_PORT", None)
+    PGVECTOR_DBNAME: str = os.getenv("PGVECTOR_DBNAME", None)
+    PGVECTOR_USER: str = os.getenv("PGVECTOR_USER", None)
+    PGVECTOR_PASSWORD: str = os.getenv("PGVECTOR_PASSWORD", None)
+
     WHATSAPP_ACCESS_TOKEN: str = os.getenv("WHATSAPP_ACCESS_TOKEN", None)
     WHATSAPP_VERIFY_TOKEN: str = os.getenv("WHATSAPP_VERIFY_TOKEN", None)
     WHATSAPP_WEBHOOK_URL: str = os.getenv("WHATSAPP_WEBHOOK_URL", None)
@@ -35,13 +41,22 @@ class BaseConfig:
     GEE_SERVICE_ACCOUNT: str = os.getenv("GEE_SERVICE_ACCOUNT", None)
     GEE_KEY_FILE: str = os.getenv("GEE_KEY_FILE", None)
 
-    MODEL_PROVIDER: str = os.getenv("MODEL_PROVIDER", "google")
-    MODEL_ID: str = os.getenv("MODEL_ID", "gemini-3.1-flash-lite")
+    PRIMARY_MODEL_PROVIDER: str = os.getenv("PRIMARY_MODEL_PROVIDER", "google")
+    PRIMARY_MODEL_ID: str = os.getenv("PRIMARY_MODEL_ID", "gemini-3.5-flash-lite")
+
+    FALLBACK_MODEL_PROVIDER: str = os.getenv("FALLBACK_MODEL_PROVIDER")
+    FALLBACK_MODEL_ID: str = os.getenv("FALLBACK_MODEL_ID")
 
     GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", None)
 
-    OLLAMA_HOST: str = os.getenv("OLLAMA_MODEL_ID", None)
     OLLAMA_API_KEY: str = os.getenv("OLLAMA_API_KEY", None)
+    OLLAMA_HOST: str = os.getenv("OLLAMA_HOST", None)
+
+    S3_ENDPOINT_URL: str = os.getenv("S3_ENDPOINT_URL", None)
+    S3_ACCESS_KEY: str = os.getenv("S3_ACCESS_KEY", None)
+    S3_SECRET_KEY: str = os.getenv("S3_SECRET_KEY", None)
+    S3_BUCKET: str = os.getenv("S3_BUCKET", "pasto-legal")
+    S3_REGION: str = os.getenv("S3_REGION", None)
 
     def __init__(self):
         if self.GEE_PROJECT is None:
@@ -50,23 +65,41 @@ class BaseConfig:
             raise ValueError("GEE_SERVICE_ACCOUNT environment variables must be set.")
         if self.GEE_KEY_FILE is None:
             raise ValueError("GEE_KEY_FILE environment variables must be set.")
-        
-        if self.MODEL_PROVIDER == "ollama":
+
+        if self.PRIMARY_MODEL_PROVIDER == "ollama":
             if self.OLLAMA_API_KEY is None:
                 raise ValueError("OLLAMA_API_KEY environment variables must be set.")
 
     @property
     def model(self) -> Gemini | Ollama:
-        match self.MODEL_PROVIDER:
+        match self.PRIMARY_MODEL_PROVIDER:
             case "google":
                 if self.GOOGLE_API_KEY is None:
                     raise ValueError("GOOGLE_API_KEY environment variables must be set.")
-
-                return Gemini(id=self.MODEL_ID, temperature=0, api_key=self.GOOGLE_API_KEY)
+                return Gemini(id=self.PRIMARY_MODEL_ID, temperature=0.4, api_key=self.GOOGLE_API_KEY)
             case "ollama":
-                return Ollama(id=self.MODEL_ID, host=self.OLLAMA_HOST, api_key=self.OLLAMA_API_KEY)
+                if self.OLLAMA_API_KEY is None and self.OLLAMA_HOST is not None:
+                    raise ValueError("OLLAMA_API_KEY environment variable must be set.")
+                return Ollama(id=self.PRIMARY_MODEL_ID, host=self.OLLAMA_HOST, api_key=self.OLLAMA_API_KEY)
             case _:
-                raise ValueError(f"Invalid model provider: {self.MODEL_PROVIDER}")
+                raise ValueError(f"Invalid model provider: {self.PRIMARY_MODEL_PROVIDER}")
+
+    @property
+    def fallback_model(self) -> Gemini | Ollama | None:
+        if self.FALLBACK_MODEL_PROVIDER is not None and self.FALLBACK_MODEL_ID is None:
+            raise ValueError("FALLBACK_MODEL_ID environment variable must be set")
+
+        match self.FALLBACK_MODEL_PROVIDER:
+            case "google":
+                if self.GOOGLE_API_KEY is None:
+                    raise ValueError("GOOGLE_API_KEY environment variable must be set.")
+                return Gemini(id=self.FALLBACK_MODEL_ID, temperature=0.4, api_key=self.GOOGLE_API_KEY)
+            case "ollama":
+                if self.OLLAMA_API_KEY is None and self.OLLAMA_HOST is not None:
+                    raise ValueError("OLLAMA_API_KEY environment variable must be set.")
+                return Ollama(id=self.FALLBACK_MODEL_ID, host=self.OLLAMA_HOST, api_key=self.OLLAMA_API_KEY)
+            case _:
+                raise None
 
 
 class DevelopmentConfig(BaseConfig):
@@ -99,7 +132,14 @@ class ProductionConfig(BaseConfig):
             raise ValueError("WHATSAPP_PHONE_NUMBER_ID environment variables must be set.")
         if self.WHATSAPP_APP_SECRET is None:
             raise ValueError("WHATSAPP_APP_SECRET environment variables must be set.")
-        
+
+        if self.S3_ENDPOINT_URL is None:
+            raise ValueError("S3_ENDPOINT_URL environment variables must be set.")
+        if self.S3_ACCESS_KEY is None:
+            raise ValueError("S3_ACCESS_KEY environment variables must be set.")
+        if self.S3_SECRET_KEY is None:
+            raise ValueError("S3_SECRET_KEY environment variables must be set.")
+
 
 class StaggingConfig(ProductionConfig):
     """Configurações específicas para Stagging."""
@@ -120,4 +160,8 @@ if env_app not in ["production", "development", "stagging"]:
     raise("APP_ENV has to be 'production', 'development' or 'stagging'.")
 
 # Instancia a classe de configuração correta
-config = config_map[env_app]()
+config: BaseConfig = config_map[env_app]()
+
+from app.configs.logging_config import setup_logging  # noqa: E402
+
+setup_logging(config)
