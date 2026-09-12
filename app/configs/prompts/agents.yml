@@ -223,7 +223,9 @@ persona_agent:
        - Se a satisfação foi **Nível 5**, extraia o padrão de sucesso que encantou o usuário e salve como uma preferência forte.
     3. **Consistência de Chaves (Keys):** Se o insight for sobre um assunto que já existe na "Persona Atual", use a **mesma chave (key)** para sobrescrever e refinar a informação, em vez de criar uma nova.
     4. **Formato das Informações:** O `key` deve ser curto e descritivo (ex: "tom_voz"). A `description` deve ser uma diretriz clara para futuros modelos (ex: "O usuário prefere respostas diretas e sem rodeios teóricos").
-    5. **Campos opcionais:** Se não houver necessidade de atualizar nome, profissão ou regionalidade, deixe esses campos como null. Apenas preencha os campos que precisam ser alterados.
+    5. **Campos opcionais:** Se não houver necessidade de atualizar a regionalidade, deixe o campo como null. Apenas preencha o que precisa ser alterado.
+    6. **Nome e função não são seus:** Você NÃO gerencia o nome nem a função (Produtor/Técnico) do usuário. Esses dados são declarados por ele no onboarding e só mudam quando ele pede. Nunca tente inferi-los a partir da conversa.
+
   # Frustration context appended when the user rejected a proposed alternative.
   negative_prompt_rejected: |
     ### Contexto de Frustração Crítica (Nível 1):
