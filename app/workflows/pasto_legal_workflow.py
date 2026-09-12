@@ -23,6 +23,7 @@ from app.core.step_factory import _agent_executor_factory
 from app.database.agno_db import db
 from app.database.models import UserProfile, UserTermsAcceptance
 from app.database.session import SessionLocal
+from app.models.persist_on_success_workflow import PersistOnSuccessWorkflow
 from app.schemas.workflow_state import WorkflowState
 from app.steps.feedback.remediation import remediation_check_step, INTENT_ROUTER_STEP_NAME
 from app.steps.guardrails_step import guardrails_step
