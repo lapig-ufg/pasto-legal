@@ -48,7 +48,8 @@ def _needs_onboarding(step_input: StepInput, session_state: dict[str, Any]) -> b
     if session_state.get("terms_accepted") and persona.get("name") and persona.get("role"):
         return False
 
-    user_id = session_state.get("user_id")
+    workflow_session = getattr(step_input, "workflow_session", None)
+    user_id = getattr(workflow_session, "user_id", None) or session_state.get("user_id")
     if not user_id:
         return True
 
