@@ -21,9 +21,8 @@ from app.agents.welcoming_agent import welcoming_agent
 from app.configs.config import config
 from app.core.step_factory import _agent_executor_factory
 from app.database.agno_db import db
-from app.database.models import UserTermsAcceptance
+from app.database.models import UserProfile, UserTermsAcceptance
 from app.database.session import SessionLocal
-from app.models.persist_on_success_workflow import PersistOnSuccessWorkflow
 from app.schemas.workflow_state import WorkflowState
 from app.steps.feedback.remediation import remediation_check_step, INTENT_ROUTER_STEP_NAME
 from app.steps.guardrails_step import guardrails_step
@@ -34,15 +33,19 @@ from app.workflows.feedback_workflow import feedback_workflow
 
 
 def _needs_onboarding(step_input: StepInput, session_state: dict[str, Any]) -> bool:
-    """Return True if the user needs to go through onboarding.
+    """Return True if the user still needs to go through onboarding.
 
-    Returns True if the terms have NOT yet been accepted. Lazily initializes
-    the ``workflow_state`` slot in ``session_state`` when missing.
+    Onboarding covers two things: the formal acceptance of the terms and the
+    identification profile (name + role). Both are looked up in the database, so
+    a user who already completed them is never asked again — not even in a
+    brand new session. On the way out, the stored profile is copied into
+    ``session_state`` so the agent can personalise from the first reply.
     """
     if session_state.get("workflow_state") is None:
         session_state["workflow_state"] = WorkflowState().model_dump()
 
-    if session_state.get("terms_accepted"):
+    persona = session_state.get("user_persona") or {}
+    if session_state.get("terms_accepted") and persona.get("name") and persona.get("role"):
         return False
 
     user_id = session_state.get("user_id")
@@ -51,19 +54,31 @@ def _needs_onboarding(step_input: StepInput, session_state: dict[str, Any]) -> b
 
     db_session = SessionLocal()
     try:
-        record = db_session.query(UserTermsAcceptance).filter(
-            UserTermsAcceptance.user_id == user_id,
-            UserTermsAcceptance.accepted == True,
+        if not session_state.get("terms_accepted"):
+            aceite = db_session.query(UserTermsAcceptance).filter(
+                UserTermsAcceptance.user_id == user_id,
+                UserTermsAcceptance.accepted == True,
+            ).first()
+
+            if not aceite:
+                return True
+
+            session_state["terms_accepted"] = True
+
+        perfil = db_session.query(UserProfile).filter(
+            UserProfile.user_id == user_id
         ).first()
 
-        if record:
-            session_state["terms_accepted"] = True
-            return False
+        if perfil is None or not perfil.name or not perfil.role:
+            return True
 
-        return True
+        persona.setdefault("name", perfil.name)
+        persona.setdefault("role", perfil.role)
+        session_state["user_persona"] = persona
+
+        return False
     finally:
         db_session.close()
-
 
 pasto_legal_workflow = PersistOnSuccessWorkflow(
     name="Pasto Legal Workflow",
