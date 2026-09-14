@@ -12,7 +12,7 @@ from agno.tools.function import ToolResult
 from agno.run import RunContext
 from agno.utils.log import log_debug, log_warning, log_error
 
-from app.configs.prompts import get_tool_description
+from app.configs.prompts import get_tool_description, get_tool_result_text
 from app.schemas.feature import Feature
 from app.utils.feature_utils import resolve_feature
 from app.services.geospatial.season_forecast import (
@@ -123,7 +123,7 @@ def get_monthly_precipitation_forecast(
 
     except Exception as e:
         log_error(f"get_monthly_precipitation_forecast: {e}")
-        return ToolResult(content=str(e))
+        return ToolResult(content=get_tool_result_text("weather_tools", "get_monthly_precipitation_forecast", "error", error=e))
 
 
 @tool(description=get_tool_description("weather_tools", "get_daily_precipitation_forecast"))
@@ -196,7 +196,7 @@ def get_daily_precipitation_forecast(
 
     except Exception as e:
         log_error(f"get_daily_precipitation_forecast: {e}")
-        return ToolResult(content=str(e))
+        return ToolResult(content=get_tool_result_text("weather_tools", "get_daily_precipitation_forecast", "error", error=e))
 
 
 @tool(description=get_tool_description("weather_tools", "get_rain_season_onset_forecast"))
@@ -231,7 +231,7 @@ def get_rain_season_onset_forecast(
 
     except Exception as e:
         log_error(f"get_rain_season_onset_forecast: {e}")
-        return ToolResult(content=str(e))
+        return ToolResult(content=get_tool_result_text("weather_tools", "get_rain_season_onset_forecast", "error", error=e))
 
 
 @tool(description=get_tool_description("weather_tools", "get_dry_season_onset_forecast"))
@@ -267,7 +267,7 @@ def get_dry_season_onset_forecast(
 
     except Exception as e:
         log_error(f"get_dry_season_onset_forecast: {e}")
-        return ToolResult(content=str(e))
+        return ToolResult(content=get_tool_result_text("weather_tools", "get_dry_season_onset_forecast", "error", error=e))
 
 
 @tool(description=get_tool_description("weather_tools", "get_temperature_forecast"))
@@ -328,4 +328,4 @@ def get_temperature_forecast(
 
     except Exception as e:
         log_error(f"get_temperature_forecast: {e}")
-        return ToolResult(content=str(e))
+        return ToolResult(content=get_tool_result_text("weather_tools", "get_temperature_forecast", "error", error=e))

@@ -153,6 +153,29 @@ def get_tool_description(component: str, tool_name: str) -> str:
     return str(description).strip()
 
 
+def get_tool_result_text(
+    component: str, tool_name: str, key: str, /, **kwargs
+) -> str:
+    """Returns one runtime result-content text of one tool from tools.yml.
+
+    ``component`` is the tool file (e.g. 'weather_tools'), ``tool_name`` the
+    function name (e.g. 'get_monthly_precipitation_forecast') and ``key`` the
+    result-branch (e.g. 'feature_not_found'). Placeholders in the template
+    (e.g. ``{feature_id}``) are filled from ``kwargs``.
+    """
+    tools = _load_yaml("tools.yml")
+    component_tools = tools.get(component)
+    entry = component_tools.get(tool_name) if isinstance(component_tools, dict) else None
+    results = entry.get("results") if isinstance(entry, dict) else None
+    text = results.get(key) if isinstance(results, dict) else None
+    if _is_blank(text):
+        raise MissingPromptError(
+            f"Tool result text '{component}.{tool_name}.results.{key}' "
+            "not found in tools.yml"
+        )
+    return str(text).format(**kwargs).strip()
+
+
 def get_hook_texts(group: str) -> dict:
     """Returns all texts of one hook group (e.g. 'pre_hooks')."""
     hooks = _load_yaml("hooks.yml")

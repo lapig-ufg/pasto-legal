@@ -1,10 +1,12 @@
 # =============================================================================
-# Tool descriptions (runtime source of truth).
+# Tool descriptions and result texts (runtime source of truth).
 #
 # Grouped by component (tool file), then by tool function name. Each entry has
-# a `description` tag passed to the agno `@tool(description=...)` decorator.
-# These texts are moved 1:1 from the original docstrings (as seen by the LLM
-# at runtime) — translate/adjust them to localize the product.
+# a `description` tag passed to the agno `@tool(description=...)` decorator
+# and a `results` mapping keyed by the tool's return branch, consumed via
+# `get_tool_result_text(component, tool_name, key, **kwargs)`.
+# These texts are moved 1:1 from the original docstrings/return strings (as
+# seen by the LLM at runtime) — translate/adjust them to localize the product.
 #
 # The docstrings in the Python files stay as developer reference; the
 # description here overrides them at runtime.
@@ -23,6 +25,13 @@ analysis_tools:
 
       Return:
           ToolResult: Imagem PNG da visão aérea com delimitação geográfica.
+    results:
+      feature_not_found: |
+        Feição não encontrada: {feature_id}.
+      success_contour_legend: |
+        O contorno vermelho indica a delimitação geográfica da propriedade rural.
+      error: |
+        Erro ao gerar imagem: {error}.
   generate_biomass_image:
     description: |
       Gera um mapa temático da biomassa (matéria seca) sobre os limites da propriedade rural.
@@ -31,6 +40,51 @@ analysis_tools:
 
       Return:
           ToolResult: Mapa renderizado em formato PNG.
+    results:
+      feature_not_found: |
+        Feição não encontrada: {feature_id}.
+      success_t2g_legend: |
+        Legenda: Acumulado de biomassa no mês de referência. Azul claro (Alta concentração) a Roxo escuro (Baixa concentração). Data referência: mês {ref_month}, ano {ref_year}.
+      success_mapbiomas_legend: |
+        Legenda: Acumulado de biomassa no ano de referência. Azul claro (Alta concentração) a Roxo escuro (Baixa concentração). Data referência: ano 2024.
+      error: |
+        Erro inesperado: {error}.
+  generate_biomass_video:
+    description: |
+      Gera um vídeo (MP4) animado mostrando a evolução mensal da biomassa (matéria seca,
+      ton/ha) acumulada na propriedade rural, mês a mês, sobre a imagem de satélite.
+
+      Cada frame corresponde ao acumulado do mês anterior ao mês de referência
+      (mesma regra do mapa de biomassa), com escala de cores fixa entre os frames
+      para permitir comparação direta entre os meses, e indica no canto superior
+      esquerdo o mês de acumulação do frame.
+
+      Limitações: dados disponíveis a partir de 2025; o período final é limitado ao
+      mês atual. Meses sem dados do satélite (UGPP) são omitidos; se houver menos de
+      dois meses com dados, o vídeo não é gerado.
+
+      A geração consulta o satélite para cada mês do intervalo e pode levar dezenas
+      de segundos. Use apenas quando o usuário pedir explicitamente um vídeo,
+      animação ou evolução temporal da biomassa.
+
+      params:
+          feature_id (str): Identificador (id) da feição registrada.
+          start_year (int): Ano inicial do vídeo (mínimo 2025).
+          start_month (int): Mês inicial (1 a 12).
+          end_year (int): Ano final (limitado ao mês atual).
+          end_month (int): Mês final (1 a 12, limitado ao mês atual).
+
+      Return:
+          ToolResult: Vídeo MP4 da evolução mensal da biomassa.
+    results:
+      feature_not_found: |
+        Feição não encontrada: {feature_id}.
+      insufficient_data: |
+        Não há dados de biomassa suficientes (pelo menos dois meses) para gerar o vídeo no período de {start_month}/{start_year} a {end_month}/{end_year}. Informe que a série T2G pode não cobrir a região ou o período solicitado e sugira um período mais recente ou um mapa de biomassa do mês atual.
+      success: |
+        Vídeo da evolução mensal da biomassa (ton/ha) de {start} a {end}, sobre a imagem de satélite e com o contorno da propriedade. Cada frame é o acumulado do mês indicado no canto superior esquerdo (formato MM/AAAA), com barra de cores de escala fixa entre os frames: Roxo escuro (Baixa concentração) a Azul claro (Alta concentração), variando de {min} a {max} ton/ha. Meses sem dados disponíveis foram omitidos.
+      error: |
+        Erro inesperado: {error}.
   generate_pasture_classification_image:
     description: |
       Gera o mapa de classificação de pastagem (pasto x não-pasto) da propriedade rural,
@@ -46,6 +100,13 @@ analysis_tools:
 
       Return:
           ToolResult: Mapa em PNG (verde = pastagem) e a área de pastagem em hectares.
+    results:
+      feature_not_found: |
+        Feição não encontrada: {feature_id}.
+      success_area_legend: |
+        Área de pastagem classificada (ano {pred_year}): {pasture_area_ha} hectares. Legenda: Verde (Pastagem).
+      error: |
+        Erro inesperado: {error}.
   generate_soil_texture_image:
     description: |
       Gera um mapa temático da textura do solo sobre os limites da propriedade rural na profundidade de 0 a 30cm.
@@ -54,6 +115,13 @@ analysis_tools:
 
       Return:
           ToolResult: Mapa renderizado em formato PNG.
+    results:
+      feature_not_found: |
+        Feição não encontrada: {feature_id}.
+      success_soil_legend: |
+        Legenda: Afloramento (#707070), Muito Argiloso (#9B0F06), Argila (#BFA28C), Siltoso (#D8F467), Arenoso (#FFD400) e Médio (#F0CFA1).
+      error: |
+        Erro inesperado: {error}.
   get_pasture_stats:
     description: |
       Recupera estatísticas de bimoassa, vigor vegetativo, idade da pastagem e classificação de uso do solo mais recentes.
@@ -68,6 +136,11 @@ analysis_tools:
 
       Return:
           Dicionário contendo a área de biomassa, vigor da pastagem, idade e uso e cobertura do solo.
+    results:
+      feature_not_found: |
+        Feição não encontrada: {feature_id}.
+      error: |
+        Erro inesperado: {error}.
   get_topographic_stats:
     description: |
       Recupera estatísticas de topografia da propriedade (altimetria e declividade).
@@ -76,6 +149,11 @@ analysis_tools:
 
       Return:
           Dicionário contendo as informações de altimetria e declividade.
+    results:
+      feature_not_found: |
+        Feição não encontrada: {feature_id}.
+      error: |
+        Erro inesperado: {error}.
   generate_property_boletim:
     description: |
       Gera um boletim em PDF consolidando as análises da propriedade rural — localização,
@@ -95,6 +173,11 @@ analysis_tools:
 
       Return:
           ToolResult: Arquivo PDF do boletim com dados e mapas reais da propriedade.
+    results:
+      feature_not_found: |
+        Feição não encontrada: {feature_id}.
+      error: |
+        Erro inesperado: {error}.
 
 tts_tools:
   generate_speech:
@@ -110,17 +193,44 @@ tts_tools:
 
       Returns:
           ToolResult: Objeto de resultado contendo a fala gerada.
+    results:
+      success: |
+        Áudio gerado com sucesso!
+      error: |
+        Erro ao gerar áudio: {error}.
 
 onboarding_tools:
   accept_terms_and_conditions:
     description: |
       Records the user's formal acceptance of the Pasto Legal Terms and Conditions in the database.
+    results:
+      missing_user_id: |
+        Error: User identifier not found in the execution context.
+      success: |
+        Formal acceptance successfully registered! The main workflow has been unlocked. Politely inform the user.
+      error_persistence: |
+        Critical persistence error while saving terms acceptance: {error}
 
 version_tools:
   consult_update_notes:
     description: |
       Lê e retorna as notas de atualização (patch notes) do sistema Pasto Legal.
       Use esta ferramenta quando o usuário perguntar sobre a versão atual, novidades ou atualizações.
+    results:
+      release_dir_not_found: |
+        Erro: O diretório de notas de versão não foi encontrado no sistema.
+      no_release_notes: |
+        Aviso: Nenhuma nota de versão foi encontrada no repositório.
+      release_file_not_found: |
+        Erro: As notas de atualização não foram encontradas.
+      success: |
+        Conteúdo do patch:
+
+        {content}
+
+        Repasse essas informações INTEGRALMENTE ao usuário utilizando ESTRITAMENTE a formatação de texto do WhatsApp (*negrito*, _itálico_). Não utilize formatação Markdown como #, ## ou **.
+      error: |
+        Erro inesperado ao tentar ler o arquivo de patch: {error}
 
 weather_tools:
   get_monthly_precipitation_forecast:
@@ -133,6 +243,9 @@ weather_tools:
 
       Return:
           ToolResult: Text with the monthly precipitation forecast (date + mean mm).
+    results:
+      error: |
+        Erro inesperado: {error}
   get_daily_precipitation_forecast:
     description: |
       Retrieves the precipitation forecast (mm) for a specific target day of the rural property.
@@ -143,6 +256,9 @@ weather_tools:
 
       Return:
           ToolResult: Text with the precipitation forecast for the chosen day.
+    results:
+      error: |
+        Erro inesperado: {error}
   get_rain_season_onset_forecast:
     description: |
       Predicts the start date of the rainy season for the rural property.
@@ -153,6 +269,9 @@ weather_tools:
       Return:
           ToolResult: Predicted rain onset date (YYYY-MM-DD), or a message
           indicating the rainy season has already begun / is unavailable.
+    results:
+      error: |
+        Erro inesperado: {error}
   get_dry_season_onset_forecast:
     description: |
       Predicts the start date of the dry season (end of rains) for the rural property.
@@ -164,6 +283,9 @@ weather_tools:
           ToolResult: Predicted dry-season onset date (YYYY-MM-DD), or a
           message indicating the dry season is underway / the forecast
           horizon does not extend far enough.
+    results:
+      error: |
+        Erro inesperado: {error}
   get_temperature_forecast:
     description: |
       Retrieves the daily maximum and minimum temperature forecast (°C) for the rural property.
@@ -174,6 +296,9 @@ weather_tools:
 
       Return:
           ToolResult: Text with the daily temperature forecast (date, max, min).
+    results:
+      error: |
+        Erro inesperado: {error}
 
 feedback_tools:
   record_frustration_feedback:
@@ -185,10 +310,20 @@ feedback_tools:
       3. O usuário reclama da resposta.
       4. O assistente pede para o usuário explicar como seria a resposta correta.
       5. O usuário fornece a resposta.
+    results:
+      success: |
+        Feedback registrado com sucesso no sistema. Muito obrigado por ajudar a melhorar o Pasto Legal!
+      error: |
+        Erro ao registrar feedback: {error}.
   record_analisys_feedback:
     description: |
       Registra uma sugestão de nova funcionalidade ou análise de dados.
       Use quando o usuário solicitar uma análise que o assistente ainda não possui ferramentas para gerar.
+    results:
+      success: |
+        Feedback registrado com sucesso no sistema. Muito obrigado por ajudar a melhorar o Pasto Legal!
+      error: |
+        Erro ao registrar feedback: {error}.
 
 persona_tools:
   update_persona_name:
@@ -200,6 +335,11 @@ persona_tools:
 
       Args:
           name (str): Nome próprio do usuário (ex: "João", "Maria").
+    results:
+      success: |
+        Nome atualizado com sucesso para: {name}
+      error: |
+        Erro ao atualizar nome da persona: {error}
   update_persona_role:
     description: |
       Atualiza organicamente o papel profissional da persona do usuário no estado da sessão.
@@ -209,6 +349,11 @@ persona_tools:
 
       Args:
           role (Literal["Produtor", "Técnico"]): O papel profissional identificado.
+    results:
+      success: |
+        Papel profissional atualizado com sucesso para: {role}
+      error: |
+        Erro ao atualizar papel da persona: {error}
   update_persona_region:
     description: |
       Atualiza organicamente a regionalidade/localização da persona no estado da sessão.
@@ -217,6 +362,11 @@ persona_tools:
 
       Args:
           regionality (str): Cidade, estado ou região do usuário (ex: "Sorriso - MT", "Sul de Minas").
+    results:
+      success: |
+        Regionalidade atualizada com sucesso para: {regionality}
+      error: |
+        Erro ao atualizar regionalidade da persona: {error}
   create_persona_preference:
     description: |
       Adiciona uma nova preferência, interesse, hobbie ou comportamento descoberto sobre o usuário.
@@ -227,6 +377,13 @@ persona_tools:
       Args:
           key (str): Uma palavra-chave curta em minúsculas identificando a categoria (ex: "cultura", "cafe", "horario_contato", "canal_favorito").
           description (str): Detalhes sobre o gosto ou comportamento do usuário naquela categoria.
+    results:
+      preference_exists: |
+        A preferência '{key}' já existe. Use 'update_persona_preference' para modificá-la.
+      success: |
+        Nova preferência registrada: {key} -> {description}
+      error: |
+        Erro ao registrar preferência: {error}.
   update_persona_preference:
     description: |
       Atualiza uma preferência ou comportamento já existente na persona do usuário.
@@ -237,12 +394,26 @@ persona_tools:
       Args:
           key (str): A palavra-chave exata da preferência a ser atualizada (ex: "cultura", "cafe").
           description (str): A nova descrição atualizada que substituirá a anterior.
+    results:
+      preference_not_found: |
+        Não foi possível atualizar: A preferência com a chave '{key}' não foi encontrada.
+      success: |
+        Preferência '{key}' atualizada com sucesso.
+      error: |
+        Erro ao atualizar preferência: {error}.
   remove_persona_preference:
     description: |
       Remove uma preferência específica do perfil do usuário caso ela não seja mais válida.
 
       Args:
           key (str): A palavra-chave da preferência que deve ser removida.
+    results:
+      preference_not_found: |
+        Nenhuma preferência encontrada com a chave '{key}' para remoção.
+      success: |
+        Preferência '{key}' removida com sucesso.
+      error: |
+        Erro ao remover preferência: {error}.
 
 property_tools:
   start_registration_by_coordinate:
@@ -257,6 +428,19 @@ property_tools:
 
       Returns:
           ToolResult: Resultado da busca contendo imagem e instruções para o próximo passo.
+    results:
+      sicar_miss_buffer_fallback: |
+        Nenhuma propriedade foi encontrada na base do SICAR para esta localização.
+        Informe ao usuário que, por não haver um imóvel registrado no SICAR, o sistema registrará no lugar uma área de buffer ao redor do ponto indicado.
+        Mostre a imagem e pergunte ao usuário se ele deseja continuar com o registro dessa área de buffer ou cancelar a operação.
+      confirm_single_property: |
+        Pergunte ao usuário se a seguinte propriedade é a correta:
+        {property_details}
+      confirm_multiple_options: |
+        Pergunte ao usuário qual das seguinte propriedades é a correta:
+        {options}
+      error: |
+        Erro inesperado: {error}.
   start_registration_by_car:
     description: |
       Inicia o registro de uma nova propriedade rural baseando-se no código CAR fornecidos.
@@ -268,6 +452,28 @@ property_tools:
 
       Returns:
           ToolResult: Resultado da busca contendo imagem e instruções para o próximo passo.
+    results:
+      too_many_cars: |
+        Peça desculpas e informe que não é permitido unificar mais que 3 CARs por vezes.
+      invalid_car_format: |
+        Peça desculpas e informe que o sistema aceita exclusivamente o **CAR Federal** (padrão SICAR).
+        Explique que o padrão exige: 2 letras do Estado, seguidas por 7 números, e terminando com 32 caracteres.
+      sicar_not_found_instructions: |
+        Nenhuma propriedade foi encontrada na base do SICAR para o(s) CAR(s) informado(s).
+        Como não há imóvel registrado no SICAR, o registro só pode ser feito como área de buffer.
+        Explique isso ao usuário e peça que ele envie um link de compartilhamento do Google Maps ou as coordenadas (latitude/longitude) do local.
+        Em seguida, registre a área chamando a ferramenta `start_buffer_registration_by_url` (para o link) ou `start_buffer_registration_by_coordinate` (para as coordenadas).
+      confirm_single_car: |
+        Informe ao usuário que a seguinte propriedade foi encontrada:
+        {property_details}
+        Peça que para o usuário confirmar se a propriedade é a correta.
+      confirm_unified_cars: |
+        Informe ao usuário que as seguintes propriedades foram encontrada:
+        {property_details}
+        Informe que elas foram agrupadas em um único registro que o sistema ira interpretar como uma propriedade única.
+        Peça que para o usuário confirmar se as propriedades são as corretas.
+      error: |
+        Erro inesperado: {error}.
   start_registration_by_url:
     description: |
       Inicia o processo de registro de uma nova propriedade rural baseando-se na URL de compartilhamento do Google Maps.
@@ -279,6 +485,22 @@ property_tools:
 
       Returns:
           ToolResult: Resultado da busca contendo imagem e instruções para o próximo passo.
+    results:
+      url_coords_not_extracted: |
+        Peça desculpas ao usuário e informe que não foi possível extrair coordenadas geográficas válidas deste link.
+        Sugira ao usuário que envie o link novamente (verificando se é um link de compartilhamento do Google Maps)
+      sicar_miss_buffer_fallback: |
+        Nenhuma propriedade foi encontrada na base do SICAR para esta localização.
+        Informe ao usuário que, por não haver um imóvel registrado no SICAR, o sistema registrará no lugar uma área de buffer ao redor do ponto indicado.
+        Mostre a imagem e pergunte ao usuário se ele deseja continuar com o registro dessa área de buffer ou cancelar a operação.
+      confirm_single_property: |
+        Pergunte ao usuário se a seguinte propriedade é a correta:
+        {property_details}
+      confirm_multiple_options: |
+        Pergunte ao usuário qual das seguinte propriedades é a correta:
+        {options}
+      error: |
+        Erro inesperado: {error}.
   select_car_from_list:
     description: |
       Seleciona uma propriedade específica quando a busca retorna múltiplos resultados.
@@ -287,21 +509,51 @@ property_tools:
 
       Args:
           selection (int): O número da opção escolhida pelo usuário (ex: 1, 2, 3...).
+    results:
+      no_search_yet: |
+        Nenhuma busca foi realizada ainda. Informe uma localização primeiro.
+      selection_out_of_range: |
+        Seleção inválida. Escolha um número válido entre 1 e {max_selection}.
+      success_registered_prompt_name: |
+        A propriedade de identificador {feature_id} foi registrada com sucesso.Seja proativo, pergunte ao usuário se ele gostaria de atribuir um nome para a propriedade.
+      error: |
+        Erro inesperado: {error}.
   confirm_car_selection:
     description: |
       Confirma a propriedade encontrada quando a busca retorna apenas um resultado único.
 
       Use esta ferramenta quando a ferramenta 'query_car' encontrar apenas 1 imóvel e o usuário confirmar que está correto (ex: dizendo "Sim", "É essa mesmo").
+    results:
+      no_pending_property: |
+        Não há propriedade pendente de confirmação. Realize uma busca primeiro.
+      success_registered_prompt_name: |
+        A propriedade de identificador {feature_id} foi registrada com sucesso.Seja proativo, pergunte ao usuário se ele gostaria de atribuir um nome para a propriedade.
+      error: |
+        Erro inesperado: {error}.
   complete_registration:
     description: |
       Concluir cadastro com o nome da propriedade.
 
       Use esta ferramente quando o usuário informar o nome da propriedade.
+    results:
+      success_registration_complete: |
+        Propriedade registrada com sucesso.
+        Nome: {name}
+        Feature ID: {feature_id}
+
+        INSTRUÇÃO AO AGENTE: O cadastro foi concluído. Agora você deve entregar ao usuário o primeiro diagnóstico da propriedade.
+      error: |
+        Erro inesperado: {error}.
   cancel_registration:
     description: |
       Cancela a seleção ou rejeita os resultados encontrados.
 
       Use esta ferramenta se o usuário disser que a propriedade mostrada na imagem NÃO é a correta ou quiser cancelar a seleção.
+    results:
+      cancelled_apology: |
+        Peça desculpas por não ter encontrado a propriedade correta.
+      error: |
+        Erro inesperado: {error}.
   set_property_name:
     description: |
       Atualizar o nome propriedade registrada no sistema.
@@ -309,15 +561,35 @@ property_tools:
       Args:
           feature_id (str): Identificador (id) da feição registrada.
           name (str): Nome da propriedade.
+    results:
+      property_not_found: |
+        Não foi possível registrar o nome da propriedade.
+      success_renamed: |
+        O nome da propriedade foi alterado com sucesso.
+        Informe ao usuário que ele já pode pedir, em uma nova mensagem, análises da propriedade.
+      error: |
+        Erro inesperado: {error}.
   remove_property:
     description: |
       Remove a propriedade selecionada do sistema.
 
       Args:
           feature_id (str): Identificador (id) da feição registrada.
+    results:
+      property_not_found: |
+        A propriedade não foi encontrada no sistema.
+      success_removed: |
+        A propriedade foi removida com sucesso.
+      error: |
+        Erro inesperado: {error}.
   remove_all_properties:
     description: |
       Remove todas as propriedades registradas no sistema.
+    results:
+      success_removed_all: |
+        Todas as propriedades foram removidas com sucesso.
+      error: |
+        Erro inesperado: {error}.
   start_buffer_registration_by_coordinate:
     description: |
       Iniciar o registro de uma nova área de buffer baseando-se em um ponto
@@ -335,6 +607,14 @@ property_tools:
 
       Returns:
           ToolResult: Resultado contendo imagem e instruções para o próximo passo.
+    results:
+      invalid_radius: |
+        Peça desculpas ao usuário e informe que o raio deve estar entre {min_radius} e {max_radius} metros.
+      confirm_buffer_area: |
+        Pergunte ao usuário se a seguinte área é a correta:
+        {area_details}
+      error: |
+        Erro inesperado: {error}.
   start_buffer_registration_by_url:
     description: |
       Iniciar o registro de uma nova área de buffer baseando-se na URL de
@@ -352,3 +632,14 @@ property_tools:
 
       Returns:
           ToolResult: Resultado contendo imagem e instruções para o próximo passo.
+    results:
+      invalid_radius: |
+        Peça desculpas ao usuário e informe que o raio deve estar entre {min_radius} e {max_radius} metros.
+      url_coords_not_extracted: |
+        Peça desculpas ao usuário e informe que não foi possível extrair coordenadas geográficas válidas deste link.
+        Sugira ao usuário que envie o link novamente (verificando se é um link de compartilhamento do Google Maps)
+      confirm_buffer_area: |
+        Pergunte ao usuário se a seguinte área é a correta:
+        {area_details}
+      error: |
+        Erro inesperado: {error}.
