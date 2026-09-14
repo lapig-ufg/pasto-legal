@@ -531,7 +531,7 @@ def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int
         min_bio_val = stats[min_key]
         max_bio_val = stats[max_key]    
         
-        palette = ['#000033','#9400D3','#FF00FF','#00FFFF','#FFFFFF']
+        palette = ["#f75639", "#eef79c", "#f5d570", "#8aa637", "#0b391f"]
         bioprop = biomass_img.visualize(**{"min": min_bio_val, "max": max_bio_val, "palette": palette})        
         
         base_image = _get_base_image(roi=roi, year=year)
@@ -551,10 +551,11 @@ def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int
         img = append_continuous_colorbar(
             img, 
             title=f"Biomassa ({str(_target_year)}/{str(_target_month)}) - T2G", 
-            vmin=round(min_bio_val),
-            vmax=round(max_bio_val),
+            vmin=round(min_bio_val, 1),
+            vmax=round(max_bio_val, 1),
             unit="ton/ha",
-            palette=palette
+            palette=palette,
+            ndigits=1
         )
 
         return img, _target_year, _target_month
