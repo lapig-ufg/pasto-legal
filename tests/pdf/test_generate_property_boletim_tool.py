@@ -29,7 +29,26 @@ def test_generate_property_boletim_returns_valid_pdf_file():
         spatial_features=SpatialFeatures(
             total_area=23.4674,
             municipality="Corrego do Ouro",
-            coordinates=[[[[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [0.0, 0.0]]]],
+            # Coordenadas reais da propriedade (não um quadrado fake em 0,0/Golfo da Guiné):
+            # o car_code abaixo é o mesmo usado nos testes reais de GEE (test_pasture_*.py),
+            # e o cache de classificação é chaveado só por car_code+ano — com uma
+            # geometria fake mas o car_code real, esse teste só "passava" antes por
+            # colidir com o cache de uma chamada real anterior pra essa propriedade,
+            # nunca testando de fato a classificação para o ROI que ele próprio define.
+            coordinates=[[[
+                [-50.607162816111114, -16.36135684638889], [-50.606766614444446, -16.361637087222224],
+                [-50.60604125638889, -16.36089283], [-50.60606698583334, -16.361042615555558],
+                [-50.606026783333334, -16.361386239166666], [-50.60578304222222, -16.362651907777778],
+                [-50.60566738083333, -16.363175863055556], [-50.605573845555554, -16.363960815],
+                [-50.60597653, -16.366481251666666], [-50.60554517027778, -16.366731067777778],
+                [-50.605643925833334, -16.36748177388889], [-50.60567877194445, -16.368350606944446],
+                [-50.60571016138889, -16.368449547222223], [-50.6058855625, -16.36900242138889],
+                [-50.60597792888889, -16.36929356222222], [-50.609982485833335, -16.367532129166666],
+                [-50.609450539166666, -16.366629992500002], [-50.6091756175, -16.366369141666667],
+                [-50.60874803722222, -16.365129216666666], [-50.60862953694445, -16.364863420833334],
+                [-50.607873635833336, -16.363978108333335], [-50.6075727225, -16.36330761638889],
+                [-50.607162816111114, -16.36135684638889],
+            ]]],
         ),
     )
     run_context = _build_context_with_property(rural_property)

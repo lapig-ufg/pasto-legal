@@ -28,9 +28,19 @@ _MAPBIOMAS_AGE_ASSET = "projects/mapbiomas-public/assets/brazil/lulc/collection1
 
 _SCALE = 10
 
-_AGE_DICT = {1: "1-10", 2: "10-20", 3: "20-30", 4: "30-40"}
+# Bump sempre que a lógica de cálculo mudar — invalida cache antigo incompatível
+# com o novo formato/semântica em vez de servir resultado stale.
+_CACHE_VERSION = "v2"
 
-_AGE_PALETTE = ["#ffffcc", "#a1dab4", "#41b6c4", "#225ea8"]
+# 30-40 = idade calculada com precisão nesse intervalo. ≥40 = pixel bateu no teto
+# do encoding do asset (sentinela "já madura ao início da série", idade real
+# desconhecida e possivelmente bem maior que 40) OU chegou em 40 pelo próprio +1
+# ano projetado — depois do .min(40) as duas situações ficam indistinguíveis, e
+# ambas significam a mesma coisa na prática: "pelo menos ~40 anos, sem precisão
+# além disso". Não misturamos isso com a faixa 30-40 medida com precisão.
+_AGE_DICT = {1: "1-10", 2: "10-20", 3: "20-30", 4: "30-40", 5: "≥40 (idade real indeterminada)"}
+
+_AGE_PALETTE = ["#ffffcc", "#a1dab4", "#41b6c4", "#2c7fb8", "#253494"]
 
 
 def _age_years_image(roi: ee.Geometry, year: int) -> ee.Image:
@@ -53,11 +63,14 @@ def _area_by_age_class(age_years: "xr.DataArray") -> Dict[str, float]:
     if valid.size == 0:
         return {}
 
-    classes = np.digitize(valid, [0, 10, 20, 30, float("inf")])
+    # right=True (bins[i-1] < x <= bins[i]) pra bater exatamente com os limites usados
+    # em _bucket_age_class (.gt(30).And(.lt(40)) -> 4, .gte(40) -> 5): x=30 cai na
+    # classe 3, só (30,40) cai na 4, >=40 (teto do encoding) vira a 5 "indeterminada".
+    classes = np.digitize(valid, [0, 10, 20, 30, 40 - 1e-9, float("inf")], right=True)
     pixel_area_ha = (_SCALE ** 2) / 1e4
 
     result = {}
-    for class_id in (1, 2, 3, 4):
+    for class_id in (1, 2, 3, 4, 5):
         count = int((classes == class_id).sum())
         if count:
             result[_AGE_DICT[class_id]] = round(count * pixel_area_ha, 4)
@@ -65,21 +78,25 @@ def _area_by_age_class(age_years: "xr.DataArray") -> Dict[str, float]:
 
 
 def _bucket_age_class(age_years: ee.Image) -> ee.Image:
-    """Classe 1-4 (mesmos limites de `_AGE_DICT`) a partir da idade contínua, para visualização."""
+    """Classe 1-5 (mesmos limites de `_AGE_DICT`) a partir da idade contínua, para visualização."""
     return (
         age_years.where(age_years.gte(1).And(age_years.lte(10)), 1)
         .where(age_years.gt(10).And(age_years.lte(20)), 2)
         .where(age_years.gt(20).And(age_years.lte(30)), 3)
-        .where(age_years.gt(30), 4)
+        .where(age_years.gt(30).And(age_years.lt(40)), 4)
+        .where(age_years.gte(40), 5)
     )
 
 
 def _render_age_image(roi: ee.Geometry, age_years: ee.Image, base_year: int) -> "PIL.Image.Image":
-    """Mapa de idade (4 classes) sobreposto ao satélite, mesmo padrão visual das outras camadas."""
-    palette_dict = {"1-10": _AGE_PALETTE[0], "10-20": _AGE_PALETTE[1], "20-30": _AGE_PALETTE[2], "30-40": _AGE_PALETTE[3]}
+    """Mapa de idade (5 classes) sobreposto ao satélite, mesmo padrão visual das outras camadas."""
+    palette_dict = {
+        "1-10": _AGE_PALETTE[0], "10-20": _AGE_PALETTE[1], "20-30": _AGE_PALETTE[2],
+        "30-40": _AGE_PALETTE[3], "≥40 (indeterminada)": _AGE_PALETTE[4],
+    }
 
     age_class = _bucket_age_class(age_years)
-    overlay = age_class.visualize(min=1, max=4, palette=_AGE_PALETTE)
+    overlay = age_class.visualize(min=1, max=5, palette=_AGE_PALETTE)
     base = _get_base_image(roi=roi, year=base_year)
     boundary = _draw_feature_boundaries(roi=roi)
 
@@ -116,7 +133,7 @@ def estimate_pasture_age_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: 
     try:
         train_year = train_year or _latest_mapbiomas_year()
         pred_year = pred_year or (train_year + 1)
-        cache_key = pred_year
+        cache_key = f"{pred_year}_{_CACHE_VERSION}"
 
         if cache_exists(car_code, cache_key, kind="age"):
             dataset, image = load_cache(car_code, cache_key, kind="age")

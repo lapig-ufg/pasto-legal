@@ -1,5 +1,9 @@
 # Teste ponta a ponta — Pasto Legal (2026-09-09)
 
+> **Atualização (mesmo dia, retest pós-auditoria):** uma auditoria externa apontou 9 problemas reais no
+> pipeline (idade/vigor/biomassa/cache). Corrigi 8 deles e revalidei tudo — real GEE (pytest) + chat ao
+> vivo de novo. Detalhes na seção **"Retest pós-auditoria"** no final deste documento.
+
 Teste completo da aplicação rodando ao vivo (Docker/Colima, `http://localhost:8080`), cobrindo o fluxo de cadastro do zero e **todas** as tools do agente — as que já existiam e as que implementamos (idade e vigor de pastagem on-the-fly). Propriedade de teste: **GO-5205703-5B18B6DF441C4B7FA9444DDC127CF6C0** ("Fazenda Blue", Córrego do Ouro-GO, 23,47 ha), usuário anônimo, sessão nova.
 
 **Resultado: 16/16 tools testadas responderam corretamente com dado real do GEE/APIs, imagem/gráfico renderizado quando aplicável, e nenhum erro/exceção na interface.**
@@ -157,4 +161,56 @@ Não é uma tool dedicada — o agente usa `CalculatorTools` para compor o cálc
 | 16 | Boletim PDF | `generate_property_boletim` | ✅ |
 | — | Capacidade de suporte (UA) | `CalculatorTools` (via LLM) | ✅ |
 
-Nenhum erro, exceção ou resposta quebrada apareceu na UI durante todo o teste. 
+Nenhum erro, exceção ou resposta quebrada apareceu na UI durante todo o teste.
+
+---
+
+## Retest pós-auditoria (mesmo dia)
+
+Uma auditoria técnica externa revisou o pipeline e apontou 9 problemas. Investiguei cada um contra o
+código real (e, num caso, contra a documentação oficial do MapBiomas) antes de corrigir. Resultado:
+**8 corrigidos e revalidados**, 1 **pendente de decisão do time** (não é bug de código).
+
+### O que foi corrigido
+
+| # | Problema | Correção | Como validei |
+|---|---|---|---|
+| 1 | Capacidade de suporte (UA) podia dividir biomassa **mensal** (T2G) como se fosse **anual** — erro de ~12x | `BiomassStats` ganhou campo estrutural `period` ("mensal"/"anual"); skill `ua-calculator` agora verifica esse campo antes de aplicar a fórmula | Chat ao vivo: resposta agora diz explicitamente **"Biomassa Total Anual: 494,79 t..."** antes de dividir |
+| 2 | Bug real na calibração de vigor: o limiar era calculado certo, mas o rótulo final (Baixo/Médio/Alto) podia sair invertido numa propriedade onde a relação métrica↔vigor é invertida | `_calibrate_thresholds` agora devolve a ordem real das classes; a classificação final usa `.remap()` em vez de assumir "métrica baixa = Baixo" | Teste unitário com cenário sintético invertido (`order=[3,2,1]`) + regressão real (fallback e calibrado) sem mudança de resultado onde a ordem já era normal |
+| 4 | Resolução de 10m "aparente" (fonte nativa é 30m) não estava dita pro usuário | Descrições das tools de idade/biomassa agora avisam a resolução nativa | Revisão de texto (tools.yml pt/en) |
+| 5 | Classe "30-40 anos" misturava idade medida com precisão e idade censurada (sentinela "já madura", pode ser bem mais que 40) | Nova classe **"≥40 (idade real indeterminada)"**, separada, no cálculo estático e no on-the-fly | Chat ao vivo: resposta mostrou a nova classe corretamente (ver print 19) |
+| 6 | Máscara de pastagem do T2G fixa em 2024 sempre, e `query_pasture_statistics` passava `2024` hardcoded pra idade/vigor/LULC em vez do ano pedido | Máscara T2G usa o ano real do período pedido (clampado ao último ano do GPW); idade/vigor/LULC agora clampam sozinhos pro último ano de cada asset MapBiomas e recebem o ano real | Leitura de código + suíte completa passando |
+| 7 | Cache não tinha versão — uma mudança de algoritmo continuaria servindo resultado antigo pra sempre | `_CACHE_VERSION` em biomassa/idade/vigor/classificação | Suíte inteira rodou com cache invalidado (forçou recomputo real) e depois hit de cache corretamente |
+| 8 | Bug real de unidade na legenda do mapa antigo de biomassa (`retrieve_mapbiomas_biomass_image`, `*0.09` só na legenda) | Função inteira removida — já era código morto, sem nenhum call site | `grep` confirmando zero referências |
+| bônus | Achado durante o retest: `_vigor_metrics_image` fazia `linkCollection` **antes** de filtrar espaço/tempo, obrigando o GEE a casar contra o arquivo global inteiro — causou timeouts reais de rede (`Read timed out`) sob carga | Filtra ambas as coleções (Sentinel-2 + Cloud Score+) por `roi`/data **antes** do `linkCollection` | Antes: 3 timeouts seguidos aos ~120s. Depois: passou em 85-131s, de forma consistente |
+
+### Pendente — decisão do time, não é bug de código
+
+**Fator de conversão de biomassa (2,7 → 2,3).** O ATBD oficial da Coleção 10 do MapBiomas (ago/2025)
+documenta que o fator carbono→matéria-seca mudou de 2,7 (37% carbono, Coleção 9) pra **2,3** (43% carbono,
+mais realista pra Brachiaria brizantha) — nosso `DRY_BIOMASS_FACTOR` ainda usa 2,7 (0,0135 em vez de
+0,0115, **17,4% mais alto**). Não mudei porque afeta todo número de biomassa já exibido — comentário com a
+fonte já está no código (`pasture_biomass.py`), aguardando confirmação do LAPIG.
+
+### Prova real (chat ao vivo, mesma propriedade, pós-fix)
+
+![idade corrigida](19-idade-5classes-fix.jpg)
+
+```
+Idade da Pastagem Atualizada (On-the-Fly para 2025):
+1 a 10 anos: 5,65 ha
+10 a 20 anos: 6,21 ha
+20 a 30 anos: 0,31 ha
+≥ 40 anos (idade real indeterminada): 0,86 ha
+```
+
+```
+Capacidade de Suporte Animal (UA)
+Biomassa Total Anual: 494,79 toneladas de matéria seca (ano base: 2024).
+Capacidade Ideal Total: 60,34 UA
+```
+
+Suíte automatizada real (GEE) revalidada por completo: `test_pasture_age.py` (3/3), `test_pasture_vigor.py`
+(3/3), `test_pasture_classification.py` (3/3), `test_pasture_biomass.py` (4/4), `tests/pdf/` (2/2 relevantes,
+incluindo um teste com coordenadas fake que corrigi pra coordenadas reais), `tests/configs/` (10/10),
+`test_pii_gate.py` (20/20), `test_text_wall_chunking.py` (1/1). 

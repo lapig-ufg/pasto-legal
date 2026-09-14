@@ -24,6 +24,12 @@ _GPW_GRASSLAND_ASSET = "projects/global-pasture-watch/assets/ggc-30m/v1-1/grassl
 # Apropriado para pastagens cultivadas de Urochloa brizantha, dominantes no Brasil (MapBiomas Brazil)
 _GRASS_LUEMAX_FACTOR = 0.50  # gC/m²/day/MJ
 
+# PENDENTE DE DECISÃO: este é o fator da Coleção 9 do MapBiomas (37% de carbono, base
+# IPCC). O ATBD da Coleção 10 (ago/2025) documenta a atualização desse fator pra 2.3
+# (43% de carbono, mais realista pra Brachiaria brizantha), resultando em
+# DRY_BIOMASS_FACTOR = 0.0115 em vez de 0.0135 — 17,4% menor. Fonte:
+# https://brasil.mapbiomas.org/wp-content/uploads/sites/4/2025/08/Pasture-Appendix-ATBD-Collection-10-v1.pdf
+# Não mudei sozinho porque afeta todo número de biomassa já exibido — decisão do time.
 _IPCC_FACTOR = 2.7  # conversão de carbono para biomassa seca
 
 _UNIT_CONVERSION_FACTOR = 0.01  # gC/m² -> ton/ha
@@ -33,6 +39,10 @@ DRY_BIOMASS_FACTOR = _GRASS_LUEMAX_FACTOR * _IPCC_FACTOR * _UNIT_CONVERSION_FACT
 _HISTORY_START_YEAR = 2000
 
 _SCALE = 10
+
+# Bump sempre que a lógica de cálculo mudar (ex.: se/quando o fator acima for
+# atualizado) — invalida cache antigo em vez de servir resultado stale.
+_CACHE_VERSION = "v1"
 
 
 def _utm_epsg_for_roi(roi: ee.Geometry) -> str:
@@ -130,7 +140,7 @@ def estimate_pasture_biomass_history(roi: ee.Geometry, car_code: str) -> Dict:
     """
     try:
         latest_year = _latest_gpw_year()
-        cache_key = f"history_{latest_year}"
+        cache_key = f"history_{latest_year}_{_CACHE_VERSION}"
 
         if cache_exists(car_code, cache_key, kind="biomass"):
             dataset, image = load_cache(car_code, cache_key, kind="biomass")

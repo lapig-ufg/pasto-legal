@@ -102,7 +102,9 @@ analysis_tools:
       gráfico de tendência.
 
       Use quando o usuário perguntar sobre a evolução/tendência da biomassa da pastagem ao
-      longo dos anos, não apenas o valor mais recente.
+      longo dos anos, não apenas o valor mais recente. Resolução nativa da fonte (GPW) é
+      30m, reamostrada pra grade de 10m — não inventa precisão espacial por talhão maior
+      que a da fonte.
 
       params:
           car_codes (list[str]): Lista de códigos CAR da propriedade.
@@ -115,10 +117,14 @@ analysis_tools:
       Estima a idade da pastagem (em anos) on-the-fly para o ano mais recente possível,
       combinando a idade do MapBiomas no último ano disponível com a classificação de
       pastagem on-the-fly do ano seguinte (áreas que continuam pastagem ganham +1 ano;
-      pastagem nova começa em 1 ano). Gera um mapa colorido por faixa de idade.
+      pastagem nova começa em 1 ano). Gera um mapa colorido por faixa de idade — inclui
+      uma classe "≥40 (idade real indeterminada)" pra pixels cujo dado de origem é
+      censurado (pastagem já madura antes do início da série, idade real desconhecida).
 
       Use quando o usuário perguntar pela idade da pastagem e quiser o dado mais atual
-      possível, não travado no último ano do MapBiomas.
+      possível, não travado no último ano do MapBiomas. Resolução nativa do asset de
+      idade é 30m, reamostrada pra grade de 10m — não inventa precisão espacial por
+      talhão maior que a da fonte.
 
       params:
           car_codes (list[str]): Lista de códigos CAR da propriedade.

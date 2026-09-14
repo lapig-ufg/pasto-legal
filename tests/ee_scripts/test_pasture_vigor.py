@@ -15,7 +15,7 @@ import pytest
 
 import app.services.geospatial.gee  # noqa: F401 — inicializa o Earth Engine
 
-from app.services.geospatial.pasture_vigor import _VIGOR_DICT, estimate_pasture_vigor_on_the_fly
+from app.services.geospatial.pasture_vigor import _CACHE_VERSION, _VIGOR_DICT, estimate_pasture_vigor_on_the_fly
 from app.services.geospatial.pasture_cache import _cache_paths
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -46,7 +46,7 @@ def test_estimate_pasture_vigor_on_the_fly_produces_plausible_values(index):
     assert result["calibration_status"] in {"calibrated", "fallback"}
     assert result["calibration_metric"] in {"amplitude", "mean_ndvi"}
 
-    zarr_path, png_path = _cache_paths(prop["car_code"], result["pred_year"], kind="vigor")
+    zarr_path, png_path = _cache_paths(prop["car_code"], f"{result['pred_year']}_{_CACHE_VERSION}", kind="vigor")
     assert Path(zarr_path).exists(), "Cache zarr não foi criado"
     assert Path(png_path).exists(), "Cache png não foi criado"
 
@@ -63,7 +63,7 @@ def test_estimate_pasture_vigor_on_the_fly_uses_cache_on_second_call():
     result_probe = estimate_pasture_vigor_on_the_fly(roi=prop["roi"], car_code=prop["car_code"])
     pred_year = result_probe["pred_year"]
 
-    zarr_path, png_path = _cache_paths(prop["car_code"], pred_year, kind="vigor")
+    zarr_path, png_path = _cache_paths(prop["car_code"], f"{pred_year}_{_CACHE_VERSION}", kind="vigor")
     if Path(zarr_path).exists():
         shutil.rmtree(zarr_path)
     if Path(png_path).exists():

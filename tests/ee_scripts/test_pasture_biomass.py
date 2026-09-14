@@ -22,6 +22,7 @@ import pytest
 import app.services.geospatial.gee  # noqa: F401 — inicializa o Earth Engine
 
 from app.services.geospatial.pasture_biomass import (
+    _CACHE_VERSION,
     _latest_gpw_year,
     estimate_pasture_biomass_history,
 )
@@ -57,7 +58,7 @@ def test_estimate_pasture_biomass_history_produces_plausible_values(index):
     result = estimate_pasture_biomass_history(roi=prop["roi"], car_code=prop["car_code"])
 
     latest_year = _latest_gpw_year()
-    zarr_path, png_path = _cache_paths(prop["car_code"], f"history_{latest_year}", kind="biomass")
+    zarr_path, png_path = _cache_paths(prop["car_code"], f"history_{latest_year}_{_CACHE_VERSION}", kind="biomass")
     assert Path(zarr_path).exists(), "Cache zarr não foi criado"
     assert Path(png_path).exists(), "Cache png não foi criado"
 
@@ -77,7 +78,7 @@ def test_estimate_pasture_biomass_history_uses_cache_on_second_call():
     prop = _load_test_properties()[1]
     latest_year = _latest_gpw_year()
 
-    zarr_path, png_path = _cache_paths(prop["car_code"], f"history_{latest_year}", kind="biomass")
+    zarr_path, png_path = _cache_paths(prop["car_code"], f"history_{latest_year}_{_CACHE_VERSION}", kind="biomass")
     if Path(zarr_path).exists():
         shutil.rmtree(zarr_path)
     if Path(png_path).exists():

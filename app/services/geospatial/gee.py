@@ -269,108 +269,6 @@ def retrieve_plain_satellite_image(coords: List[List[List[List[float]]]]) -> Lis
         )
 
 
-def retrieve_mapbiomas_biomass_image(coords: List[List[List[List[float]]]], year: int = None) -> PIL.Image:
-    """
-    Gera uma imagem de satélite com a camada de biomassa de pastagem sobreposta,
-    baseada na geometria da propriedade rural fornecida.
-    
-    Args:
-        coords: Lista de coordenadas representando o MultiPolygon da fazenda.
-        
-    Returns:
-        PIL.Image: Imagem final mesclada contendo satélite, biomassa, contorno e legenda.
-    """
-    try:
-        biomass_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_biomass_v2')
-        biomass_asset_bands = biomass_asset.bandNames().getInfo()
-
-        max_year = int(biomass_asset_bands[-1].replace("biomass_", ""))
-        min_year = int(biomass_asset_bands[0].replace("biomass_", ""))
-
-        if year is None:
-            year = max_year
-
-        if year < min_year or year > max_year:
-            raise ValueError(f"O ano deve estar entre {min_year} e {max_year}.")
-        
-        roi = ee.Geometry.MultiPolygon(coords)
-
-        biomass = biomass_asset.select([year - 2000]).clip(roi)
-
-        stats_biomass_ee = biomass.reduceRegion(
-            reducer=ee.Reducer.minMax(),
-            geometry=roi,
-            scale=30,
-            maxPixels=1e13
-        )
-
-        stats_dict = stats_biomass_ee.getInfo()
-
-        min_key = next((k for k in stats_dict if k.endswith('_min')), None)
-        max_key = next((k for k in stats_dict if k.endswith('_max')), None)
-
-        if not min_key or stats_dict[min_key] is None:
-            raise ValueError("Não foi possível calcular a biomassa. A área pode não conter pastagem mapeada.")
-
-        min_bio_val = stats_dict[min_key]
-        max_bio_val = stats_dict[max_key]    
-        
-        palette = ['#000033','#9400D3','#FF00FF','#00FFFF','#FFFFFF']
-        bioprop = biomass.visualize(**{"min": min_bio_val, "max": max_bio_val, "palette": palette})        
-        
-        base_image = _get_base_image(roi=roi, year=year)
-
-        outline = _draw_feature_boundaries(roi=roi)
-
-        final_image = base_image.blend(bioprop.clip(roi))
-        final_image = final_image.blend(outline).clip(roi.buffer(_FEATURE_BUFFER).bounds());
-        
-        url = final_image.getThumbURL({"dimensions":_IMAGE_DIMENSION, "format": "png"})
-        
-        resposta = requests.get(url, timeout=60)
-        resposta.raise_for_status()
-    
-        img = PIL.Image.open(BytesIO(resposta.content))
-
-        img = append_continuous_colorbar(
-            img, 
-            title=f"Biomassa\n({str(year)})", 
-            vmin=round(float(min_bio_val) * 0.09),
-            vmax=round(float(max_bio_val) * 0.09),
-            palette=palette
-        )
-
-        return img
-
-    except ValueError as error:
-        log_error(traceback.format_exc())
-        raise error
-    except ee.EEException as error:
-        log_error(traceback.format_exc())
-        raise RuntimeError(
-            f"Peça desculpas e informe que houve uma falha de processamento.\n"
-            "Peça ao usuário que tente novamente mais tarde."
-        )
-    except requests.exceptions.HTTPError as error:
-        log_error(traceback.format_exc())
-        raise RuntimeError(
-            f"Peça desculpas e informe que o servidor de imagens do satélite falhou.\n"
-            "Peça ao usuário que tente novamente mais tarde."
-        )
-    except requests.exceptions.RequestException as error:
-        log_error(traceback.format_exc())
-        raise RuntimeError(
-            f"Peça desculpas e informe que houve um problema de conexão ao baixar o mapa de biomassa.\n"
-            "Peça ao usuário que tente novamente mais tarde."
-        )
-    except Exception as error:
-        log_error(traceback.format_exc())
-        raise RuntimeError(
-            f"Peça desculpas e informe que houve um erro inesperado.\n"
-            "Peça ao usuário que tente novamente mais tarde."
-        )
-    
-
 def _get_t2g_biomass_image(roi, month, year, day=1):
     UGPP_SCALE_FACTOR = 0.1
 
@@ -387,8 +285,11 @@ def _get_t2g_biomass_image(roi, month, year, day=1):
     ugpp = ee.ImageCollection("projects/wri-lcl-time2graze/assets/ugpp_prod_10m_v1")
     ugpp_col = ugpp.filterBounds(roi).filterDate(start_date, end_date)
 
-    grassland_asset = ee.ImageCollection("projects/global-pasture-watch/assets/ggc-30m/v1-1/grassland_c");
-    grassland_mask = grassland_asset.filterBounds(roi).filterDate('2024-01-01','2024-12-31').first().gte(1)
+    # Máscara de pastagem no mesmo ano do período de biomassa pedido (não mais fixa em 2024) —
+    # limitada ao último ano publicado pelo GPW, já que o asset não cobre anos futuros.
+    mask_year = min(target_year, _latest_gpw_year())
+    grassland_asset = ee.ImageCollection("projects/global-pasture-watch/assets/ggc-30m/v1-1/grassland_c")
+    grassland_mask = grassland_asset.filterBounds(roi).filterDate(f'{mask_year}-01-01', f'{mask_year + 1}-01-01').first().gte(1)
 
     if ugpp_col.size().eq(0).getInfo():
         log_error(
@@ -705,7 +606,10 @@ def get_biomass(roi: ee.Geometry, year: int, month: int, day: int = 1) -> 'Bioma
         # soma de t/ha por pixel de 30m (900m²) -> total em toneladas: x 0.09 ha/pixel
         biomass_value = stats.getInfo().get('t_ha_year', 0) * 0.09
 
-        return BiomassStats(observation_year=year, amount=Value(value=biomass_value, unity="tonelada(s) de matéria seca acumulada no ano"))
+        return BiomassStats(
+            observation_year=year, period="anual",
+            amount=Value(value=biomass_value, unity="tonelada(s) de matéria seca acumulada no ano"),
+        )
     else:
         last_biomass, target_year, target_month = result
 
@@ -720,21 +624,44 @@ def get_biomass(roi: ee.Geometry, year: int, month: int, day: int = 1) -> 'Bioma
 
         month_dict = { 1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho", 7: "Julho", 8: "Agosto", 9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro" }
 
-        return BiomassStats(observation_year=target_year, amount=Value(value=biomass_value, unity=f"tonelada(s) de matéria seca acumulada no mês de {month_dict[target_month]}"))
+        return BiomassStats(
+            observation_year=target_year, period="mensal",
+            amount=Value(value=biomass_value, unity=f"tonelada(s) de matéria seca acumulada no mês de {month_dict[target_month]}"),
+        )
+
+
+def _latest_asset_year(asset_id: str, base_year: int = 2000) -> int:
+    """
+    Último ano disponível num asset MapBiomas cujas bandas são indexadas por
+    posição (banda 0 = base_year, banda 1 = base_year+1, ...) — caso do
+    pasture_age_v2, pasture_vigor_v3 e integration_v2 usados abaixo.
+    """
+    band_count = ee.Image(asset_id).bandNames().size().getInfo()
+    return base_year + band_count - 1
+
+
+_AGE_ASSET = 'projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_age_v2'
+_VIGOR_ASSET = 'projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_vigor_v3'
+_LULC_ASSET = 'projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_integration_v2'
 
 
 def get_pasture_age(roi: ee.Geometry, year: int, month: int = None) -> List['AgeStats']:
-    AGE_DICT = {'1':'1-10', '2':'10-20', '3':'20-30', '4':'30-40'}
+    # 30-40 = idade calculada com precisão nesse intervalo; ≥40 = pixel bateu no valor
+    # sentinela do asset (pastagem já madura ao início da série, idade real desconhecida
+    # e possivelmente bem maior que 40) — não misturamos as duas coisas na mesma classe.
+    AGE_DICT = {'1':'1-10', '2':'10-20', '3':'20-30', '4':'30-40', '5':'≥40 (idade real indeterminada)'}
 
-    age_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_age_v2')
-    last_age = age_asset.select(year - 2000)
+    target_year = min(year, _latest_asset_year(_AGE_ASSET))
+    age_asset = ee.Image(_AGE_ASSET)
+    raw_age = age_asset.select(target_year - 2000).subtract(200)
+    is_censored = raw_age.eq(-100)
 
-    last_age = last_age.subtract(200)
-    last_age = last_age.where(last_age.eq(-100), 40)
+    last_age = raw_age.where(is_censored, 40)
     last_age = (last_age.where(last_age.gte(1).And(last_age.lte(10)), 1)
                         .where(last_age.gt(10).And(last_age.lte(20)), 2)
                         .where(last_age.gt(20).And(last_age.lte(30)), 3)
                         .where(last_age.gt(30).And(last_age.lte(40)), 4)
+                        .where(is_censored, 5)
                 ).rename('Anos')
 
     areaImg = ee.Image.pixelArea().divide(10000).addBands(last_age)
@@ -754,10 +681,10 @@ def get_pasture_age(roi: ee.Geometry, year: int, month: int = None) -> List['Age
             class_id = str(int(group['class']))
             class_name = AGE_DICT.get(class_id)
             area_value = round(float(group['sum']))
-            
+
             age_data_list.append(AgeData(age=class_name, amount=Value(value=area_value, unity="hectares (ha)")))
 
-    return AgeStats(observation_year=2024, data=age_data_list)
+    return AgeStats(observation_year=target_year, data=age_data_list)
 
 def get_pasture_vigor(roi: ee.Geometry, year: int, month: int = None) -> List['VigorStats']:
     VIGOR_DICT = {
@@ -766,8 +693,9 @@ def get_pasture_vigor(roi: ee.Geometry, year: int, month: int = None) -> List['V
         '3':'Alto: pastagens com alto vigor vegetativo.'
     }
 
-    vigor_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_vigor_v3')
-    last_vigor = vigor_asset.select(year - 2000)
+    target_year = min(year, _latest_asset_year(_VIGOR_ASSET))
+    vigor_asset = ee.Image(_VIGOR_ASSET)
+    last_vigor = vigor_asset.select(target_year - 2000)
 
     areaImg = ee.Image.pixelArea().divide(10000).addBands(last_vigor)
 
@@ -786,10 +714,10 @@ def get_pasture_vigor(roi: ee.Geometry, year: int, month: int = None) -> List['V
             class_id = str(int(group['class']))
             vigor_name = VIGOR_DICT.get(class_id)
             area_value = round(float(group['sum']), 2)
-            
+
             vigor_data_list.append(VigorData(vigor=vigor_name, amount=Value(value=area_value, unity="hectares (ha)")))
 
-    return VigorStats(observation_year=2024, data=vigor_data_list)
+    return VigorStats(observation_year=target_year, data=vigor_data_list)
 
 def get_land_use_land_cover(roi: ee.Geometry, year: int, month: int = None) -> List['LULCStats']:
     CLASSES = {
@@ -806,8 +734,9 @@ def get_land_use_land_cover(roi: ee.Geometry, year: int, month: int = None) -> L
         '31':'Aquicultura', '27':'Não observado'
     }
 
-    class_asset = ee.Image('projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_integration_v2')
-    last_class = class_asset.select(year - 2000)
+    target_year = min(year, _latest_asset_year(_LULC_ASSET))
+    class_asset = ee.Image(_LULC_ASSET)
+    last_class = class_asset.select(target_year - 2000)
 
     areaImg = ee.Image.pixelArea().divide(10000).addBands(last_class)
 
@@ -829,7 +758,7 @@ def get_land_use_land_cover(roi: ee.Geometry, year: int, month: int = None) -> L
             
             lulc_class_data_list.append(LULCData(lulc_class=class_name, amount=Value(value=area_value, unity="hectares")))
 
-    return LULCStats(observation_year=2024, data=lulc_class_data_list)
+    return LULCStats(observation_year=target_year, data=lulc_class_data_list)
 
 def query_pasture_statistics(coords: List[List[List[List[float]]]], year: int, month: int, day: int = 1) -> PropertyStats:
     """
@@ -839,9 +768,11 @@ def query_pasture_statistics(coords: List[List[List[List[float]]]], year: int, m
         roi = ee.Geometry.MultiPolygon(coords)
 
         biomass_stats = get_biomass(roi, year, month, day)
-        age_stats = get_pasture_age(roi, 2024, month)
-        vigor_stats = get_pasture_vigor(roi, 2024, month)
-        lulc_stats = get_land_use_land_cover(roi, 2024, month)
+        # cada função clampa sozinha pro último ano publicado no respectivo asset MapBiomas
+        # (não trava mais em 2024 — avança automaticamente quando a MapBiomas atualizar)
+        age_stats = get_pasture_age(roi, year, month)
+        vigor_stats = get_pasture_vigor(roi, year, month)
+        lulc_stats = get_land_use_land_cover(roi, year, month)
 
         result = PastureStats(
             biomass_stats=biomass_stats,

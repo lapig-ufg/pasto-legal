@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -12,11 +12,22 @@ class Value(BaseModel):
 
 class BiomassStats(BaseModel):
     observation_year: int = Field(..., description="Ano de referência.")
+    period: Literal["mensal", "anual"] = Field(
+        ...,
+        description=(
+            "Se `amount` é a biomassa acumulada em 1 mês (fonte T2G) ou no ano inteiro (fallback GPW). "
+            "Campo estrutural — não deduzir isso só pelo texto de `amount.unity`. Nunca use um valor "
+            "'mensal' diretamente em fórmulas que esperam total anual (ex.: capacidade de suporte "
+            "animal) sem antes converter."
+        ),
+    )
     amount: Value = Field(..., description="Estimativa da massa biológica total acumulada na vegetação da área analisada.")
 
     def __str__(self) -> str:
+        aviso = " (⚠️ mensal — multiplique por 12 antes de usar em fórmulas anuais)" if self.period == "mensal" else " (já é o total do ano)"
         return (
             f"- Ano de Referência: {self.observation_year}\n"
+            f"- Período de acumulação: {self.period}{aviso}\n"
             f"- Estimativa de Massa Biológica Acumulada na Vegetação: {self.amount}"
         )
 

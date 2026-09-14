@@ -16,6 +16,7 @@ import ee
 import pytest
 
 from app.services.geospatial.pasture_classification import (
+    _CACHE_VERSION,
     _latest_mapbiomas_year,
     classify_pasture_on_the_fly,
 )
@@ -45,7 +46,7 @@ def test_classify_pasture_on_the_fly_produces_plausible_result(index):
 
     result = classify_pasture_on_the_fly(roi=prop["roi"], car_code=prop["car_code"])
 
-    zarr_path, png_path = _cache_paths(prop["car_code"], result["pred_year"])
+    zarr_path, png_path = _cache_paths(prop["car_code"], f"{result['pred_year']}_{_CACHE_VERSION}")
     assert Path(zarr_path).exists(), "Cache zarr não foi criado"
     assert Path(png_path).exists(), "Cache png não foi criado"
 
@@ -59,7 +60,7 @@ def test_classify_pasture_on_the_fly_uses_cache_on_second_call():
     prop = _load_test_properties()[1]
     pred_year = _latest_mapbiomas_year() + 1
 
-    zarr_path, png_path = _cache_paths(prop["car_code"], pred_year)
+    zarr_path, png_path = _cache_paths(prop["car_code"], f"{pred_year}_{_CACHE_VERSION}")
     if Path(zarr_path).exists():
         shutil.rmtree(zarr_path)
     if Path(png_path).exists():

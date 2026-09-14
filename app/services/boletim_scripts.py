@@ -24,7 +24,7 @@ def build_placeholder_property_stats(car_code: str) -> PropertyStats:
     current_year = date.today().year
 
     pasture_stats = PastureStats(
-        biomass_stats=BiomassStats(observation_year=current_year, amount=Value(value=14.8, unity="t/ha")),
+        biomass_stats=BiomassStats(observation_year=current_year, period="anual", amount=Value(value=14.8, unity="t/ha")),
         age_stats=AgeStats(
             observation_year=current_year,
             data=[

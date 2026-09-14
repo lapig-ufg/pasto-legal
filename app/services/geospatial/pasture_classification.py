@@ -32,6 +32,10 @@ _SCALE = 10
 
 _MASK_VALUE = -32768
 
+# Bump sempre que a lógica de amostragem/treino/classificação mudar — invalida
+# cache antigo em vez de servir resultado stale de uma versão anterior do algoritmo.
+_CACHE_VERSION = "v1"
+
 
 def _embedding(roi: ee.Geometry, year: int) -> ee.Image:
     """
@@ -195,9 +199,10 @@ def classify_pasture_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int 
     try:
         train_year = train_year or _latest_mapbiomas_year()
         pred_year = pred_year or (train_year + 1)
+        cache_key = f"{pred_year}_{_CACHE_VERSION}"
 
-        if cache_exists(car_code, pred_year):
-            dataset, image = load_cache(car_code, pred_year)
+        if cache_exists(car_code, cache_key):
+            dataset, image = load_cache(car_code, cache_key)
             pasto = dataset["pasto"].isel(time=0)
             area_ha = _area_ha_from_pasto(pasto)
             log_info(f"[{car_code}] pasture cache hit ({pred_year}): {area_ha} ha")
@@ -227,7 +232,7 @@ def classify_pasture_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int 
         area_ha = _area_ha_from_pasto(pasto)
 
         image = _render_classification_image(roi=roi, classified=classified, base_year=pred_year)
-        save_cache(car_code, pred_year, dataset, image)
+        save_cache(car_code, cache_key, dataset, image)
 
         log_info(f"[{car_code}] classify_pasture_on_the_fly {pred_year}: {area_ha} ha em {time.perf_counter() - start:.2f}s")
 

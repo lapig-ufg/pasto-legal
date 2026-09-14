@@ -37,6 +37,10 @@ _SCALE = 10
 
 _MIN_PIXELS_PER_CLASS = 30
 
+# Bump sempre que a lógica de cálculo/calibração mudar — invalida cache antigo
+# incompatível com o novo formato/semântica em vez de servir resultado stale.
+_CACHE_VERSION = "v2"
+
 # Limiares fixos de amplitude (NDVI) usados só quando a calibração por propriedade
 # não é confiável (poucos pixels por classe ou propriedade sem as 3 classes do
 # MapBiomas presentes) — estimativa grosseira p/ pastagem no Cerrado, não substitui
@@ -84,11 +88,17 @@ def _vigor_metrics_image(roi: ee.Geometry, year: int) -> ee.Image:
         time_radians = image.select("t").multiply(2 * math.pi)
         return image.addBands(time_radians.cos().rename("cos")).addBands(time_radians.sin().rename("sin"))
 
+    # Filtra ambas as coleções por espaço/tempo ANTES do linkCollection — juntar primeiro
+    # (ordem antiga) obriga o GEE a casar contra o arquivo global inteiro das duas coleções
+    # antes de descartar qualquer coisa, o que é desnecessariamente pesado e reduz margem
+    # contra timeout em dias de servidor mais lento.
+    date_range = (f"{year}-01-01", f"{year + 1}-01-01")
+    s2_filtered = ee.ImageCollection(_S2_ASSET).filterBounds(roi).filterDate(*date_range)
+    cloud_score_filtered = ee.ImageCollection(_CLOUD_SCORE_ASSET).filterBounds(roi).filterDate(*date_range)
+
     harmonic_collection = (
-        ee.ImageCollection(_S2_ASSET)
-        .linkCollection(ee.ImageCollection(_CLOUD_SCORE_ASSET), ["cs_cdf"])
-        .filterBounds(roi)
-        .filterDate(f"{year}-01-01", f"{year + 1}-01-01")
+        s2_filtered
+        .linkCollection(cloud_score_filtered, ["cs_cdf"])
         .map(mask_s2)
         .map(add_variables)
         .map(add_harmonics)
@@ -107,19 +117,27 @@ def _vigor_metrics_image(roi: ee.Geometry, year: int) -> ee.Image:
 
 def _calibrate_thresholds(
     static_class: np.ndarray, amplitude: np.ndarray, mean_ndvi: np.ndarray
-) -> Tuple[List[float], str, str]:
+) -> Tuple[List[float], List[int], str, str]:
     """
     Deriva 2 limiares que separam as 3 classes estáticas do MapBiomas (no ano de
     treino, dentro da própria propriedade) usando a métrica (amplitude ou
     mean_ndvi) com melhor separação entre classes.
 
+    `order` é a peça que faz a classificação final não sair invertida: como as
+    classes são ordenadas pelo VALOR da métrica (não pelo número da classe), a
+    relação pode vir invertida numa propriedade específica (ex.: pasto irrigado
+    com baixa amplitude e alto vigor) — sem devolver essa ordem, o chamador não
+    tem como saber se "métrica baixa" corresponde à classe 1 (Baixo) ou à 3 (Alto).
+
     Returns:
-        Tuple[List[float], str, str]: (limiares ordenados, nome da métrica escolhida,
-        "mapbiomas_<ano>" ou "fallback").
+        Tuple[List[float], List[int], str, str]: (2 limiares ordenados, as 3
+        classes originais do MapBiomas ordenadas por valor crescente da métrica
+        — ordered[0] é a classe do tercil mais baixo —, nome da métrica escolhida,
+        "calibrated" ou "fallback").
     """
     valid = ~np.isnan(static_class)
 
-    best_metric_name, best_thresholds, best_score = None, None, -math.inf
+    best_metric_name, best_thresholds, best_order, best_score = None, None, None, -math.inf
 
     for metric_name, metric in (("amplitude", amplitude), ("mean_ndvi", mean_ndvi)):
         medians, spreads, counts = {}, {}, {}
@@ -143,12 +161,12 @@ def _calibrate_thresholds(
         score = gap / pooled_spread
 
         if score > best_score:
-            best_metric_name, best_thresholds, best_score = metric_name, thresholds, score
+            best_metric_name, best_thresholds, best_order, best_score = metric_name, thresholds, ordered, score
 
     if best_metric_name is None:
-        return list(_FALLBACK_AMPLITUDE_THRESHOLDS), "amplitude", "fallback"
+        return list(_FALLBACK_AMPLITUDE_THRESHOLDS), [1, 2, 3], "amplitude", "fallback"
 
-    return best_thresholds, best_metric_name, "calibrated"
+    return best_thresholds, best_order, best_metric_name, "calibrated"
 
 
 def _area_by_vigor_class(vigor_class: np.ndarray) -> Dict[str, float]:
@@ -204,7 +222,7 @@ def estimate_pasture_vigor_on_the_fly(roi: ee.Geometry, car_code: str, pred_year
     try:
         train_year = train_year or _latest_mapbiomas_year()
         pred_year = pred_year or (train_year + 1)
-        cache_key = pred_year
+        cache_key = f"{pred_year}_{_CACHE_VERSION}"
 
         if cache_exists(car_code, cache_key, kind="vigor"):
             dataset, image = load_cache(car_code, cache_key, kind="vigor")
@@ -242,7 +260,7 @@ def estimate_pasture_vigor_on_the_fly(roi: ee.Geometry, car_code: str, pred_year
             calibration_collection, engine="ee", crs=crs, crs_transform=transform, shape_2d=(width, height),
         ).load()
 
-        thresholds, metric_name, calibration_status = _calibrate_thresholds(
+        thresholds, order, metric_name, calibration_status = _calibrate_thresholds(
             static_class=calibration_dataset["static_class"].isel(time=0).values,
             amplitude=calibration_dataset["amplitude"].isel(time=0).values,
             mean_ndvi=calibration_dataset["mean_ndvi"].isel(time=0).values,
@@ -251,8 +269,13 @@ def estimate_pasture_vigor_on_the_fly(roi: ee.Geometry, car_code: str, pred_year
             log_warning(f"[{car_code}] vigor: calibração por propriedade indisponível, usando limiar fixo")
 
         metrics_pred = _vigor_metrics_image(roi=roi, year=pred_year).select(metric_name)
+        # tercile 0/1/2 = "métrica baixa/média/alta" — remap() traduz isso de volta pra
+        # classe real do MapBiomas usando `order` (pode não ser [1,2,3]: numa propriedade
+        # onde a relação métrica<->vigor é invertida, ex. pasto irrigado com baixa
+        # amplitude e alto vigor, sem esse remap a classificação sairia invertida).
+        tercile = metrics_pred.gt(float(thresholds[0])).add(metrics_pred.gt(float(thresholds[1])))
         vigor_image = (
-            metrics_pred.gt(float(thresholds[0])).add(metrics_pred.gt(float(thresholds[1]))).add(1)
+            tercile.remap([0, 1, 2], order)
             .updateMask(classified)
             .rename("vigor_class")
         )
