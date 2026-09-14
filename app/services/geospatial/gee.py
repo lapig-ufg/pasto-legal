@@ -446,7 +446,7 @@ def _get_t2g_biomass_image(
 
     n_days = ee.Number(end_date.difference(start_date, 'day'))
 
-    ugpp = ee.ImageCollection("projects/wri-lcl-time2graze/assets/ugpp_cf_10m_v1").filter(ee.Filter.date('2025-07-03', '2025-07-04').Not())
+    ugpp = ee.ImageCollection("projects/wri-lcl-time2graze/assets/ugpp_prod_10m_v1").filter(ee.Filter.date('2025-07-03', '2025-07-04').Not())
     ugpp_col = ugpp.filterBounds(roi).filterDate(start_date, end_date)
 
     grassland_asset = ee.ImageCollection("projects/global-pasture-watch/assets/ggc-30m/v1-1/grassland_c");
