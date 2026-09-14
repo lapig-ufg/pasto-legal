@@ -1003,7 +1003,7 @@ def get_biomass(roi: ee.Geometry, month: int, year: int) -> BiomassStats:
         last_biomass = biomass_asset.select(year - 2000)
 
         stats = last_biomass.reduceRegion(
-            reducer=ee.Reducer.sum(),
+            reducer=ee.Reducer.mean(),
             geometry=roi,
             scale=30,
             maxPixels=1e13
@@ -1016,13 +1016,18 @@ def get_biomass(roi: ee.Geometry, month: int, year: int) -> BiomassStats:
         last_biomass, target_year, target_month = result
 
         stats = last_biomass.reduceRegion(
-            reducer=ee.Reducer.sum(),
+            reducer=ee.Reducer.mean().combine(ee.Reducer.count(), sharedInputs=True),
             geometry=roi,
             scale=10,
             maxPixels=1e13
-        )
+        ).getInfo()
 
-        biomass_value = stats.getInfo().get(f'tonC_hec', 0) * 0.01
+        mean_biomass = stats.get('tonC_hec_mean') or 0
+        pixel_count = stats.get('tonC_hec_count') or 0
+
+        area_ha = pixel_count * 0.01
+
+        biomass_value = mean_biomass * area_ha
 
         month_dict = { 1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho", 7: "Julho", 8: "Agosto", 9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro" }
 
