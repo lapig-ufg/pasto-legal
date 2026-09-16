@@ -1,6 +1,5 @@
 import datetime
-from sqlalchemy import Column, Integer, Text, String, DateTime, Boolean
-
+from sqlalchemy import Column, Integer, Text, String, DateTime, Boolean, JSON
 from app.database.session import Base
 
 class UserTermsAcceptance(Base):
@@ -20,7 +19,7 @@ class NegativeFeedback(Base):
     original_question = Column(Text)
     reason_frustration = Column(Text)
     desired_answer = Column(Text)
-    context = Column(Text)
+    context = Column(JSON)
 
 
 class PositiveFeedback(Base):
@@ -32,7 +31,7 @@ class PositiveFeedback(Base):
     assistant_response = Column(Text)
     handler_message = Column(Text)
     grade = Column(Integer)
-    context = Column(Text)
+    context = Column(JSON)
 
 
 class AnalysisFeedback(Base):

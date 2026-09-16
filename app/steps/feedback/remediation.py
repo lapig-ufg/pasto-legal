@@ -32,7 +32,14 @@ def _should_apply_remediation(session_state: Dict[str, Any]) -> bool:
 
     try:
         user_mood = UserMood.model_validate(user_mood_raw)
-        return bool(user_mood.remediation and user_mood.remediation.effectiveness)
+        
+       
+        if user_mood.satisfaction and user_mood.satisfaction.level in [1, 2]:
+            remediation_done = user_mood.remediation and user_mood.remediation.effectiveness
+            if not remediation_done or user_mood.remediation.effectiveness.level <= 2:
+                return True
+        return False
+        
     except Exception as exc:
         log_error(f"_should_apply_remediation: failed to validate user_mood - {exc}")
         return False
@@ -56,11 +63,15 @@ def _merge_output_executor(step_input: StepInput, session_state: Dict[str, Any])
 
             if is_audio:
                 audio_item.transcript = response.content
+                session_state["chosen_response"] = response.content
+                
             else:
                 router_output.content = response.content
+                session_state["chosen_response"] = response.content
 
         except Exception as exc:
             log_error(f"_merge_output_executor: remediation agent failed - {exc}")
+            session_state.pop("chosen_response", None)
             return StepOutput(content="")
 
     return router_output

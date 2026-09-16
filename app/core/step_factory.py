@@ -5,7 +5,7 @@ from agno.utils.log import log_error, log_debug
 from agno.workflow import StepInput, StepOutput, Step
 
 from app.schemas.input_manager import InputManager
-
+from app.interfaces.streamlit.debug_helpers import extract_agent_run_data
 
 def _input_pre_processing(
     step_input: StepInput,
@@ -117,7 +117,15 @@ def _agent_executor_factory(
             )
 
         content = response.content if response.content else ""
-
+        if "recent_agent_runs" not in session_state:
+            session_state["recent_agent_runs"] = []
+            
+        run_data = extract_agent_run_data(response)
+        session_state["recent_agent_runs"].append(run_data)
+        
+        if len(session_state["recent_agent_runs"]) > 5:
+            session_state["recent_agent_runs"].pop(0)
+            
         return StepOutput(
             content=content,
             images=response.images if response.images else None,

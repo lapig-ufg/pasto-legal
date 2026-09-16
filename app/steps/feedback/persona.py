@@ -88,7 +88,9 @@ def manage_persona(step_input: StepInput, session_state: Dict[str, Any]) -> Step
                     existing_prefs[normalized_key] = len(user_persona.communication_preferences) - 1
 
             session_state["user_persona"] = user_persona.model_dump()
-
+            
+        if user_mood.satisfaction.level < 3 and user_mood.remediation is None:
+            return
         session_state["user_mood"] = None
 
     except Exception as e:

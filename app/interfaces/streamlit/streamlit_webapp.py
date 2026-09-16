@@ -6,6 +6,9 @@ import streamlit as st
 
 from typing import List
 from agno.media import Image, Audio
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../')))
 
 from app.configs.config import config
 from app.interfaces.streamlit.debug_helpers import extract_workflow_debug_data, extract_session_state

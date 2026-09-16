@@ -59,8 +59,13 @@ def evaluate_satisfaction(step_input: StepInput, session_state: Dict[str, Any]) 
     if user_mood is None:
         session_state["user_mood"] = {}
         session_state["user_mood"]["satisfaction"] = effectiveness
+        level = effectiveness.get("level", 3)
+        if level in [1, 2] and history_data:
+            last_user_msg, last_workflow_response = history_data[0]
+            session_state["original_prompt"] = last_user_msg
+            session_state["rejected_response"] = last_workflow_response
     else:
-        session_state["user_mood"]["remediation"] = effectiveness
+        session_state["user_mood"]["remediation"] = {"effectiveness": effectiveness}
 
     level = effectiveness.get("level", 3)
     level_message = effectiveness.get("level_message", "unknown")
@@ -82,14 +87,19 @@ def satisfaction_branch_selector(step_input: StepInput, session_state: Dict[str,
 
     if satisfaction_level == 5:
         return ["Persist Positive Feedback"]
-    elif satisfaction_level == 1:
+    # Aqui estava apenas == 1. Mudamos para in [1, 2]
+    elif satisfaction_level in [1, 2]:
         remediation = user_mood.get("remediation", {})
         effectiveness = (
             remediation.get("effectiveness", {})
             if isinstance(remediation, dict)
             else {}
         )
-        if not effectiveness or effectiveness.get("level", 2) <= 2:
-            return ["Persist Negative Feedback"]
+        if remediation:
+            effectiveness = remediation.get("effectiveness", {})
+            if effectiveness and effectiveness.get("level", 2) >= 4:
+                return ["Persist Negative Feedback"]
+            else:
+                return ["Neutral"]
 
     return ["Neutral"]
