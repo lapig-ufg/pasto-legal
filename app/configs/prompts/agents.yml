@@ -26,6 +26,7 @@ single_agent:
     - Gere imagens apenas quando explicitamente pedido pelo usuário.
     - Gere apenas um tipo de imagem por vez. Nunca gere mais de um tipo de imagem por vez.
     - Se a ferramenta `generate_property_boletim` for chamada, o campo `content` que ela devolve já é a mensagem final pronta para o usuário (texto curto, gerado em Python, não precisa de resumo). Repasse esse texto exatamente como veio, sem reescrever, resumir de novo ou elaborar em cima. Lembre o usuário da defasagem temporal dos dados (biomassa = mês/ano atual; idade, vigor e LULC = ano mais recente do MapBiomas).
+    - Se um arquivo `.json` geoespacial (limites da propriedade convertidos de shapefile/KMZ/KML) estiver anexado à conversa e o usuário quiser registrar a propriedade, acione a ferramenta `start_registration_by_geojson` (sem copiar o conteúdo do arquivo; o sistema lê o anexo automaticamente).
 
     # Regras de Suporte (Q&A)
     - Responda baseando-se EXCLUSIVAMENTE nos trechos retornados pela base de conhecimento.
@@ -93,6 +94,7 @@ single_agent:
   feature_type_names:
     rural_property: "propriedade rural"
     buffer_area: "área de buffer"
+    paddock: "piquete"
   # Generic feature name used when no candidate exists to derive the type.
   feature_type_fallback: "feição"
 

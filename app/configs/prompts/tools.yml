@@ -441,6 +441,33 @@ property_tools:
         {options}
       error: |
         Erro inesperado: {error}.
+  start_registration_by_geojson:
+    description: |
+      Inicia o registro de uma nova propriedade rural a partir de um arquivo
+      geoespacial enviado pelo usuário (shapefile .zip/.rar, KMZ, KML ou GeoJSON),
+      que foi convertido para GeoJSON e anexado à conversa como um arquivo .json.
+
+      Use esta ferramenta quando o usuário enviar um arquivo de mapa com os
+      limites da propriedade (ou dos piquetes).
+
+      IMPORTANTE: NÃO copie nem passe o conteúdo do arquivo .json. O sistema lê
+      o arquivo anexado automaticamente. Apenas chame a ferramenta sem argumentos.
+
+      Returns:
+          ToolResult: Resultado contendo imagem e instruções para o próximo passo.
+    results:
+      confirm_property: |
+        Pergunte ao usuário se a propriedade delimitada na imagem é a correta:
+        {property_details}
+        Se houver piquetes, explique que cada piquete foi identificado com um rótulo na imagem.
+      missing_geojson: |
+        Peça desculpas e informe que não encontrou nenhum arquivo geoespacial anexado.
+        Peça ao usuário que envie o arquivo novamente (shapefile .zip/.rar, KMZ, KML ou GeoJSON).
+      invalid_geojson: |
+        Peça desculpas e informe que não foi possível interpretar o arquivo geoespacial enviado.
+        Peça ao usuário que confira o arquivo e envie novamente (shapefile .zip/.rar, KMZ, KML ou GeoJSON).
+      error: |
+        Erro inesperado: {error}.
   start_registration_by_car:
     description: |
       Inicia o registro de uma nova propriedade rural baseando-se no código CAR fornecidos.

@@ -465,6 +465,33 @@ property_tools:
         {options}
       error: |
         Unexpected error: {error}.
+  start_registration_by_geojson:
+    description: |
+      Starts the registration of a new rural property from a geospatial file
+      sent by the user (shapefile .zip/.rar, KMZ, KML or GeoJSON), which was
+      converted to GeoJSON and attached to the conversation as a .json file.
+
+      Use this tool when the user sends a map file with the property (or
+      paddock) boundaries.
+
+      IMPORTANT: do NOT copy or pass the .json file content. The system reads
+      the attached file automatically. Just call the tool without arguments.
+
+      Returns:
+          ToolResult: Result containing an image and instructions for the next step.
+    results:
+      confirm_property: |
+        Ask the user whether the property delimited in the image is the correct one:
+        {property_details}
+        If there are paddocks, explain that each paddock was identified with a label in the image.
+      missing_geojson: |
+        Apologize and inform that no geospatial file attachment was found.
+        Ask the user to send the file again (shapefile .zip/.rar, KMZ, KML or GeoJSON).
+      invalid_geojson: |
+        Apologize and inform that the geospatial file could not be interpreted.
+        Ask the user to check the file and send it again (shapefile .zip/.rar, KMZ, KML or GeoJSON).
+      error: |
+        Unexpected error: {error}.
   start_registration_by_car:
     description: |
       Starts the registration of a new rural property based on the provided CAR code.

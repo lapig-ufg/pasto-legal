@@ -34,6 +34,7 @@ from app.tools.property_tools import (
     start_buffer_registration_by_url,
     start_registration_by_car,
     start_registration_by_coordinate,
+    start_registration_by_geojson,
     start_registration_by_url,
 )
 from app.tools.tts_tools import generate_speech
@@ -114,6 +115,7 @@ def get_tools(run_context: RunContext):
             start_registration_by_url,
             start_registration_by_car,
             start_registration_by_coordinate,
+            start_registration_by_geojson,
             start_buffer_registration_by_coordinate,
             start_buffer_registration_by_url,
             *_ANALYST_TOOLS

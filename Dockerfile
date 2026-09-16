@@ -4,7 +4,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 RUN apt update && apt install ffmpeg -y
 
-RUN apt-get update && apt-get -y install libpq-dev gcc git htop curl ffmpeg\
+RUN apt-get update && apt-get -y install libpq-dev gcc git htop curl ffmpeg unar\
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

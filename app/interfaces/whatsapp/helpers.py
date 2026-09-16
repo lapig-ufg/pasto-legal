@@ -59,6 +59,7 @@ class MessageContent:
     video_id: Optional[str] = None
     audio_id: Optional[str] = None
     doc_id: Optional[str] = None
+    doc_filename: Optional[str] = None
 
 
 def extract_message_content(message: dict) -> Optional[MessageContent]:
@@ -94,9 +95,11 @@ def extract_message_content(message: dict) -> Optional[MessageContent]:
         return MessageContent(text="", audio_id=message["audio"]["id"])
 
     if msg_type == "document":
+        document = message.get("document", {})
         return MessageContent(
-            text=message.get("document", {}).get("caption", ""),
-            doc_id=message["document"]["id"],
+            text=document.get("caption", ""),
+            doc_id=document["id"],
+            doc_filename=document.get("filename"),
         )
 
     # Interactive replies carry the selected option's title and description
@@ -212,7 +215,14 @@ async def download_event_media_async(parsed: "MessageContent", config: WhatsAppC
         elif label == "audio":
             run_kwargs["audio"] = [Audio(content=content, mime_type=mime)]
         elif label == "document":
-            run_kwargs["files"] = [File(content=content, mime_type=mime)]
+            # agno's File model only accepts a whitelist of mime types
+            # (zip/rar/kmz/kml are not allowed), so unsupported values are
+            # dropped and the format is detected from the filename instead.
+            if mime and mime not in File.valid_mime_types():
+                mime = None
+            run_kwargs["files"] = [
+                File(content=content, mime_type=mime, name=parsed.doc_filename)
+            ]
 
     return run_kwargs, skipped
 

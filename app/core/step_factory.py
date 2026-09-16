@@ -96,6 +96,8 @@ def _agent_executor_factory(
             step_input, session_state, include_summary, num_runs
         )
 
+        last_step_ouput = list(step_input.previous_step_outputs.values())[-1]
+
         try:
             user_id = step_input.workflow_session.user_id
 
@@ -103,6 +105,7 @@ def _agent_executor_factory(
                 final_input,
                 user_id=user_id,
                 session_state=session_state,
+                files=last_step_ouput.files,
             )
         except Exception as exc:
             log_error(f"{agent.name} failed: {exc}")

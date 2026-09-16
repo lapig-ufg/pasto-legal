@@ -5,7 +5,10 @@ import requests
 import traceback
 
 from io import BytesIO
-from typing import List
+from typing import List, Optional, Tuple
+
+from PIL import ImageDraw, ImageFont
+from shapely.geometry import shape as shapely_shape
 
 from agno.utils.log import log_error, log_warning
 
@@ -28,6 +31,12 @@ from app.configs.config import config
 _FEATURE_BUFFER = 256
 
 _IMAGE_DIMENSION = 512
+
+# Higher resolution used on the property confirmation image so that the
+# paddock labels remain readable after WhatsApp compression.
+_OVERVIEW_IMAGE_DIMENSION = 1024
+
+_LABEL_FONT_PATH = "assets/fonts/DejaVuSans-Bold.ttf"
 
 _HIGHVOLUME_URL = "https://earthengine-highvolume.googleapis.com"
 
@@ -247,6 +256,188 @@ def retrieve_plain_satellite_image(coords: List[List[List[List[float]]]]) -> Lis
             result_imgs.append(img_pil)
 
         return result_imgs
+
+    except ee.EEException as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Falha ao processar as coordenadas no satélite. "
+            f"Verifique se as coordenadas da área estão corretas. Detalhes: {str(error)}"
+        )
+    except requests.exceptions.HTTPError as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"O servidor de imagens do satélite retornou um erro. "
+            f"Tente solicitar a imagem novamente em alguns instantes. Detalhes: {str(error)}"
+        )
+    except requests.exceptions.RequestException as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Não foi possível baixar a imagem por falha de conexão. "
+            f"Pode haver instabilidade na rede. Detalhes: {str(error)}"
+        )
+    except PIL.UnidentifiedImageError as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"O arquivo recebido do satélite está corrompido ou num formato inesperado. Detalhes: {str(error)}"
+        )
+    except Exception as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Ocorreu um erro inesperado ao gerar a imagem da fazenda. Detalhes: {str(error)}"
+        )
+
+
+def _paddock_centroid(coords: List[List[List[List[float]]]]) -> Tuple[float, float]:
+    """
+    Returns the (latitude, longitude) representative point of a paddock
+    (GeoJSON MultiPolygon nesting: ``[[shell, hole, ...], ...]``), always
+    inside the geometry.
+
+    Note: shapely's ``MultiPolygon(coords)`` constructor expects a different
+    nesting (``[(shell, holes), ...]``), so the geometry is built through
+    ``shapely.geometry.shape`` instead.
+    """
+    geometry = shapely_shape({"type": "MultiPolygon", "coordinates": coords})
+    point = geometry.representative_point()
+    return float(point.y), float(point.x)
+
+
+def _draw_paddock_labels(
+    image: PIL.Image,
+    region_bounds: Tuple[float, float, float, float],
+    labels: List[Tuple[str, Tuple[float, float]]],
+) -> PIL.Image:
+    """
+    Draws the paddock labels centered on each paddock representative point.
+
+    The satellite thumbnail is rendered for ``region_bounds`` (west, south,
+    east, north) preserving its aspect ratio, so the coordinate-to-pixel
+    mapping is a linear interpolation over that rectangle.
+
+    Args:
+        image: The satellite thumbnail (RGB).
+        region_bounds: The geographic bounds rendered in the thumbnail.
+        labels: List of (text, (latitude, longitude)) pairs.
+
+    Returns:
+        PIL.Image: A copy of the image with the labels drawn.
+    """
+    west, south, east, north = region_bounds
+    width, height = image.size
+
+    span_lon = east - west
+    span_lat = north - south
+    if span_lon <= 0 or span_lat <= 0:
+        return image
+
+    font_size = max(16, int(height * 0.035))
+    try:
+        font = ImageFont.truetype(_LABEL_FONT_PATH, font_size)
+    except IOError:
+        font = ImageFont.load_default()
+
+    labeled = image.copy()
+    draw = ImageDraw.Draw(labeled)
+
+    for text, (latitude, longitude) in labels:
+        x = int((longitude - west) / span_lon * width)
+        y = int((north - latitude) / span_lat * height)
+        if not (0 <= x < width and 0 <= y < height):
+            continue
+
+        draw.text(
+            (x, y),
+            text,
+            font=font,
+            fill=(255, 255, 255),
+            stroke_width=3,
+            stroke_fill=(0, 0, 0),
+            anchor="mm",
+        )
+
+    return labeled
+
+
+def retrieve_property_overview_image(
+    property_coords: List[List[List[List[float]]]],
+    paddocks: Optional[List[Tuple[List[List[List[List[float]]]], str]]] = None,
+    dimension: int = _OVERVIEW_IMAGE_DIMENSION,
+) -> PIL.Image:
+    """
+    Generates a single satellite image for the property registration
+    confirmation, highlighting the property boundaries.
+
+    For a single polygon the image shows its boundary. When paddocks are
+    provided, all paddock boundaries are drawn on the same image with a
+    ``Paddock_n`` label at the center of each one, using a higher resolution
+    so the labels remain readable.
+
+    Args:
+        property_coords: The rural property MultiPolygon coordinates.
+        paddocks: Optional list of (paddock coords, label) pairs.
+        dimension: Longest side of the generated image, in pixels.
+
+    Returns:
+        PIL.Image: Satellite image with boundaries (and paddock labels).
+
+    Raises:
+        RuntimeError: On Earth Engine processing, image server, connection,
+            image format or unexpected failures.
+    """
+    try:
+        roi = ee.Geometry.MultiPolygon(property_coords)
+
+        base_image = _get_base_image(roi=roi)
+
+        if paddocks:
+            features = [
+                ee.Feature(ee.Geometry.MultiPolygon(coords))
+                for coords, _label in paddocks
+            ]
+            outline = ee.Image().byte()
+            outline = outline.paint(ee.FeatureCollection(features), 1, 3)
+            outline = outline.updateMask(outline)
+            outline = outline.visualize(**{"palette": ["FF0000"]})
+        else:
+            outline = _draw_feature_boundaries(roi=roi)
+
+        region = roi.buffer(_FEATURE_BUFFER).bounds()
+        final_image = base_image.blend(outline).clip(region)
+
+        bounds_info = region.coordinates().getInfo()[0]
+        west = min(coord[0] for coord in bounds_info)
+        east = max(coord[0] for coord in bounds_info)
+        south = min(coord[1] for coord in bounds_info)
+        north = max(coord[1] for coord in bounds_info)
+
+        span_lon = east - west
+        span_lat = north - south
+        if span_lon >= span_lat:
+            width = dimension
+            height = max(1, int(round(dimension * span_lat / span_lon)))
+        else:
+            height = dimension
+            width = max(1, int(round(dimension * span_lon / span_lat)))
+
+        url = final_image.getThumbURL(
+            {"dimensions": f"{width}x{height}", "format": "png"}
+        )
+
+        response = requests.get(url, timeout=60)
+        response.raise_for_status()
+
+        img_pil = PIL.Image.open(BytesIO(response.content)).convert("RGB")
+
+        if paddocks:
+            labels = [
+                (label, _paddock_centroid(coords))
+                for coords, label in paddocks
+            ]
+            img_pil = _draw_paddock_labels(
+                img_pil, (west, south, east, north), labels
+            )
+
+        return img_pil
 
     except ee.EEException as error:
         log_error(traceback.format_exc())

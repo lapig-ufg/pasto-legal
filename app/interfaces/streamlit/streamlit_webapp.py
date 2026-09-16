@@ -5,7 +5,7 @@ import tempfile
 import streamlit as st
 
 from typing import List
-from agno.media import Image, Audio
+from agno.media import Image, Audio, File
 
 from app.configs.config import config
 from app.interfaces.streamlit.debug_helpers import extract_workflow_debug_data, extract_session_state
@@ -202,9 +202,12 @@ if 'file_uploader_key' not in st.session_state:
     st.session_state.file_uploader_key = 0
 
 files_uploaded = st.file_uploader(
-    "Envie imagens/áudio (png, jpg, mp3, etc)",
+    "Envie imagens/áudio/mapas (png, jpg, mp3, zip, kmz, kml, geojson, etc)",
     key=f"file_uploader_{st.session_state.file_uploader_key}",
-    type=["png", "jpg", "jpeg", "webp", "wav", "mp3", "mp4"],
+    type=[
+        "png", "jpg", "jpeg", "webp", "wav", "mp3", "mp4",
+        "zip", "rar", "kmz", "kml", "geojson", "json",
+    ],
     accept_multiple_files=True,
 )
 
@@ -259,6 +262,11 @@ if user_query:
     
     image_path = [Image(filepath=p) for p in all_file_paths if p.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
     audio_path = [Audio(filepath=p, ext=p[:-4]) for p in all_file_paths if p.lower().endswith(('.wav', '.mp3', '.ogg', '.mp4'))]
+    geo_files = [
+        File(content=f.getvalue(), name=f.name)
+        for f in (files_uploaded or [])
+        if f.name.lower().endswith(('.zip', '.rar', '.kmz', '.kml', '.geojson', '.json'))
+    ]
 
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
@@ -279,8 +287,9 @@ if user_query:
                 run_kwargs["images"] = image_path 
             if audio_path:
                 run_kwargs["audio"] = audio_path
+            if geo_files:
+                run_kwargs["files"] = geo_files
 
-            # TODO: Implementar files.
             with st.spinner("Analisando dados e gerando resposta..."):
                 response = pasto_legal_workflow.run(**run_kwargs)
             
