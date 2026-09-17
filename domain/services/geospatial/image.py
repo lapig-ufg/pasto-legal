@@ -61,12 +61,17 @@ def append_continuous_colorbar(
     vmax: Union[int, float], 
     unit: str,
     palette: List[str],
+    ndigits: int = None,
     font_path: str = "assets/fonts/DejaVuSans-Bold.ttf"
 ) -> Image.Image:
     """
     Appends a continuous color gradient bar below the image, with the title
     centered above it. The bar is horizontal with min, mid and max ticks
     (the unit is shown only on the max label).
+
+    Args:
+        ndigits (int, optional): Decimal places for the tick labels. None
+            (default) keeps integer labels.
     """
     width, height = image.size
     
@@ -142,9 +147,13 @@ def append_continuous_colorbar(
     text_y = y_offset + cb_height + margin // 2
     mid = vmin + (vmax - vmin) / 2
     
+    vmin_label = str(round(vmin, ndigits) if ndigits is not None else vmin)
+    mid_label = str(round(mid, ndigits) if ndigits is not None else round(mid))
+    vmax_label = str(round(vmax, ndigits) if ndigits is not None else vmax)
+    
     draw.text(
         (x_offset, text_y),
-        str(vmin),
+        vmin_label,
         fill="black",
         font=font,
         anchor="la"
@@ -152,7 +161,7 @@ def append_continuous_colorbar(
     
     draw.text(
         (x_offset + cb_width // 2, text_y),
-        str(round(mid)),
+        mid_label,
         fill="black",
         font=font,
         anchor="ma"
@@ -160,7 +169,7 @@ def append_continuous_colorbar(
     
     draw.text(
         (x_offset + cb_width, text_y),
-        f"{vmax} {unit}",
+        f"{vmax_label} {unit}",
         fill="black",
         font=font,
         anchor="ra"

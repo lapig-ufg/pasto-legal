@@ -13,7 +13,7 @@ from pathlib import Path
 
 from PIL import Image as PILImage
 
-from domain.schemas.property_feature import RuralProperty, SpatialFeatures
+from domain.schemas.feature import Feature, FeatureMetadata
 from domain.services.boletim_scripts import build_boletim_story, build_placeholder_property_stats
 from domain.services.pdf_scripts import render_document
 
@@ -25,16 +25,17 @@ def _mock_image_bytes(color) -> bytes:
 
 
 def main() -> None:
-    rural_property = RuralProperty(
+    rural_property = Feature(
         feature_id="Fazenda Blue (mock)",
-        car_code="GO-5205703-5B18B6DF441C4B7FA9444DDC127CF6C0",
-        spatial_features=SpatialFeatures(
-            total_area=23.4674,
-            municipality="Corrego do Ouro",
-            coordinates=[[[[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [0.0, 0.0]]]],
-        ),
+        coords=[[[[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [0.0, 0.0]]]],
+        metadata=[
+            FeatureMetadata(key="car_code", value="GO-5205703-5B18B6DF441C4B7FA9444DDC127CF6C0"),
+        ],
+        total_area=23.4674,
+        region="Corrego do Ouro",
+        feature_type="rural_property",
     )
-    stats = build_placeholder_property_stats(rural_property.car_code)
+    stats = build_placeholder_property_stats(rural_property.get_metadata("car_code"))
     story = build_boletim_story(
         rural_property, stats,
         location_image_bytes=_mock_image_bytes((150, 130, 100)),

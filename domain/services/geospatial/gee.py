@@ -446,7 +446,7 @@ def _get_t2g_biomass_image(
 
     n_days = ee.Number(end_date.difference(start_date, 'day'))
 
-    ugpp = ee.ImageCollection("projects/wri-lcl-time2graze/assets/ugpp_cf_10m_v1").filter(ee.Filter.date('2025-07-03', '2025-07-04').Not())
+    ugpp = ee.ImageCollection("projects/wri-lcl-time2graze/assets/ugpp_prod_10m_v1").filter(ee.Filter.date('2025-07-03', '2025-07-04').Not())
     ugpp_col = ugpp.filterBounds(roi).filterDate(start_date, end_date)
 
     grassland_asset = ee.ImageCollection("projects/global-pasture-watch/assets/ggc-30m/v1-1/grassland_c");
@@ -531,7 +531,7 @@ def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int
         min_bio_val = stats[min_key]
         max_bio_val = stats[max_key]    
         
-        palette = ['#000033','#9400D3','#FF00FF','#00FFFF','#FFFFFF']
+        palette = ["#f75639", "#eef79c", "#f5d570", "#8aa637", "#0b391f"]
         bioprop = biomass_img.visualize(**{"min": min_bio_val, "max": max_bio_val, "palette": palette})        
         
         base_image = _get_base_image(roi=roi, year=year)
@@ -551,10 +551,11 @@ def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int
         img = append_continuous_colorbar(
             img, 
             title=f"Biomassa ({str(_target_year)}/{str(_target_month)}) - T2G", 
-            vmin=round(min_bio_val),
-            vmax=round(max_bio_val),
+            vmin=round(min_bio_val, 1),
+            vmax=round(max_bio_val, 1),
             unit="ton/ha",
-            palette=palette
+            palette=palette,
+            ndigits=1
         )
 
         return img, _target_year, _target_month
@@ -1002,7 +1003,7 @@ def get_biomass(roi: ee.Geometry, month: int, year: int) -> BiomassStats:
         last_biomass = biomass_asset.select(year - 2000)
 
         stats = last_biomass.reduceRegion(
-            reducer=ee.Reducer.sum(),
+            reducer=ee.Reducer.mean(),
             geometry=roi,
             scale=30,
             maxPixels=1e13
@@ -1015,13 +1016,18 @@ def get_biomass(roi: ee.Geometry, month: int, year: int) -> BiomassStats:
         last_biomass, target_year, target_month = result
 
         stats = last_biomass.reduceRegion(
-            reducer=ee.Reducer.sum(),
+            reducer=ee.Reducer.mean().combine(ee.Reducer.count(), sharedInputs=True),
             geometry=roi,
             scale=10,
             maxPixels=1e13
-        )
+        ).getInfo()
 
-        biomass_value = stats.getInfo().get(f'tonC_hec', 0) * 0.01
+        mean_biomass = stats.get('tonC_hec_mean') or 0
+        pixel_count = stats.get('tonC_hec_count') or 0
+
+        area_ha = pixel_count * 0.01
+
+        biomass_value = mean_biomass * area_ha
 
         month_dict = { 1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho", 7: "Julho", 8: "Agosto", 9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro" }
 

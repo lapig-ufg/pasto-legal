@@ -12,8 +12,8 @@ from semente import ToolResult
 from semente.context import Context as RunContext
 from semente.logging import log_debug, log_warning, log_error
 
-from semente.configs.prompts import get_tool_description
-from domain.schemas.property_feature import PropertyFeature
+from semente.configs.prompts import get_tool_description, get_tool_result_text
+from domain.schemas.feature import Feature
 from domain.utils.feature_utils import resolve_feature
 from domain.services.geospatial.season_forecast import (
     get_dry_season_onset as _get_dry_season_onset,
@@ -44,7 +44,7 @@ def _daily_dates(daily) -> list[datetime.date]:
     return dates
 
 
-def _resolve_property(run_context: RunContext, feature_id: str) -> PropertyFeature:
+def _resolve_property(run_context: RunContext, feature_id: str) -> Feature:
     selected_property = resolve_feature(run_context, feature_id)
     if selected_property is None:
         raise ValueError(
@@ -123,7 +123,7 @@ def get_monthly_precipitation_forecast(
 
     except Exception as e:
         log_error(f"get_monthly_precipitation_forecast: {e}")
-        return ToolResult(content=str(e))
+        return ToolResult(content=get_tool_result_text("weather_tools", "get_monthly_precipitation_forecast", "error", error=e))
 
 
 @tool(description=get_tool_description("weather_tools", "get_daily_precipitation_forecast"))
@@ -196,7 +196,7 @@ def get_daily_precipitation_forecast(
 
     except Exception as e:
         log_error(f"get_daily_precipitation_forecast: {e}")
-        return ToolResult(content=str(e))
+        return ToolResult(content=get_tool_result_text("weather_tools", "get_daily_precipitation_forecast", "error", error=e))
 
 
 @tool(description=get_tool_description("weather_tools", "get_rain_season_onset_forecast"))
@@ -231,7 +231,7 @@ def get_rain_season_onset_forecast(
 
     except Exception as e:
         log_error(f"get_rain_season_onset_forecast: {e}")
-        return ToolResult(content=str(e))
+        return ToolResult(content=get_tool_result_text("weather_tools", "get_rain_season_onset_forecast", "error", error=e))
 
 
 @tool(description=get_tool_description("weather_tools", "get_dry_season_onset_forecast"))
@@ -267,7 +267,7 @@ def get_dry_season_onset_forecast(
 
     except Exception as e:
         log_error(f"get_dry_season_onset_forecast: {e}")
-        return ToolResult(content=str(e))
+        return ToolResult(content=get_tool_result_text("weather_tools", "get_dry_season_onset_forecast", "error", error=e))
 
 
 @tool(description=get_tool_description("weather_tools", "get_temperature_forecast"))
@@ -328,4 +328,4 @@ def get_temperature_forecast(
 
     except Exception as e:
         log_error(f"get_temperature_forecast: {e}")
-        return ToolResult(content=str(e))
+        return ToolResult(content=get_tool_result_text("weather_tools", "get_temperature_forecast", "error", error=e))

@@ -6,8 +6,7 @@ from shapely.ops import transform as shapely_transform
 
 from semente.logging import log_error
 
-from domain.schemas.property_feature import SpatialFeatures
-from domain.schemas.property_feature import BufferedArea
+from domain.schemas.feature import Feature, FeatureMetadata
 
 # Earth circumference divisor used to locate the UTM zone for a longitude.
 _UTM_ZONE_WIDTH_DEG = 6.0
@@ -92,12 +91,15 @@ def build_buffered_area(
     latitude: float,
     longitude: float,
     radius: float,
-) -> BufferedArea:
+) -> Feature:
     """
-    Builds a BufferedArea schema from a coordinate and a radius in meters.
+    Builds a buffer area Feature from a coordinate and a radius in meters.
 
     Computes the buffer polygon in UTM, derives its area in hectares and
-    packages everything into the BufferedArea model.
+    packages everything into the general Feature model with
+    ``feature_type='buffer_area'``. The radius and the buffer center are
+    stored as metadata; the generated id becomes the default ``feature_id``
+    until the user names the area.
     """
     center, coordinates, total_area_ha = create_buffer_polygon(
         latitude=latitude,
@@ -105,11 +107,14 @@ def build_buffered_area(
         radius=radius,
     )
 
-    return BufferedArea(
-        radius=radius,
-        center=center,
-        spatial_features=SpatialFeatures(
-            total_area=round(total_area_ha, 2),
-            coordinates=coordinates,
-        ),
+    return Feature(
+        feature_id=Feature.generate_id(),
+        coords=coordinates,
+        metadata=[
+            FeatureMetadata(key='radius', value=radius),
+            FeatureMetadata(key='center', value=f"{center[0]}, {center[1]}"),
+        ],
+        total_area=round(total_area_ha, 2),
+        region=None,
+        feature_type='buffer_area',
     )
