@@ -20,7 +20,7 @@ from domain.services.geospatial.sicar import (
 from domain.services.geospatial.image import create_vertical_mosaic
 from domain.services.geospatial.gee import retrieve_feature_images
 from domain.services.geospatial.geometry import build_buffered_area
-from domain.schemas.feature import Feature, RegisteredFeatures
+from domain.schemas.feature import Feature, FeatureMetadata, RegisteredFeatures
 from domain.utils.feature_utils import get_registered_features, set_registered_features
 
 # Bounds of the buffer radius accepted by the buffer registration tools (meters).
@@ -121,7 +121,7 @@ def start_registration_by_coordinate(run_context: RunContext, latitude: float, l
 
         registered_features = get_registered_features(run_context.session_state)
         for prop in properties:
-            duplicate = registered_features.find_by_id(prop.id)
+            duplicate = registered_features.find_by_any(prop.id)
             if duplicate is not None:
                 log_debug(f"Propriedade já registrada: {prop.id}")
                 return ToolResult(content=str(duplicate))
@@ -382,7 +382,7 @@ def start_registration_by_url(run_context: RunContext, url: str) -> ToolResult:
 
         registered_features = get_registered_features(run_context.session_state)
         for prop in properties:
-            duplicate = registered_features.find_by_id(prop.id)
+            duplicate = registered_features.find_by_any(prop.id)
             if duplicate is not None:
                 log_debug(f"Propriedade já registrada: {prop.id}")
                 return ToolResult(content=str(duplicate))
@@ -521,10 +521,12 @@ def complete_registration(run_context: RunContext, name: str):
     try:
         candidate_properties = run_context.session_state.get('candidate_properties', None)
 
-        # The user-chosen name becomes the feature id.
-        registered_feature = Feature.model_validate(candidate_properties[0]).model_copy(
-            update={"feature_id": name}
-        )
+        # The user-chosen name is stored as metadata; feature_id stays stable
+        # (CAR code for rural properties, generated id for buffers).
+        candidate = Feature.model_validate(candidate_properties[0])
+        metadata = [entry for entry in candidate.metadata if entry.key != "name"]
+        metadata.append(FeatureMetadata(key="name", value=name))
+        registered_feature = candidate.model_copy(update={"metadata": metadata})
 
         registered_features = get_registered_features(run_context.session_state)
         registered_features.features.append(registered_feature)
@@ -578,14 +580,16 @@ def set_property_name(run_context: RunContext, feature_id: str, name: str):
     try:
         registered_features = get_registered_features(run_context.session_state)
 
-        target = registered_features.find_by_id(feature_id)
+        target = registered_features.find_by_any(feature_id)
         if target is None:
             log_warning(f"Propriedade não encontrada para renomear: {feature_id}")
             return ToolResult(content=get_tool_result_text("property_tools", "set_property_name", "property_not_found"))
 
-        # The new name replaces the feature id, keeping the record position.
+        # The new name is stored as metadata; feature_id is stable.
         index = registered_features.features.index(target)
-        registered_features.features[index] = target.model_copy(update={"feature_id": name})
+        metadata = [entry for entry in target.metadata if entry.key != "name"]
+        metadata.append(FeatureMetadata(key="name", value=name))
+        registered_features.features[index] = target.model_copy(update={"metadata": metadata})
         set_registered_features(run_context.session_state, registered_features)
 
         log_debug(f"set_property_name: nome atualizado ({feature_id} -> {name})")
@@ -609,7 +613,7 @@ def remove_property(feature_id: str, run_context: RunContext) -> str:
     try:
         registered_features = get_registered_features(run_context.session_state)
 
-        removed_feature = registered_features.find_by_id(feature_id)
+        removed_feature = registered_features.find_by_any(feature_id)
 
         if removed_feature is None:
             log_warning(f"Propriedade não encontrada para remoção: {feature_id}")
@@ -618,7 +622,7 @@ def remove_property(feature_id: str, run_context: RunContext) -> str:
         remaining_features = [
             feature
             for feature in registered_features.features
-            if feature.feature_id != feature_id
+            if feature is not removed_feature
         ]
         registered_features.features = remaining_features
         set_registered_features(run_context.session_state, registered_features)

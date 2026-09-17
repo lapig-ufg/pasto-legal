@@ -28,11 +28,12 @@ def set_registered_features(session_state, registered: RegisteredFeatures) -> No
 
 def resolve_feature(run_context: RunContext, feature_id: str) -> Feature | None:
     """
-    Resolves a registered feature by id.
+    Resolves a registered feature by id, user-chosen name, or constituent
+    CAR code (see ``RegisteredFeatures.find_by_any``).
 
-    Returns None when the feature_id is not registered in the session.
+    Returns None when the feature is not registered in the session.
     """
-    feature = get_registered_features(run_context.session_state).find_by_id(feature_id)
+    feature = get_registered_features(run_context.session_state).find_by_any(feature_id)
     if feature is None:
         log_warning(f"Nenhuma feição registrada encontrada para id={feature_id}")
     return feature

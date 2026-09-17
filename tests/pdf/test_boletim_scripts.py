@@ -7,14 +7,26 @@ o layout lado a lado.
 
     .venv/bin/python -m pytest tests/pdf/test_boletim_scripts.py -v
 """
+import os
 from io import BytesIO
 
-from PIL import Image as PILImage
-from pypdf import PdfReader
+from semente.configs.prompts import set_prompts_dir
 
-from domain.schemas.feature import Feature, FeatureMetadata
-from domain.services.boletim_scripts import build_boletim_story, build_placeholder_property_stats
-from domain.services.pdf_scripts import render_document
+# The domain package eagerly imports the GEE-bound agent; mock Earth Engine and
+# point the prompts loader at domain/prompts so this stays hermetic.
+set_prompts_dir(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../domain/prompts"))
+
+import ee  # noqa: E402
+
+ee.ServiceAccountCredentials = lambda *a, **k: object()
+ee.Initialize = lambda *a, **k: None
+
+from PIL import Image as PILImage  # noqa: E402
+from pypdf import PdfReader  # noqa: E402
+
+from domain.schemas.feature import Feature, FeatureMetadata  # noqa: E402
+from domain.services.boletim_scripts import build_boletim_story, build_placeholder_property_stats  # noqa: E402
+from domain.services.pdf_scripts import render_document  # noqa: E402
 
 
 def _sample_image_bytes(color=(80, 150, 90)) -> bytes:
@@ -25,10 +37,11 @@ def _sample_image_bytes(color=(80, 150, 90)) -> bytes:
 
 def _build_sample_property() -> Feature:
     return Feature(
-        feature_id="Fazenda Blue",
+        feature_id="GO-5205703-5B18B6DF441C4B7FA9444DDC127CF6C0",
         coords=[[[[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [0.0, 0.0]]]],
         metadata=[
             FeatureMetadata(key="car_code", value="GO-5205703-5B18B6DF441C4B7FA9444DDC127CF6C0"),
+            FeatureMetadata(key="name", value="Fazenda Blue"),
         ],
         total_area=23.4674,
         region="Corrego do Ouro",
@@ -74,7 +87,9 @@ def test_build_boletim_story_renders_valid_pdf_with_expected_content():
 
     assert "Fazenda Blue" in text
     assert "Data de Emissão" in text
-    assert rural_property.id in text
+    # O código CAR aparece no cabeçalho (ID) e pode quebrar em linhas no layout.
+    assert "GO-5205703-5B18B6DF441C4B7FA9444DDC127CF" in text
+    assert "6C0" in text
     assert "Localização da Propriedade" in text
     assert "Dados de Pastagem" in text
     assert "Análise de Biomassa" in text
@@ -97,9 +112,9 @@ def test_build_boletim_story_falls_back_gracefully_without_optional_maps():
     assert pdf_bytes.startswith(b"%PDF-")
 
 
-def test_build_boletim_story_falls_back_to_car_code_without_feature_id():
+def test_build_boletim_story_falls_back_to_id_without_name():
     rural_property = _build_sample_property()
-    rural_property.feature_id = None
+    rural_property.metadata = [m for m in rural_property.metadata if m.key != "name"]
     stats = build_placeholder_property_stats(rural_property.get_metadata("car_code"))
 
     story = _build_full_story(rural_property, stats)
@@ -108,6 +123,7 @@ def test_build_boletim_story_falls_back_to_car_code_without_feature_id():
     reader = PdfReader(BytesIO(pdf_bytes))
     text = reader.pages[0].extract_text()
 
-    # O car_code aparece no PDF ainda que quebrado em linhas pelo layout.
+    # Sem nome, o título do boletim cai para o id (código CAR).
+    assert "Fazenda Blue" not in text
     assert "GO-5205703-5B18B6DF441C4B7FA9444DDC127CF" in text
     assert "6C0" in text

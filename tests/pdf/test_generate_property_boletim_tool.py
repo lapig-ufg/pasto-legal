@@ -24,10 +24,11 @@ def _build_context_with_property(rural_property: Feature) -> StateContext:
 
 def test_generate_property_boletim_returns_valid_pdf_file():
     rural_property = Feature(
-        feature_id="Fazenda Blue",
+        feature_id="GO-5205703-5B18B6DF441C4B7FA9444DDC127CF6C0",
         coords=[[[[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [0.0, 0.0]]]],
         metadata=[
             FeatureMetadata(key="car_code", value="GO-5205703-5B18B6DF441C4B7FA9444DDC127CF6C0"),
+            FeatureMetadata(key="name", value="Fazenda Blue"),
         ],
         total_area=23.4674,
         region="Corrego do Ouro",

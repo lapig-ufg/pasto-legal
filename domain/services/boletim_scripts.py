@@ -137,7 +137,7 @@ def build_boletim_story(
     numéricos logo abaixo.
     """
     emission_date = emission_date or date.today()
-    farm_name = rural_property.id or rural_property.get_metadata("car_code") or "Propriedade"
+    farm_name = rural_property.name or rural_property.id or "Propriedade"
     pasture_stats_list = property_stats.list_pasture_stats or []
     latest_pasture_stats = pasture_stats_list[-1] if pasture_stats_list else None
 
@@ -187,7 +187,7 @@ def build_boletim_chat_summary(rural_property: Feature, pasture_stats: PastureSt
     compor um resumo criativo) — reduz o boletim a uma única chamada de tool cujo resultado
     a LLM só precisa repassar ao usuário.
     """
-    farm_name = rural_property.id or rural_property.get_metadata("car_code") or "Propriedade"
+    farm_name = rural_property.name or rural_property.id or "Propriedade"
 
     reference_year = None
     pasture_area_ha = None

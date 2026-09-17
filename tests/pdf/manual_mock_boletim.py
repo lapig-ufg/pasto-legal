@@ -26,10 +26,11 @@ def _mock_image_bytes(color) -> bytes:
 
 def main() -> None:
     rural_property = Feature(
-        feature_id="Fazenda Blue (mock)",
+        feature_id="GO-5205703-5B18B6DF441C4B7FA9444DDC127CF6C0",
         coords=[[[[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [0.0, 0.0]]]],
         metadata=[
             FeatureMetadata(key="car_code", value="GO-5205703-5B18B6DF441C4B7FA9444DDC127CF6C0"),
+            FeatureMetadata(key="name", value="Fazenda Blue (mock)"),
         ],
         total_area=23.4674,
         region="Corrego do Ouro",

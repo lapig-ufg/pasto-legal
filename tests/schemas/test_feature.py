@@ -3,10 +3,23 @@ Testes unitários e herméticos do schema geral de feições (sem GEE, sem crede
 
     PYTHONPATH=. uv run pytest tests/schemas/test_feature.py -v
 """
-from semente.backends.toolkit import StateContext
+import os
 
-from domain.schemas.feature import Feature, FeatureMetadata, RegisteredFeatures
-from domain.utils.feature_utils import (
+from semente.configs.prompts import set_prompts_dir
+
+# The domain package eagerly imports the GEE-bound agent; mock Earth Engine and
+# point the prompts loader at domain/prompts so this stays hermetic.
+set_prompts_dir(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../domain/prompts"))
+
+import ee  # noqa: E402
+
+ee.ServiceAccountCredentials = lambda *a, **k: object()
+ee.Initialize = lambda *a, **k: None
+
+from semente.backends.toolkit import StateContext  # noqa: E402
+
+from domain.schemas.feature import Feature, FeatureMetadata, RegisteredFeatures  # noqa: E402
+from domain.utils.feature_utils import (  # noqa: E402
     get_registered_features,
     resolve_feature,
     set_registered_features,

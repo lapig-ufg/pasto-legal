@@ -135,6 +135,11 @@ class Feature(BaseModel):
     def id(self) -> Optional[str]:
         return self.feature_id
 
+    @property
+    def name(self) -> Optional[str]:
+        """The user-chosen display name (stored as metadata), if any."""
+        return self.get_metadata("name")
+
     def get_metadata(self, key: str, default=None):
         """Returns the metadata value for ``key``, or ``default`` when absent."""
         for entry in self.metadata:
@@ -149,11 +154,16 @@ class Feature(BaseModel):
         return _compute_area_weighted_centroid(self.coords)
 
     def describe(self) -> str:
-        details = ", ".join(f"{entry.key}: {entry.value}" for entry in self.metadata)
+        details = ", ".join(
+            f"{entry.key}: {entry.value}"
+            for entry in self.metadata
+            if entry.key != "name"
+        )
         region = f", Região: {self.region}" if self.region else ""
         metadata = f", {details}" if details else ""
+        name = f", Nome: {self.name}" if self.name else ""
         return (
-            f"Feature ID: {self.id}, "
+            f"Feature ID: {self.id}{name}, "
             f"Tipo: {self.feature_type}, "
             f"Área: {self.total_area} ha.{region}{metadata}"
         )
@@ -214,6 +224,23 @@ class RegisteredFeatures(BaseModel):
             (feature for feature in self.features if feature.feature_id == feature_id),
             None,
         )
+
+    def find_by_any(self, value: str) -> Optional[Feature]:
+        """Finds a feature by id, user-chosen name, or constituent CAR code.
+
+        Unified properties join several CAR codes with ", " in the
+        ``car_code`` metadata; any one of them resolves to the unified
+        feature.
+        """
+        for feature in self.features:
+            if feature.feature_id == value:
+                return feature
+            if feature.get_metadata("name") == value:
+                return feature
+            car_codes = feature.get_metadata("car_code")
+            if car_codes is not None and value in str(car_codes).split(", "):
+                return feature
+        return None
 
     def build_prompt(self) -> str:
         """Builds a prompt describing every registered feature, clustered
