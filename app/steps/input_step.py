@@ -33,6 +33,10 @@ from app.services.geospatial.geojson_io import (
     save_debug_json,
 )
 
+# Step name used by downstream consumers to look up the Input Step output
+# (converted GeoJSON files) via ``step_input.get_step_output``.
+INPUT_STEP_NAME = "Input Step"
+
 
 def _file_name(file: File) -> str:
     """Resolves the filename of an agno ``File`` (name, filename or filepath)."""
@@ -116,6 +120,7 @@ def _input_processing_executor(step_input: StepInput) -> StepOutput:
             try:
                 response = image_description_agent.run("", images=step_input.images)
                 description = response.content or ""
+                log_debug(f"Image description: {description}")
                 if description:
                     parts.append(f"[IMAGEM]{description}[/IMAGEM]")
             except Exception as e:
@@ -125,6 +130,7 @@ def _input_processing_executor(step_input: StepInput) -> StepOutput:
             try:
                 response = audio_transcription_agent.run("", audio=step_input.audio)
                 transcription = response.content or ""
+                log_debug(f"Audio transcription: {transcription}")
                 if transcription:
                     parts.append(transcription)
             except Exception as e:
@@ -132,6 +138,7 @@ def _input_processing_executor(step_input: StepInput) -> StepOutput:
 
     converted_files: List[File] = []
     if step_input.files:
+        log_debug("Converting geo file to GeoJson...")
         converted_files, errors = _convert_geo_files(step_input.files)
         for error in errors:
             parts.append(
@@ -143,6 +150,6 @@ def _input_processing_executor(step_input: StepInput) -> StepOutput:
 
 
 input_step = Step(
-    name="Input Step",
+    name=INPUT_STEP_NAME,
     executor=_input_processing_executor,
 )

@@ -330,7 +330,7 @@ def _draw_paddock_labels(
     if span_lon <= 0 or span_lat <= 0:
         return image
 
-    font_size = max(16, int(height * 0.035))
+    font_size = max(12, int(height * 0.022))
     try:
         font = ImageFont.truetype(_LABEL_FONT_PATH, font_size)
     except IOError:
@@ -345,12 +345,16 @@ def _draw_paddock_labels(
         if not (0 <= x < width and 0 <= y < height):
             continue
 
+        # Keep only the paddock number ("Paddock_12" -> "12") and shrink the
+        # stroke so the label fits inside small paddocks.
+        number = text.rsplit("_", 1)[-1]
+
         draw.text(
             (x, y),
-            text,
+            number,
             font=font,
             fill=(255, 255, 255),
-            stroke_width=3,
+            stroke_width=2,
             stroke_fill=(0, 0, 0),
             anchor="mm",
         )
@@ -369,8 +373,8 @@ def retrieve_property_overview_image(
 
     For a single polygon the image shows its boundary. When paddocks are
     provided, all paddock boundaries are drawn on the same image with a
-    ``Paddock_n`` label at the center of each one, using a higher resolution
-    so the labels remain readable.
+    numeric label (the paddock number only) at the center of each one,
+    using a higher resolution so the labels remain readable.
 
     Args:
         property_coords: The rural property MultiPolygon coordinates.

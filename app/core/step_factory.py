@@ -5,6 +5,7 @@ from agno.utils.log import log_error, log_debug
 from agno.workflow import StepInput, StepOutput, Step
 
 from app.schemas.input_manager import InputManager
+from app.steps.input_step import INPUT_STEP_NAME
 
 
 def _input_pre_processing(
@@ -60,7 +61,7 @@ def _input_pre_processing(
 
     parts: list[str] = []
 
-    text = list(step_input.previous_step_outputs.values())[-1].content or ""
+    text = step_input.get_step_output(step_name=INPUT_STEP_NAME).content
     if text:
         parts.append(f"<input>\n{text}\n</input>")
 
@@ -96,7 +97,18 @@ def _agent_executor_factory(
             step_input, session_state, include_summary, num_runs
         )
 
-        last_step_ouput = list(step_input.previous_step_outputs.values())[-1]
+        # The last previous output is the Guardrail PII step, which does not
+        # carry media. The converted GeoJSON files live on the Input Step
+        # output, so look it up explicitly (get_step_output searches nested
+        # containers recursively).
+        input_step_output = step_input.get_step_output(step_name=INPUT_STEP_NAME)
+        input_files = input_step_output.files if input_step_output else None
+
+        if input_files:
+            log_debug(
+                f"forwarding files to {agent.name}: "
+                f"{[f.name or f.filename for f in input_files]}"
+            )
 
         try:
             user_id = step_input.workflow_session.user_id
@@ -105,7 +117,7 @@ def _agent_executor_factory(
                 final_input,
                 user_id=user_id,
                 session_state=session_state,
-                files=last_step_ouput.files,
+                files=input_files,
             )
         except Exception as exc:
             log_error(f"{agent.name} failed: {exc}")
