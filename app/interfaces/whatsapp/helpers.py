@@ -380,6 +380,45 @@ async def send_whatsapp_message_async(
                 await _send_text(recipient=recipient, text=batch_message, config=config)
 
 
+def filter_generated_media(response: Any, input_media: dict) -> dict[str, list]:
+    """Split response media into genuinely generated items, dropping echoes.
+
+    agno's Workflow seeds ``WorkflowRunOutput.images/videos/audio/files`` with
+    the media passed to ``run()`` (same instances, shallow-copied lists), so
+    sending back everything in those attributes would echo the user's own
+    media. Additionally, the input step attaches converted GeoJSON files
+    (``format="geojson"``) to its step output; those internal artifacts are
+    dropped too.
+
+    Args:
+        response: Workflow/Agent run output (attributes accessed via getattr).
+        input_media: The media kwargs passed to ``run()`` (e.g. run_kwargs),
+            keyed by "images"/"videos"/"audio"/"files".
+
+    Returns:
+        Dict mapping attribute name -> list of media items that were NOT
+        part of the run input (and are not geojson artifacts). Empty lists
+        are omitted.
+    """
+    input_ids = {
+        id(item)
+        for key in ("images", "videos", "audio", "files")
+        for item in (input_media.get(key) or [])
+    }
+
+    generated: dict[str, list] = {}
+    for attr in ("images", "videos", "audio", "files"):
+        items = getattr(response, attr, None) or []
+        kept = [
+            item for item in items
+            if id(item) not in input_ids
+            and not (getattr(item, "format", None) == "geojson")
+        ]
+        if kept:
+            generated[attr] = kept
+    return generated
+
+
 async def upload_and_send_media_async(
     media_items: list,
     media_type: str,
