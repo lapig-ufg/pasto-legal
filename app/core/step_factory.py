@@ -117,6 +117,7 @@ def _agent_executor_factory(
                 final_input,
                 user_id=user_id,
                 session_state=session_state,
+                images=step_input.images,
                 files=input_files,
             )
         except Exception as exc:
