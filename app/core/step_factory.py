@@ -118,6 +118,7 @@ def _agent_executor_factory(
                 user_id=user_id,
                 session_state=session_state,
                 files=input_files,
+                images=step_input.images
             )
         except Exception as exc:
             log_error(f"{agent.name} failed: {exc}")
