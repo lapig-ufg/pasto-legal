@@ -77,7 +77,7 @@ def test_build_boletim_story_renders_valid_pdf_with_expected_content():
     assert rural_property.id in text
     assert "Localização da Propriedade" in text
     assert "Dados de Pastagem" in text
-    assert "Análise de Biomassa" in text
+    assert "Produtividade, Biomassa e Forragem" in text
     assert "Idade da Pastagem" in text
     assert "Vigor da Pastagem" in text
     assert "Uso e Cobertura do Solo" in text

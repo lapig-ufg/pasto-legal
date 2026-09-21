@@ -39,22 +39,29 @@ analysis_tools:
         Failed to generate image: {error}.
   generate_biomass_image:
     description: |
-      Generates a thematic map of the biomass (dry matter) over the rural property boundaries.
+      Generates the dry matter PRODUCTIVITY map of the rural property.
+
+      Prefers MONTHLY productivity (t DM/ha/month, 10 m Time2Graze series). When no
+      monthly data exists, it falls back to MapBiomas ANNUAL productivity
+      (t DM/ha/year) and states that the metric changed — they are not interchangeable.
+
+      This is productivity (what the pasture produced in the period), NOT standing
+      biomass and NOT available forage. Relay the returned metadata block instead of
+      summarising it away.
+
       params:
           feature_id (str): Identifier (id) of the registered feature.
 
       Return:
-          ToolResult: Map rendered in PNG format.
+          ToolResult: PNG map whose colorbar names the metric, source, period and unit.
     results:
       feature_not_found: |
         Feature not found: {feature_id}.
-      success_t2g_legend: |
-        Legend: Accumulated biomass for the reference month. Light blue (High
-        concentration) to Dark purple (Low concentration). Reference date:
-        month {ref_month}, year {ref_year}.
-      success_mapbiomas_legend: |
-        Legend: Accumulated biomass for the reference year. Light blue (High
-        concentration) to Dark purple (Low concentration). Reference date: year 2024.
+      monthly_unavailable_annual_fallback: |
+        No MONTHLY productivity is available for this property; the map below is the
+        consolidated ANNUAL productivity, which is a different metric.
+
+        {metadata}
       error: |
         Unexpected error: {error}.
   generate_biomass_video:
@@ -95,12 +102,53 @@ analysis_tools:
         Inform that the T2G series may not cover the region or the requested
         period and suggest a more recent period or a biomass map of the current month.
       success: |
-        Monthly biomass evolution video (ton/ha) from {start} to {end}, over
-        the satellite image and with the property boundary. Each frame is the
-        accumulation of the month indicated in the upper-left corner (MM/YYYY
-        format), with a fixed color scale across frames: Dark purple (Low
-        concentration) to Light blue (High concentration), ranging from {min}
-        to {max} ton/ha. Months without available data were omitted.
+        Metric: {metric}
+        Source: {source}
+        Period: {start} to {end}
+        Unit: {unit}
+        Product resolution: {resolution} m
+        Effective mask resolution: {mask}
+        Limitation: this is the month's productivity, not standing biomass and not
+        available forage.
+
+        Each frame shows the month (MM/YYYY) in the top-left corner, with a fixed
+        colour scale across frames ranging from {min} to {max} {unit}: dark purple
+        (low) to light cyan (high). Months without data were omitted.
+      error: |
+        Unexpected error: {error}.
+  generate_historical_biomass_series:
+    description: |
+      Generates the annual historical dry matter PRODUCTIVITY series (2000-2024) of the
+      rural property, computed on-the-fly over the pasture areas, with a chart.
+
+      The source is Global Pasture Watch annual GPP, converted to dry matter through
+      carbon use efficiency and the carbon-to-dry-matter ratio. It is ANNUAL
+      productivity (t DM/ha/year): NOT standing biomass, NOT available forage, and NOT
+      the current condition of the pasture.
+
+      Besides the chart, it exports every pixel of the property to zarr (S3 in
+      production) for later analytical reuse.
+
+      Use it when the user asks about history, trend, evolution over the years, or
+      degradation over time. For the current month use `generate_biomass_image`.
+
+      params:
+          feature_id (str): Identifier (id) of the registered feature.
+          start_year (int): First year of the series (minimum 2000).
+          end_year (int): Last year of the series (maximum 2024).
+
+      Return:
+          ToolResult: PNG chart of the series with the uncertainty band, plus the text
+          summary with source, period, unit, resolution and limitations.
+    results:
+      feature_not_found: |
+        Feature not found: {feature_id}.
+      no_data: |
+        No historical productivity data between {start_year} and {end_year} for this property.
+      success: |
+        Annual dry matter productivity series with {n_years} year(s), from {start_year} to {end_year}: {first_value} to {last_value} t DM/ha/year ({change}%).{export}
+
+        {metadata}
       error: |
         Unexpected error: {error}.
   generate_pasture_classification_image:

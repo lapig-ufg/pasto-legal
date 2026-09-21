@@ -15,6 +15,7 @@ from app.utils.feature_utils import get_registered_features
 from app.tools.analysis_tools import (
     generate_biomass_image,
     generate_biomass_video,
+    generate_historical_biomass_series,
     generate_pasture_classification_image,
     generate_property_image,
     generate_property_boletim,
@@ -65,6 +66,7 @@ _ANALYST_TOOLS = [
     generate_property_image,
     generate_biomass_image,
     generate_biomass_video,
+    generate_historical_biomass_series,
     generate_soil_texture_image,
     generate_pasture_classification_image,
     generate_property_boletim,

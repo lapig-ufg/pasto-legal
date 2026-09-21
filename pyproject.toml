@@ -20,6 +20,7 @@ dependencies = [
     "httpx==0.28.1",
     "jinja2>=3.1.6",
     "lancedb>=0.26.0",
+    "matplotlib>=3.10.0",
     "ollama>=0.6.1",
     "numpy>=2.2.0",
     "openai>=2.32.0",
@@ -57,4 +58,10 @@ dependencies = [
 dev = [
     "ollama>=0.6.1",
     "scikit-learn>=1.9.0",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: testes que fazem consultas pesadas ao Earth Engine (classificação on-the-fly)",
+    "integration: testes que consultam o Earth Engine de verdade (precisam de .env com credenciais)",
 ]

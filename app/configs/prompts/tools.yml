@@ -43,10 +43,10 @@ analysis_tools:
     results:
       feature_not_found: |
         Feição não encontrada: {feature_id}.
-      success_t2g_legend: |
-        Legenda: Acumulado de biomassa no mês de referência. Azul claro (Alta concentração) a Roxo escuro (Baixa concentração). Data referência: mês {ref_month}, ano {ref_year}.
-      success_mapbiomas_legend: |
-        Legenda: Acumulado de biomassa no ano de referência. Azul claro (Alta concentração) a Roxo escuro (Baixa concentração). Data referência: ano 2024.
+      monthly_unavailable_annual_fallback: |
+        Não há produtividade MENSAL disponível para esta propriedade; o mapa abaixo é a produtividade ANUAL consolidada, que é outra métrica.
+
+        {metadata}
       error: |
         Erro inesperado: {error}.
   generate_biomass_video:
@@ -82,7 +82,50 @@ analysis_tools:
       insufficient_data: |
         Não há dados de biomassa suficientes (pelo menos dois meses) para gerar o vídeo no período de {start_month}/{start_year} a {end_month}/{end_year}. Informe que a série T2G pode não cobrir a região ou o período solicitado e sugira um período mais recente ou um mapa de biomassa do mês atual.
       success: |
-        Vídeo da evolução mensal da biomassa (ton/ha) de {start} a {end}, sobre a imagem de satélite e com o contorno da propriedade. Cada frame é o acumulado do mês indicado no canto superior esquerdo (formato MM/AAAA), com barra de cores de escala fixa entre os frames: Roxo escuro (Baixa concentração) a Azul claro (Alta concentração), variando de {min} a {max} ton/ha. Meses sem dados disponíveis foram omitidos.
+        Métrica: {metric}
+        Fonte: {source}
+        Período: {start} a {end}
+        Unidade: {unit}
+        Resolução do produto: {resolution} m
+        Resolução efetiva da máscara: {mask}
+        Limitação: é a produtividade do mês, não biomassa em pé nem forragem disponível.
+
+        Cada frame traz o mês (MM/AAAA) no canto superior esquerdo, com barra de cores de escala fixa entre os frames variando de {min} a {max} {unit}: roxo escuro (baixa) a azul claro (alta). Meses sem dado foram omitidos.
+      error: |
+        Erro inesperado: {error}.
+  generate_historical_biomass_series:
+    description: |
+      Gera a série histórica anual de PRODUTIVIDADE de matéria seca (2000-2024) da
+      propriedade rural, calculada on-the-fly sobre as áreas de pastagem, com gráfico.
+
+      A fonte é o GPP anual do Global Pasture Watch, convertido em matéria seca pela
+      eficiência do uso do carbono e pela razão carbono -> matéria seca. É
+      produtividade ANUAL (t MS/ha/ano): NÃO é biomassa em pé, NÃO é forragem
+      disponível e NÃO representa a condição atual do pasto.
+
+      Além do gráfico, exporta todos os pixels da propriedade para zarr (S3 em
+      produção), para reuso analítico posterior.
+
+      Use quando o usuário perguntar sobre histórico, tendência, evolução ao longo dos
+      anos ou degradação no tempo. Para o mês atual use `generate_biomass_image`.
+
+      params:
+          feature_id (str): Identificador (id) da feição registrada.
+          start_year (int): Primeiro ano da série (mínimo 2000).
+          end_year (int): Último ano da série (máximo 2024).
+
+      Return:
+          ToolResult: Gráfico PNG da série com faixa de incerteza, mais o resumo
+          textual com fonte, período, unidade, resolução e limitações.
+    results:
+      feature_not_found: |
+        Feição não encontrada: {feature_id}.
+      no_data: |
+        Não há dados de produtividade histórica entre {start_year} e {end_year} para esta propriedade.
+      success: |
+        Série anual de produtividade de matéria seca com {n_years} ano(s), de {start_year} a {end_year}: de {first_value} para {last_value} t MS/ha/ano ({change}%).{export}
+
+        {metadata}
       error: |
         Erro inesperado: {error}.
   generate_pasture_classification_image:
