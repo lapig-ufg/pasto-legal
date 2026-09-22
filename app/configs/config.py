@@ -99,7 +99,7 @@ class BaseConfig:
                     raise ValueError("OLLAMA_API_KEY environment variable must be set.")
                 return Ollama(id=self.FALLBACK_MODEL_ID, host=self.OLLAMA_HOST, api_key=self.OLLAMA_API_KEY)
             case _:
-                raise None
+                return None
 
 
 class DevelopmentConfig(BaseConfig):
