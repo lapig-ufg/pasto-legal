@@ -21,6 +21,7 @@ from app.services.geospatial.gee import (
     query_pasture_statistics,
     query_topographic_stats,
     )
+from app.services.geospatial.biomass.available_forage import default_parameters
 from app.services.geospatial.biomass.biomass_assessment import assess_property_biomass
 from app.services.geospatial.biomass.biomass_charts import render_historical_series_chart
 from app.services.geospatial.biomass.biomass_maps import (
@@ -361,6 +362,75 @@ def generate_biomass_video(
     except Exception as e:
         log_error(f"generate_biomass_video: {e}")
         return ToolResult(content=get_tool_result_text("analysis_tools", "generate_biomass_video", "error", error=e))
+
+
+@tool(tool_hooks=[validate_selected_property_hook], description=get_tool_description("analysis_tools", "get_stocking_capacity"))
+def get_stocking_capacity(
+    run_context: RunContext,
+    feature_id: str,
+    reported_stocking_ua: float = None,
+    grazing_days: int = None,
+    management_system: str = "continuo",
+) -> ToolResult:
+    """
+    Calcula a capacidade de suporte da propriedade em UA e UA/ha.
+
+    Esta é a ÚNICA forma válida de obter capacidade de suporte. O cálculo passa
+    pelas travas de compatibilidade temporal: base anual (ou 12 meses acumulados)
+    para capacidade anual, ou forragem disponível com horizonte de pastejo para
+    capacidade no período. Nunca derive UA de uma produtividade mensal por conta
+    própria — multiplicar o valor mensal por 12 ignora a sazonalidade e produz um
+    número que parece certo e não é.
+
+    params:
+        feature_id (str): Identificador (id) da feição registrada.
+        reported_stocking_ua (float, optional): Lotação atual informada, em UA totais.
+        grazing_days (int, optional): Horizonte de pastejo, em dias, para a
+            capacidade no período (exige forragem disponível).
+        management_system (str): "continuo", "rotacionado" ou "diferido".
+
+    Return:
+        ToolResult: Capacidade de suporte com as grandezas separadas e os
+        parâmetros adotados, ou a explicação de por que não pode ser calculada.
+    """
+    log_debug(
+        f"get_stocking_capacity: feature_id={feature_id}, "
+        f"lotacao={reported_stocking_ua}, dias={grazing_days}"
+    )
+    try:
+        selected_property = resolve_feature(run_context, feature_id)
+        if selected_property is None:
+            log_warning(f"Feição não encontrada: {feature_id}")
+            return ToolResult(content=get_tool_result_text("analysis_tools", "get_stocking_capacity", "feature_not_found", feature_id=feature_id))
+
+        assessment = assess_property_biomass(
+            roi=ee.Geometry.MultiPolygon(selected_property.get_coords()),
+            today=datetime.date.today(),
+            forage_parameters=default_parameters(management_system),
+            reported_stocking_ua=reported_stocking_ua,
+            grazing_days=grazing_days,
+        )
+
+        if assessment.stocking_capacity is None:
+            log_warning(f"get_stocking_capacity: sem base compatível ({selected_property.id})")
+            return ToolResult(
+                content=get_tool_result_text(
+                    "analysis_tools", "get_stocking_capacity", "incompatible_basis",
+                    motivos=" ".join(assessment.unavailable),
+                )
+            )
+
+        log_debug(f"get_stocking_capacity: calculada ({selected_property.id})")
+        return ToolResult(
+            content=get_tool_result_text(
+                "analysis_tools", "get_stocking_capacity", "success",
+                capacidade=str(assessment.stocking_capacity),
+            )
+        )
+
+    except Exception as e:
+        log_error(f"get_stocking_capacity: {e}")
+        return ToolResult(content=get_tool_result_text("analysis_tools", "get_stocking_capacity", "error", error=e))
 
 
 @tool(tool_hooks=[validate_selected_property_hook], description=get_tool_description("analysis_tools", "generate_historical_biomass_series"))

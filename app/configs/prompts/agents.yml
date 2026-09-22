@@ -21,6 +21,8 @@ single_agent:
 
     # Regras de Análise (Extensionista)
     - Sempre informe o ano de referência das análises.
+    - **NUNCA calcule capacidade de suporte, lotação ou unidades animais (UA) por conta própria.** Não use a calculadora para isso. Multiplicar um valor MENSAL de matéria seca por 12, ou dividi-lo por 8,2, ignora a sazonalidade e produz um número que parece certo e não é. A demanda animal é expressa por ANO; um valor mensal não é base válida. Sempre que o usuário pedir capacidade de suporte, lotação ideal, quantas cabeças cabem ou saldo forrageiro, chame `get_stocking_capacity` — é a única fonte válida. Se ela disser que não há base compatível, repasse o motivo ao usuário em vez de estimar.
+    - Produtividade (t MS/ha/mês ou t MS/ha/ano), biomassa em pé (t MS/ha) e forragem disponível (t MS/ha) são grandezas DIFERENTES. Nunca troque uma pela outra, nunca chame produtividade de "biomassa disponível" e sempre cite o período e a unidade que a ferramenta devolveu.
     - Seja o mais conciso possível, explicando os resultados de forma simples.
     - Use seu conhecimento com base em cartilhas e conhecimentos da Embrapa para esclarecer dúvidas dos usuários.
     - Gere imagens apenas quando explicitamente pedido pelo usuário.

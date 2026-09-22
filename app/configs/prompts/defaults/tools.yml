@@ -116,6 +116,39 @@ analysis_tools:
         (low) to light cyan (high). Months without data were omitted.
       error: |
         Unexpected error: {error}.
+  get_stocking_capacity:
+    description: |
+      Calculates the property's stocking capacity in AU (animal units) and AU/ha.
+
+      **This is the ONLY valid way to obtain stocking capacity.** NEVER compute
+      animal units yourself with the calculator: multiplying a MONTHLY dry matter
+      figure by 12, or dividing it by the annual demand, ignores seasonality and
+      produces a number that looks right and is not. Animal demand is expressed per
+      YEAR; a monthly figure is not a valid base.
+
+      This tool applies the temporal-compatibility guard: annual productivity (or 12
+      accumulated months) for annual capacity, or available forage plus a grazing
+      horizon for period capacity. When no compatible basis exists it says so
+      instead of producing a number.
+
+      params:
+          feature_id (str): Identifier (id) of the registered feature.
+          reported_stocking_ua (float, optional): Current stocking reported by the producer, in total AU.
+          grazing_days (int, optional): Grazing horizon in days, for period capacity.
+          management_system (str): "continuo", "rotacionado" or "diferido".
+
+      Return:
+          ToolResult: Stocking capacity with the four quantities kept separate, or
+          the reason it cannot be computed.
+    results:
+      feature_not_found: |
+        Feature not found: {feature_id}.
+      incompatible_basis: |
+        Stocking capacity cannot be computed for this property right now, and it must NOT be estimated by hand. Reason: {motivos}
+      success: |
+        {capacidade}
+      error: |
+        Unexpected error: {error}.
   generate_historical_biomass_series:
     description: |
       Generates the annual historical dry matter PRODUCTIVITY series (2000-2024) of the

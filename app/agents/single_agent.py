@@ -21,6 +21,7 @@ from app.tools.analysis_tools import (
     generate_property_boletim,
     generate_soil_texture_image,
     get_pasture_stats,
+    get_stocking_capacity,
     get_topographic_stats,
 )
 from app.tools.property_tools import (
@@ -62,6 +63,7 @@ _agent_config = get_agent_config("single_agent")
 _ANALYST_TOOLS = [
     CalculatorTools(exclude_tools=["is_prime", "factorial"]),
     get_pasture_stats,
+    get_stocking_capacity,
     get_topographic_stats,
     generate_property_image,
     generate_biomass_image,

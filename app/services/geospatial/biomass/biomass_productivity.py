@@ -68,6 +68,11 @@ MONTH_NAMES = {
 # Quantos meses para trás procurar quando o chamador pede "o mês mais recente".
 _LATEST_MONTH_LOOKBACK = 18
 
+# Dias mínimos de mês corrido para que valha a pena chamar o resultado de
+# "produtividade do mês". Abaixo disso o acumulado é curto demais para ser
+# comparável a um mês inteiro, e o correto é entregar o último mês completo.
+MIN_OBSERVABLE_DAYS = 10
+
 
 # -----------------------------------------------------------------------------
 # Aritmética pura (sem Earth Engine) — é o que os testes de unidade exercitam
@@ -109,7 +114,19 @@ def monthly_period(
             f"O mês {month}/{year} ainda não começou; não há período observável."
         )
 
-    return start, min(end, reference)
+    observable_end = min(end, reference)
+
+    # No primeiro dia do mês o intervalo seria vazio. Devolver isso adiante faz o
+    # Earth Engine levantar "Empty date ranges not supported" e, se passasse, o
+    # acumulado de zero dia viraria uma produtividade de 0,00 t MS/ha — que o
+    # usuário leria como pasto sem produção.
+    if observable_end <= start:
+        raise ValueError(
+            f"O mês {month}/{year} começou hoje; ainda não há dia observável. "
+            "Use o mês anterior."
+        )
+
+    return start, observable_end
 
 
 def annual_period(year: int) -> Tuple[datetime.date, datetime.date]:
@@ -411,6 +428,7 @@ def estimate_monthly_productivity(
     lue: float = GRASS_LUE_MAX_GC_PER_MJ,
     today: Optional[datetime.date] = None,
     raise_on_missing: bool = False,
+    min_period_days: int = MIN_OBSERVABLE_DAYS,
 ) -> Optional[BiomassEstimate]:
     """
     Produtividade mensal de matéria seca estimada, em t MS/ha/mês.
@@ -427,6 +445,9 @@ def estimate_monthly_productivity(
         lue (float): LUEmax adotado, em gC/MJ.
         today (datetime.date, optional): Data de referência para truncar mês corrente.
         raise_on_missing (bool): Se True, levanta em vez de devolver None.
+        min_period_days (int): Dias mínimos de mês corrido para que a estimativa
+            seja emitida; abaixo disso o mês é curto demais para ser chamado de
+            produtividade mensal.
 
     Returns:
         BiomassEstimate | None: Estimativa com metadados completos, ou None.
@@ -435,7 +456,26 @@ def estimate_monthly_productivity(
         NoDataForPeriodError: Quando `raise_on_missing` e não há cena no período.
         ImplausibleEstimateError: Se o valor estourar o envelope agronômico.
     """
-    period_start, period_end = monthly_period(year=year, month=month, today=today)
+    try:
+        period_start, period_end = monthly_period(year=year, month=month, today=today)
+    except ValueError as error:
+        if raise_on_missing:
+            raise NoDataForPeriodError(str(error)) from error
+        log_warning(f"estimate_monthly_productivity: {error}")
+        return None
+
+    elapsed_days = (period_end - period_start).days
+    if elapsed_days < min_period_days:
+        message = (
+            f"O mês {MONTH_NAMES[month]}/{year} tem apenas {elapsed_days} dia(s) "
+            f"corridos (mínimo {min_period_days}); é curto demais para ser "
+            "comparado a um mês inteiro. Use o mês anterior."
+        )
+        log_warning(f"estimate_monthly_productivity: {message}")
+        if raise_on_missing:
+            raise NoDataForPeriodError(message)
+        return None
+
     pasture_mask = mask or build_pasture_mask(roi=roi, strategy="official")
 
     result = monthly_productivity_image(

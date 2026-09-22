@@ -194,9 +194,14 @@ def _capacity(
 
     if assessment.annual_productivity is not None:
         try:
+            # A área tem que ser a da PRÓPRIA estimativa (`valid_area_ha`), não a
+            # da máscara do conjunto: a produtividade anual do MapBiomas é medida
+            # sobre a pastagem do próprio MapBiomas, e cruzá-la com a área do
+            # Global Pasture Watch mistura dois recortes diferentes — medido em
+            # 10% de diferença no imóvel de referência.
             return estimate_annual_potential_capacity(
                 assessment.annual_productivity,
-                pasture_area_ha=assessment.mask.metadata.pasture_area_ha,
+                pasture_area_ha=None,
                 reported_stocking_ua=reported_stocking_ua,
             )
         except (ValueError, BiomassValidationError) as error:

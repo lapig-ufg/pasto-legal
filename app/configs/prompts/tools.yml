@@ -34,12 +34,22 @@ analysis_tools:
         Erro ao gerar imagem: {error}.
   generate_biomass_image:
     description: |
-      Gera um mapa temático da biomassa (matéria seca) sobre os limites da propriedade rural.
+      Gera o mapa de PRODUTIVIDADE de matéria seca da propriedade rural.
+
+      Prefere a produtividade MENSAL (t MS/ha/mês, série Time2Graze de 10 m). Quando
+      não há dado mensal, cai para a produtividade ANUAL do MapBiomas (t MS/ha/ano) e
+      diz que a métrica mudou — as duas não são intercambiáveis.
+
+      É produtividade (o que o pasto produziu no período), NÃO é biomassa em pé e NÃO
+      é forragem disponível. Repasse ao usuário o bloco de metadados devolvido em vez
+      de resumi-lo.
+
       params:
           feature_id (str): Identificador (id) da feição registrada.
 
       Return:
-          ToolResult: Mapa renderizado em formato PNG.
+          ToolResult: Mapa em PNG cuja barra de cores identifica métrica, fonte,
+          período e unidade.
     results:
       feature_not_found: |
         Feição não encontrada: {feature_id}.
@@ -91,6 +101,39 @@ analysis_tools:
         Limitação: é a produtividade do mês, não biomassa em pé nem forragem disponível.
 
         Cada frame traz o mês (MM/AAAA) no canto superior esquerdo, com barra de cores de escala fixa entre os frames variando de {min} a {max} {unit}: roxo escuro (baixa) a azul claro (alta). Meses sem dado foram omitidos.
+      error: |
+        Erro inesperado: {error}.
+  get_stocking_capacity:
+    description: |
+      Calcula a capacidade de suporte da propriedade em UA e UA/ha.
+
+      **Esta é a ÚNICA forma válida de obter capacidade de suporte.** NUNCA calcule
+      unidades animais por conta própria com a calculadora: multiplicar um valor
+      MENSAL de matéria seca por 12, ou dividi-lo pela demanda anual, ignora a
+      sazonalidade e produz um número que parece certo e não é. A demanda animal é
+      expressa por ANO; um valor mensal não é base válida.
+
+      A ferramenta aplica a trava de compatibilidade temporal: produtividade anual
+      (ou 12 meses acumulados) para capacidade anual, ou forragem disponível mais
+      horizonte de pastejo para capacidade no período. Quando não existe base
+      compatível, ela diz isso em vez de produzir um número.
+
+      params:
+          feature_id (str): Identificador (id) da feição registrada.
+          reported_stocking_ua (float, optional): Lotação atual informada pelo produtor, em UA totais.
+          grazing_days (int, optional): Horizonte de pastejo em dias, para capacidade no período.
+          management_system (str): "continuo", "rotacionado" ou "diferido".
+
+      Return:
+          ToolResult: Capacidade de suporte com as quatro grandezas separadas, ou o
+          motivo de não poder ser calculada.
+    results:
+      feature_not_found: |
+        Feição não encontrada: {feature_id}.
+      incompatible_basis: |
+        A capacidade de suporte não pode ser calculada para esta propriedade agora, e NÃO deve ser estimada na mão. Motivo: {motivos}
+      success: |
+        {capacidade}
       error: |
         Erro inesperado: {error}.
   generate_historical_biomass_series:

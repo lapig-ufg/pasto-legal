@@ -144,10 +144,16 @@ def historical_uncertainty_bounds(
     """
     if value_per_ha is None:
         return None, None
-    return (
-        value_per_ha * CARBON_TO_DRY_MATTER_MAPBIOMAS_BR / carbon_to_dry_matter,
-        value_per_ha * CARBON_TO_DRY_MATTER_IPCC / carbon_to_dry_matter,
-    )
+
+    def _scaled(target: float) -> float:
+        # Quando o fator adotado É o extremo, o limite tem de ser exatamente o valor
+        # central: a ida e volta por ponto flutuante devolveria 30,000000000000004 e
+        # o intervalo deixaria de conter o próprio valor que descreve.
+        if target == carbon_to_dry_matter:
+            return value_per_ha
+        return value_per_ha * target / carbon_to_dry_matter
+
+    return _scaled(CARBON_TO_DRY_MATTER_MAPBIOMAS_BR), _scaled(CARBON_TO_DRY_MATTER_IPCC)
 
 
 def available_historical_years() -> List[int]:
