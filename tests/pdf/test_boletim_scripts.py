@@ -1,7 +1,7 @@
 """
 Teste unitário e hermético do report builder do boletim (sem GEE, sem credenciais).
 
-`RuralProperty`/`SpatialFeatures` são puros Pydantic, sem dependência de GEE. As
+`Feature`/`FeatureMetadata` são puros Pydantic, sem dependência de GEE. As
 imagens usadas são PNGs sintéticos (sem depender do satélite) só para exercitar
 o layout lado a lado.
 
@@ -12,7 +12,7 @@ from io import BytesIO
 from PIL import Image as PILImage
 from pypdf import PdfReader
 
-from app.schemas.property_feature import RuralProperty, SpatialFeatures
+from app.schemas.feature import Feature, FeatureMetadata
 from app.services.boletim_scripts import build_boletim_story, build_placeholder_property_stats
 from app.services.pdf_scripts import render_document
 
@@ -23,19 +23,20 @@ def _sample_image_bytes(color=(80, 150, 90)) -> bytes:
     return buffer.getvalue()
 
 
-def _build_sample_property() -> RuralProperty:
-    return RuralProperty(
+def _build_sample_property() -> Feature:
+    return Feature(
         feature_id="Fazenda Blue",
-        car_code="GO-5205703-5B18B6DF441C4B7FA9444DDC127CF6C0",
-        spatial_features=SpatialFeatures(
-            total_area=23.4674,
-            municipality="Corrego do Ouro",
-            coordinates=[[[[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [0.0, 0.0]]]],
-        ),
+        coords=[[[[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [0.0, 0.0]]]],
+        metadata=[
+            FeatureMetadata(key="car_code", value="GO-5205703-5B18B6DF441C4B7FA9444DDC127CF6C0"),
+        ],
+        total_area=23.4674,
+        region="Corrego do Ouro",
+        feature_type="rural_property",
     )
 
 
-def _build_full_story(rural_property: RuralProperty, stats, **overrides):
+def _build_full_story(rural_property: Feature, stats, **overrides):
     kwargs = dict(
         location_image_bytes=_sample_image_bytes((150, 130, 100)),
         pasture_map_image_bytes=_sample_image_bytes((40, 120, 60)),
@@ -61,7 +62,7 @@ def test_build_placeholder_property_stats_has_all_sections():
 
 def test_build_boletim_story_renders_valid_pdf_with_expected_content():
     rural_property = _build_sample_property()
-    stats = build_placeholder_property_stats(rural_property.car_code)
+    stats = build_placeholder_property_stats(rural_property.get_metadata("car_code"))
 
     story = _build_full_story(rural_property, stats)
     pdf_bytes = render_document(story)
@@ -85,7 +86,7 @@ def test_build_boletim_story_renders_valid_pdf_with_expected_content():
 
 def test_build_boletim_story_falls_back_gracefully_without_optional_maps():
     rural_property = _build_sample_property()
-    stats = build_placeholder_property_stats(rural_property.car_code)
+    stats = build_placeholder_property_stats(rural_property.get_metadata("car_code"))
 
     story = _build_full_story(
         rural_property, stats,
@@ -99,7 +100,7 @@ def test_build_boletim_story_falls_back_gracefully_without_optional_maps():
 def test_build_boletim_story_falls_back_to_car_code_without_feature_id():
     rural_property = _build_sample_property()
     rural_property.feature_id = None
-    stats = build_placeholder_property_stats(rural_property.car_code)
+    stats = build_placeholder_property_stats(rural_property.get_metadata("car_code"))
 
     story = _build_full_story(rural_property, stats)
     pdf_bytes = render_document(story)
@@ -107,4 +108,6 @@ def test_build_boletim_story_falls_back_to_car_code_without_feature_id():
     reader = PdfReader(BytesIO(pdf_bytes))
     text = reader.pages[0].extract_text()
 
-    assert rural_property.car_code in text
+    # O car_code aparece no PDF ainda que quebrado em linhas pelo layout.
+    assert "GO-5205703-5B18B6DF441C4B7FA9444DDC127CF" in text
+    assert "6C0" in text

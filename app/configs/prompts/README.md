@@ -58,8 +58,8 @@ deployment.
 
 Translate the free text (instructions, descriptions, messages). Keep as-is:
 
-- **Placeholders** — `{candidate_text}`, `{options_text}`, `{terms_text}`,
-  `{user_persona}`, `{satisfaction_level}`, `{last_message}`,
+- **Placeholders** — `{candidate_text}`, `{options_text}`, `{feature_type}`,
+  `{terms_text}`, `{user_persona}`, `{satisfaction_level}`, `{last_message}`,
   `{negative_prompt}`, `{new_message}` are filled by the code at runtime.
   Never translate or rename them.
 - **Escaped braces** — `{{level: str, level_message: str}}` in
@@ -79,6 +79,13 @@ Translate the free text (instructions, descriptions, messages). Keep as-is:
   `instructions_pending_multiple`, `instructions_final`) plus small fallback
   strings. Translate each block as a whole, preserving the headings and the
   `>` blockquote line (dynamic content is injected after it).
+- `{feature_type}` (used in the pending/final blocks) receives the display
+  name of the feature being registered. Those names live in
+  `single_agent.feature_type_names` (keys come from the code and must not be
+  renamed — translate only the values) with `feature_type_fallback` as the
+  generic name. Keep the word compatible with the surrounding articles
+  (e.g. in Portuguese it must remain feminine: "propriedade rural",
+  "área de buffer", "feição").
 - `welcoming_agent.instructions` contains `{terms_text}` — the full Terms of
   Use are injected into it. Keep the reference section header at the end and
   the `{terms_text}` placeholder on its own line.

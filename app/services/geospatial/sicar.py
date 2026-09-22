@@ -11,7 +11,7 @@ from requests.adapters import HTTPAdapter
 
 from agno.utils.log import log_debug, log_error
 
-from app.schemas.property_feature import RuralProperty, SpatialFeatures, SicarMetadata
+from app.schemas.feature import Feature, FeatureMetadata
 from app.configs.config import config
 
 # Suppress InsecureRequestWarning since we use verify=False for SICAR requests
@@ -102,41 +102,44 @@ conn.execute("PRAGMA memory_limit='1GB'")
 conn.execute("PRAGMA threads=1")
 
 
-def _map_feature_to_property_record(feature: json) -> RuralProperty:
+def _map_feature_to_property_record(feature: json) -> Feature:
     """
-    Mapeia uma feature GeoJSON para a estrutura aninhada RuralProperty.
+    Mapeia uma feature GeoJSON para o schema geral Feature.
 
     Recebe um dicionário aninhado (JSON) representando uma entidade geográfica
     (geralmente oriunda de uma API) e extrai suas propriedades e coordenadas
-    para compor a entidade padronizada.
+    para compor a entidade padronizada. Os dados administrativos do SICAR são
+    armazenados como metadados chave/valor; o código CAR define o
+    ``feature_id`` padrão até que o usuário atribua um nome.
 
     Args:
         feature (dict): Dicionário contendo os dados do imóvel no formato GeoJSON, incluindo as chaves 'properties' e 'geometry'.
 
     Returns:
-        RuralProperty: Entidade tipada contendo os dados do imóvel divididos entre AreaProperties e SICARProperties.
+        Feature: Entidade tipada contendo os dados do imóvel.
     """
     properties = feature.get('properties', {})
+    car_code = properties.get('codigo', '')
 
-    return RuralProperty(
-        car_code=properties.get('codigo', ''),
-        spatial_features=SpatialFeatures(
-            total_area=properties.get('area', 0.0),
-            municipality=properties.get('municipio', ''),
-            coordinates=feature.get('geometry', {}).get('coordinates', None)
-        ),
-        sicar_metadata=SicarMetadata(
-            tipo=properties.get('tipo', ''),
-            status=properties.get('status', ''),
-            availability_date=properties.get('dataDisponibilizacao', ''),
-            creation_date=properties.get('dataCriacao', '')
-        )
+    return Feature(
+        feature_id=car_code,
+        coords=feature.get('geometry', {}).get('coordinates', []),
+        metadata=[
+            FeatureMetadata(key='car_code', value=car_code),
+            FeatureMetadata(key='tipo', value=properties.get('tipo', '')),
+            FeatureMetadata(key='status', value=properties.get('status', '')),
+            FeatureMetadata(key='availability_date', value=properties.get('dataDisponibilizacao', '')),
+            FeatureMetadata(key='creation_date', value=properties.get('dataCriacao', '')),
+        ],
+        total_area=properties.get('area', 0.0),
+        region=properties.get('municipio', ''),
+        feature_type='rural_property',
     )
 
 
-def _map_row_to_property_record(row: dict) -> RuralProperty:
+def _map_row_to_property_record(row: dict) -> Feature:
     """
-    Mapeia uma linha do banco de dados para a estrutura aninhada RuralProperty.
+    Mapeia uma linha do banco de dados para o schema geral Feature.
 
     Recebe um dicionário achatado representando a linha retornada pelo DuckDB e
     converte a geometria extraída em uma lista de coordenadas padrão GeoJSON.
@@ -145,27 +148,28 @@ def _map_row_to_property_record(row: dict) -> RuralProperty:
         row (dict): Dicionário contendo os dados do imóvel, incluindo a chave 'geometry'.
 
     Returns:
-        Dict: Entidade tipada contendo os dados do imóvel divididos entre AreaProperties e SICARProperties.
+        Feature: Entidade tipada contendo os dados do imóvel.
     """
     geom_geojson = json.loads(row['geometry'])
+    car_code = row.get('cod_imovel', '')
 
-    return RuralProperty(
-        car_code=row.get('cod_imovel', ''),
-        spatial_features=SpatialFeatures(
-            total_area=row.get('num_area', 0.0),
-            municipality=row.get('municipio', ''),
-            coordinates=[geom_geojson.get('coordinates', [])]
-        ),
-        sicar_metadata=SicarMetadata(
-            tipo=row.get('ind_tipo', ''),
-            status=row.get('ind_status', ''),
-            availability_date=row.get('dat_atuali', ''),
-            creation_date=row.get('dat_criaca', '')
-        )
+    return Feature(
+        feature_id=car_code,
+        coords=[geom_geojson.get('coordinates', [])],
+        metadata=[
+            FeatureMetadata(key='car_code', value=car_code),
+            FeatureMetadata(key='tipo', value=row.get('ind_tipo', '')),
+            FeatureMetadata(key='status', value=row.get('ind_status', '')),
+            FeatureMetadata(key='availability_date', value=row.get('dat_atuali', '')),
+            FeatureMetadata(key='creation_date', value=row.get('dat_criaca', '')),
+        ],
+        total_area=row.get('num_area', 0.0),
+        region=row.get('municipio', ''),
+        feature_type='rural_property',
     )
 
 
-def __fetch_property_by_car_remote(car_codes: List[str]) -> List[RuralProperty] | None:
+def __fetch_property_by_car_remote(car_codes: List[str]) -> List[Feature] | None:
     """
     Busca os dados de propriedades rurais na base pública remota do CAR usando códigos CAR.
 
@@ -173,7 +177,7 @@ def __fetch_property_by_car_remote(car_codes: List[str]) -> List[RuralProperty] 
         car_codes (List[str]): Lista de códigos CAR para busca.
 
     Returns:
-        List[RuralProperty] | None: Lista de propriedades mapeadas, ou None se não encontrar.
+        List[Feature] | None: Lista de propriedades mapeadas, ou None se não encontrar.
     """
     all_features = []
 
@@ -203,7 +207,7 @@ def __fetch_property_by_car_remote(car_codes: List[str]) -> List[RuralProperty] 
     return [_map_feature_to_property_record(feature) for feature in all_features]
 
 
-def __fetch_property_by_car_locally(car_codes: List[str]) -> List[RuralProperty]:
+def __fetch_property_by_car_locally(car_codes: List[str]) -> List[Feature]:
     """
     Busca as informações de imóveis rurais utilizando uma lista de códigos únicos do CAR.
 
@@ -256,7 +260,7 @@ def __fetch_property_by_car_locally(car_codes: List[str]) -> List[RuralProperty]
     return result
 
 
-def __fetch_property_by_coordinates_remote(latitude: float, longitude: float) -> List[RuralProperty]:
+def __fetch_property_by_coordinates_remote(latitude: float, longitude: float) -> List[Feature]:
     """
     Busca os dados de uma propriedade rural na base pública remota do CAR usando coordenadas.
 
@@ -265,7 +269,7 @@ def __fetch_property_by_coordinates_remote(latitude: float, longitude: float) ->
         longitude (float): Longitude do ponto de busca (ex: -49.43353).
 
     Returns:
-        List[RuralProperty]: Lista de propriedades mapeadas para a entidade RuralProperty.
+        List[Feature]: Lista de propriedades mapeadas para a entidade Feature.
             Retorna None caso não exista imóvel na coordenada.
     """
     url_api = f"https://consultapublica.car.gov.br/publico/imoveis/getImovel?lat={latitude}&lng={longitude}"
@@ -291,7 +295,7 @@ def __fetch_property_by_coordinates_remote(latitude: float, longitude: float) ->
     return [_map_feature_to_property_record(feature) for feature in features]
 
 
-def __fetch_property_by_coordinates_locally(latitude: float, longitude: float) -> List[RuralProperty]:
+def __fetch_property_by_coordinates_locally(latitude: float, longitude: float) -> List[Feature]:
     """
     Realiza busca geoespacial de imóveis rurais a partir de um ponto (Lat/Lon).
 

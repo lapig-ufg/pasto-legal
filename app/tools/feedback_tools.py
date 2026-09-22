@@ -6,7 +6,7 @@ from agno.agent import Agent
 from agno.models.google import Gemini
 from agno.utils.log import log_debug, log_warning, log_error
 
-from app.configs.prompts import get_tool_description
+from app.configs.prompts import get_tool_description, get_tool_result_text
 from app.database.session import SessionLocal, engine
 from app.database.models import NegativeFeedback, AnalysisFeedback
 
@@ -107,11 +107,11 @@ def record_frustration_feedback(
         db.add(novo_feedback)
         db.commit()
         log_debug("record_frustration_feedback: feedback registrado com sucesso")
-        return "Feedback registrado com sucesso no sistema. Muito obrigado por ajudar a melhorar o Pasto Legal!"
+        return get_tool_result_text("feedback_tools", "record_frustration_feedback", "success")
     except Exception as e:
         db.rollback()
         log_error(f"record_frustration_feedback: erro ao registrar feedback: {e}")
-        return f"Erro ao registrar feedback: {str(e)}"
+        return get_tool_result_text("feedback_tools", "record_frustration_feedback", "error", error=e)
     finally:
         db.close()
 
@@ -142,10 +142,10 @@ def record_analisys_feedback(
         db.add(novo_feedback)
         db.commit()
         log_debug("record_analisys_feedback: feedback registrado com sucesso")
-        return "Feedback registrado com sucesso no sistema. Muito obrigado por ajudar a melhorar o Pasto Legal!"
+        return get_tool_result_text("feedback_tools", "record_analisys_feedback", "success")
     except Exception as e:
         db.rollback()
         log_error(f"record_analisys_feedback: erro ao registrar feedback: {e}")
-        return f"Erro ao registrar feedback: {str(e)}"
+        return get_tool_result_text("feedback_tools", "record_analisys_feedback", "error", error=e)
     finally:
         db.close()

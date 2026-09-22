@@ -36,7 +36,7 @@ class UserPersona(BaseModel):
         description="Lista de preferências exclusivamente focadas em como o agente deve interagir e formatar as respostas."
     )
 
-def __str__(self) -> str:
+    def __str__(self) -> str:
         preferences_text = "".join(
             f"\n- {pref.key.title()}: {pref.description}" for pref in self.communication_preferences
         )
@@ -53,16 +53,12 @@ class PersonaUpdate(BaseModel):
 
     Representa as mudanças que o agente deseja aplicar na persona do usuário.
     Apenas campos preenchidos serão atualizados.
-    """
 
-    name: Optional[str] = Field(
-        default=None,
-        description="Nome atualizado do usuário, ou None para manter o atual.",
-    )
-    role: Optional[str] = Field(
-        default=None,
-        description="Cargo ou papel atualizado ('Produtor' ou 'Técnico'), ou None para manter o atual.",
-    )
+    Nome e função NÃO aparecem aqui de propósito: são identidade declarada
+    pelo usuário no onboarding e só mudam a pedido explícito dele, pelas tools
+    `update_persona_name` e `update_persona_role`. Este agente roda sozinho a
+    cada resposta e trabalha por dedução — dedução não sobrescreve declaração.
+    """
     regionality: Optional[str] = Field(
         default=None,
         description="Cidade/estado/região atualizada, ou None para manter o atual.",

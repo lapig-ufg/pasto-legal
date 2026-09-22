@@ -11,26 +11,29 @@ mesmo não chamando o GEE de fato. Mesma ressalva de tests/ee_scripts/test_pastu
 from agno.run import RunContext
 
 from app.tools.analysis_tools import generate_property_boletim
-from app.schemas.property_feature import RuralProperty, SpatialFeatures
+from app.schemas.feature import Feature, FeatureMetadata, RegisteredFeatures
 
 
-def _build_context_with_property(rural_property: RuralProperty) -> RunContext:
+def _build_context_with_property(rural_property: Feature) -> RunContext:
     return RunContext(
         run_id="test-run",
         session_id="test-session",
-        session_state={"all_properties": [rural_property.model_dump()]},
+        session_state={
+            "all_properties": RegisteredFeatures(features=[rural_property]).model_dump()
+        },
     )
 
 
 def test_generate_property_boletim_returns_valid_pdf_file():
-    rural_property = RuralProperty(
+    rural_property = Feature(
         feature_id="Fazenda Blue",
-        car_code="GO-5205703-5B18B6DF441C4B7FA9444DDC127CF6C0",
-        spatial_features=SpatialFeatures(
-            total_area=23.4674,
-            municipality="Corrego do Ouro",
-            coordinates=[[[[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [0.0, 0.0]]]],
-        ),
+        coords=[[[[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [0.0, 0.0]]]],
+        metadata=[
+            FeatureMetadata(key="car_code", value="GO-5205703-5B18B6DF441C4B7FA9444DDC127CF6C0"),
+        ],
+        total_area=23.4674,
+        region="Corrego do Ouro",
+        feature_type="rural_property",
     )
     run_context = _build_context_with_property(rural_property)
 
@@ -39,7 +42,7 @@ def test_generate_property_boletim_returns_valid_pdf_file():
     assert result.files
     assert result.files[0].content[:5] == b"%PDF-"
     assert result.files[0].mime_type == "application/pdf"
-    assert result.files[0].name == f"boletim_{rural_property.car_code}.pdf"
+    assert result.files[0].name == f"boletim_{rural_property.id}.pdf"
 
     # O content deve ser a mensagem pronta (determinística, montada em Python) — não um
     # texto genérico que dependeria da LLM reformular/resumir os dados.
