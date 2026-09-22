@@ -59,6 +59,7 @@ class MessageContent:
     video_id: Optional[str] = None
     audio_id: Optional[str] = None
     doc_id: Optional[str] = None
+    doc_filename: Optional[str] = None
 
 
 def extract_message_content(message: dict) -> Optional[MessageContent]:
@@ -94,9 +95,11 @@ def extract_message_content(message: dict) -> Optional[MessageContent]:
         return MessageContent(text="", audio_id=message["audio"]["id"])
 
     if msg_type == "document":
+        document = message.get("document", {})
         return MessageContent(
-            text=message.get("document", {}).get("caption", ""),
-            doc_id=message["document"]["id"],
+            text=document.get("caption", ""),
+            doc_id=document["id"],
+            doc_filename=document.get("filename"),
         )
 
     # Interactive replies carry the selected option's title and description
@@ -212,7 +215,14 @@ async def download_event_media_async(parsed: "MessageContent", config: WhatsAppC
         elif label == "audio":
             run_kwargs["audio"] = [Audio(content=content, mime_type=mime)]
         elif label == "document":
-            run_kwargs["files"] = [File(content=content, mime_type=mime)]
+            # agno's File model only accepts a whitelist of mime types
+            # (zip/rar/kmz/kml are not allowed), so unsupported values are
+            # dropped and the format is detected from the filename instead.
+            if mime and mime not in File.valid_mime_types():
+                mime = None
+            run_kwargs["files"] = [
+                File(content=content, mime_type=mime, name=parsed.doc_filename)
+            ]
 
     return run_kwargs, skipped
 
@@ -368,6 +378,45 @@ async def send_whatsapp_message_async(
             for i, batch in enumerate(message_batches, 1):
                 batch_message = f"[{i}/{len(message_batches)}] {batch}"
                 await _send_text(recipient=recipient, text=batch_message, config=config)
+
+
+def filter_generated_media(response: Any, input_media: dict) -> dict[str, list]:
+    """Split response media into genuinely generated items, dropping echoes.
+
+    agno's Workflow seeds ``WorkflowRunOutput.images/videos/audio/files`` with
+    the media passed to ``run()`` (same instances, shallow-copied lists), so
+    sending back everything in those attributes would echo the user's own
+    media. Additionally, the input step attaches converted GeoJSON files
+    (``format="geojson"``) to its step output; those internal artifacts are
+    dropped too.
+
+    Args:
+        response: Workflow/Agent run output (attributes accessed via getattr).
+        input_media: The media kwargs passed to ``run()`` (e.g. run_kwargs),
+            keyed by "images"/"videos"/"audio"/"files".
+
+    Returns:
+        Dict mapping attribute name -> list of media items that were NOT
+        part of the run input (and are not geojson artifacts). Empty lists
+        are omitted.
+    """
+    input_ids = {
+        id(item)
+        for key in ("images", "videos", "audio", "files")
+        for item in (input_media.get(key) or [])
+    }
+
+    generated: dict[str, list] = {}
+    for attr in ("images", "videos", "audio", "files"):
+        items = getattr(response, attr, None) or []
+        kept = [
+            item for item in items
+            if id(item) not in input_ids
+            and not (getattr(item, "format", None) == "geojson")
+        ]
+        if kept:
+            generated[attr] = kept
+    return generated
 
 
 async def upload_and_send_media_async(

@@ -3,7 +3,7 @@ from agno.tools import tool
 from agno.run import RunContext
 from agno.utils.log import log_debug, log_warning, log_error
 
-from app.configs.prompts import get_tool_description
+from app.configs.prompts import get_tool_description, get_tool_result_text
 from app.database.session import SessionLocal, engine 
 from app.database.models import UserTermsAcceptance
 
@@ -18,7 +18,7 @@ def accept_terms_and_conditions(run_context: RunContext) -> str:
     
     if not user_id:
         log_warning("accept_terms_and_conditions: user_id ausente no contexto")
-        return "Error: User identifier not found in the execution context."
+        return get_tool_result_text("onboarding_tools", "accept_terms_and_conditions", "missing_user_id")
 
     
     UserTermsAcceptance.metadata.create_all(bind=engine)
@@ -42,10 +42,10 @@ def accept_terms_and_conditions(run_context: RunContext) -> str:
         session_state["terms_accepted_at"] = now.isoformat()
         
         log_debug(f"accept_terms_and_conditions: aceite registrado para user_id={user_id}")
-        return "Formal acceptance successfully registered! The main workflow has been unlocked. Politely inform the user."
+        return get_tool_result_text("onboarding_tools", "accept_terms_and_conditions", "success")
     except Exception as e:
         db.rollback()
         log_error(f"accept_terms_and_conditions: erro de persistência para user_id={user_id}: {e}")
-        return f"Critical persistence error while saving terms acceptance: {str(e)}"
+        return get_tool_result_text("onboarding_tools", "accept_terms_and_conditions", "error_persistence", error=e)
     finally:
         db.close()

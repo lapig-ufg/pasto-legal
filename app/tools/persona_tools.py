@@ -4,7 +4,7 @@ from agno.tools import tool
 from agno.run import RunContext
 from agno.utils.log import log_debug, log_warning, log_error
 
-from app.configs.prompts import get_tool_description
+from app.configs.prompts import get_tool_description, get_tool_result_text
 from app.database.session import SessionLocal, engine
 from app.database.models import UserProfile
 
@@ -82,10 +82,11 @@ def update_persona_name(name: str, run_context: RunContext) -> str:
             log_warning("update_persona_name: user_id ausente, perfil salvo apenas na sessão")
 
         log_debug(f"update_persona_name: nome atualizado para {nome}")
-        return f"Nome atualizado com sucesso para: {nome}"
+        return get_tool_result_text("persona_tools", "update_persona_name", "success", name=user_persona['name'])
+      
     except Exception as e:
         log_error(f"update_persona_name: {e}")
-        return f"Erro ao atualizar nome da persona: {str(e)}"
+        return get_tool_result_text("persona_tools", "update_persona_name", "error", error=e)
 
 
 @tool(description=get_tool_description("persona_tools", "update_persona_role"))
@@ -117,10 +118,10 @@ def update_persona_role(role: Literal["Produtor", "Técnico"], run_context: RunC
             log_warning("update_persona_role: user_id ausente, perfil salvo apenas na sessão")
 
         log_debug(f"update_persona_role: papel atualizado para {role}")
-        return f"Papel profissional atualizado com sucesso para: {role}"
+        return get_tool_result_text("persona_tools", "update_persona_role", "success", role=user_persona['role'])
     except Exception as e:
         log_error(f"update_persona_role: {e}")
-        return f"Erro ao atualizar papel da persona: {str(e)}"
+        return get_tool_result_text("persona_tools", "update_persona_role", "error", error=e)
 
 
 @tool(description=get_tool_description("persona_tools", "update_persona_region"))
@@ -143,10 +144,10 @@ def update_persona_region(regionality: str, run_context: RunContext) -> str:
         session_state['user_persona'] = user_persona
         run_context.session_state = session_state
         log_debug(f"update_persona_region: regionalidade atualizada para {user_persona['regionality']}")
-        return f"Regionalidade atualizada com sucesso para: {user_persona['regionality']}"
+        return get_tool_result_text("persona_tools", "update_persona_region", "success", regionality=user_persona['regionality'])
     except Exception as e:
         log_error(f"update_persona_region: {e}")
-        return f"Erro ao atualizar regionalidade da persona: {str(e)}"
+        return get_tool_result_text("persona_tools", "update_persona_region", "error", error=e)
 
 
 # =====================================================================
@@ -178,7 +179,7 @@ def create_persona_preference(key: str, description: str, run_context: RunContex
         for pref in user_persona["preferences"]:
             if pref.get("key") == normalized_key:
                 log_warning(f"Preferência já existe: {normalized_key}")
-                return f"A preferência '{key}' já existe. Use 'update_persona_preference' para modificá-la."
+                return get_tool_result_text("persona_tools", "create_persona_preference", "preference_exists", key=key)
 
         user_persona["preferences"].append({
             "key": normalized_key,
@@ -188,10 +189,10 @@ def create_persona_preference(key: str, description: str, run_context: RunContex
         session_state['user_persona'] = user_persona
         run_context.session_state = session_state
         log_debug(f"create_persona_preference: preferência '{normalized_key}' registrada")
-        return f"Nova preferência registrada: {normalized_key.title()} -> {description}"
+        return get_tool_result_text("persona_tools", "create_persona_preference", "success", key=normalized_key.title(), description=description)
     except Exception as e:
         log_error(f"create_persona_preference: {e}")
-        return f"Erro ao registrar preferência: {str(e)}"
+        return get_tool_result_text("persona_tools", "create_persona_preference", "error", error=e)
 
 
 @tool(description=get_tool_description("persona_tools", "update_persona_preference"))
@@ -223,15 +224,15 @@ def update_persona_preference(key: str, description: str, run_context: RunContex
 
         if not updated:
             log_warning(f"Preferência não encontrada para atualizar: {normalized_key}")
-            return f"Não foi possível atualizar: A preferência com a chave '{key}' não foi encontrada."
+            return get_tool_result_text("persona_tools", "update_persona_preference", "preference_not_found", key=key)
 
         session_state['user_persona'] = user_persona
         run_context.session_state = session_state
         log_debug(f"update_persona_preference: preferência '{normalized_key}' atualizada")
-        return f"Preferência '{normalized_key.title()}' atualizada com sucesso."
+        return get_tool_result_text("persona_tools", "update_persona_preference", "success", key=normalized_key.title())
     except Exception as e:
         log_error(f"update_persona_preference: {e}")
-        return f"Erro ao atualizar preferência: {str(e)}"
+        return get_tool_result_text("persona_tools", "update_persona_preference", "error", error=e)
 
 
 @tool(description=get_tool_description("persona_tools", "remove_persona_preference"))
@@ -255,13 +256,13 @@ def remove_persona_preference(key: str, run_context: RunContext) -> str:
 
         if len(updated_preferences) == initial_count:
             log_warning(f"Preferência não encontrada para remoção: {normalized_key}")
-            return f"Nenhuma preferência encontrada com a chave '{key}' para remoção."
+            return get_tool_result_text("persona_tools", "remove_persona_preference", "preference_not_found", key=key)
 
         user_persona["preferences"] = updated_preferences
         session_state['user_persona'] = user_persona
         run_context.session_state = session_state
         log_debug(f"remove_persona_preference: preferência '{normalized_key}' removida")
-        return f"Preferência '{normalized_key.title()}' removida com sucesso."
+        return get_tool_result_text("persona_tools", "remove_persona_preference", "success", key=normalized_key.title())
     except Exception as e:
         log_error(f"remove_persona_preference: {e}")
-        return f"Erro ao remover preferência: {str(e)}"
+        return get_tool_result_text("persona_tools", "remove_persona_preference", "error", error=e)

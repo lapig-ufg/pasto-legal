@@ -9,8 +9,9 @@ from agno.utils.log import log_debug
 from app.configs.config import config
 from app.configs.prompts import get_agent_config
 from app.knowledge.pasto_legal_kb import pasto_legal_kb
-from app.schemas.property_feature import validate_feature_record
+from app.schemas.feature import Feature
 from app.schemas.user_persona import UserPersona
+from app.utils.feature_utils import get_registered_features
 from app.tools.analysis_tools import (
     generate_biomass_image,
     generate_biomass_video,
@@ -29,9 +30,11 @@ from app.tools.property_tools import (
     remove_property,
     select_car_from_list,
     set_property_name,
-    start_registration_by_buffer,
+    start_buffer_registration_by_coordinate,
+    start_buffer_registration_by_url,
     start_registration_by_car,
     start_registration_by_coordinate,
+    start_registration_by_geojson,
     start_registration_by_url,
 )
 from app.tools.persona_tools import update_persona_name, update_persona_role
@@ -85,7 +88,7 @@ def get_tools(run_context: RunContext):
     # ==========================================
     if registration_state == "pending":
         candidate_properties = [
-            validate_feature_record(prop)
+            Feature.model_validate(prop)
             for prop in session_state.get("candidate_properties", [])
         ]
 
@@ -113,9 +116,11 @@ def get_tools(run_context: RunContext):
             start_registration_by_url,
             start_registration_by_car,
             start_registration_by_coordinate,
-            start_registration_by_buffer,
             update_persona_name,
             update_persona_role,
+            start_registration_by_geojson,
+            start_buffer_registration_by_coordinate,
+            start_buffer_registration_by_url,
             *_ANALYST_TOOLS
         ])
         
@@ -135,13 +140,25 @@ def _persona_text(session_state) -> str:
 
 
 def _registrations_text(session_state) -> str:
-    all_properties = [
-        validate_feature_record(record)
-        for record in session_state.get("all_properties", [])
-    ]
-    if all_properties:
-        return "\n".join(str(record) for record in all_properties)
+    prompt = get_registered_features(session_state).build_prompt()
+    if prompt:
+        return prompt
     return _agent_config["registrations_empty"].strip()
+
+
+def _feature_type_text(candidate_properties) -> str:
+    """Returns the localized feature type name of the pending candidates.
+
+    The neutral ``feature_type`` key of the first candidate is mapped to a
+    display name via ``feature_type_names``; when no candidate exists, the
+    generic ``feature_type_fallback`` text is used instead.
+    """
+    feature_type_names = _agent_config["feature_type_names"]
+    if candidate_properties:
+        feature_type = candidate_properties[0].feature_type
+        if feature_type in feature_type_names:
+            return str(feature_type_names[feature_type]).strip()
+    return _agent_config["feature_type_fallback"].strip()
 
 
 def _context_blocks(session_state) -> str:
@@ -180,18 +197,19 @@ def get_instructions(run_context: RunContext) -> str:
     # ==========================================
     if registration_state == "pending":
         candidate_properties = [
-            validate_feature_record(prop)
+            Feature.model_validate(prop)
             for prop in session_state.get("candidate_properties", [])
         ]
 
         # Cenário A: Apenas 1 propriedade encontrada para confirmação
         if len(candidate_properties) == 1:
             candidate_text = str(candidate_properties[0])
+            feature_type_text = _feature_type_text(candidate_properties)
 
             instructions = textwrap.dedent(f"""
                 {context_blocks}
 
-                {_agent_config['instructions_pending_single'].strip().format(candidate_text=candidate_text)}
+                {_agent_config['instructions_pending_single'].strip().format(candidate_text=candidate_text, feature_type=feature_type_text)}
             """).strip()
 
         # Cenário B: Múltiplas propriedades encontradas (Usuário precisa escolher)
@@ -200,11 +218,12 @@ def get_instructions(run_context: RunContext) -> str:
             for i, prop in enumerate(candidate_properties):
                 options_text.append(f"*Opção {i + 1}* - {prop.describe()}")
             candidate_text = "\n".join(options_text)
+            feature_type_text = _feature_type_text(candidate_properties)
 
             instructions = textwrap.dedent(f"""
                 {context_blocks}
 
-                {_agent_config['instructions_pending_multiple'].strip().format(options_text=candidate_text)}
+                {_agent_config['instructions_pending_multiple'].strip().format(options_text=candidate_text, feature_type=feature_type_text)}
             """).strip()
 
     # ==========================================
@@ -212,15 +231,16 @@ def get_instructions(run_context: RunContext) -> str:
     # ==========================================
     elif registration_state == "final":
         candidate_properties = [
-            validate_feature_record(prop)
+            Feature.model_validate(prop)
             for prop in session_state.get("candidate_properties", [])
         ]
         candidate_text = str(candidate_properties[0]) if candidate_properties else _agent_config["final_candidate_fallback"].strip()
+        feature_type_text = _feature_type_text(candidate_properties)
 
         instructions = textwrap.dedent(f"""
             {context_blocks}
 
-            {_agent_config['instructions_final'].strip().format(candidate_text=candidate_text)}
+            {_agent_config['instructions_final'].strip().format(candidate_text=candidate_text, feature_type=feature_type_text)}
         """).strip()
 
     # ==========================================
