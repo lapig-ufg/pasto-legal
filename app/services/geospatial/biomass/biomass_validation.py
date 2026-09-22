@@ -106,13 +106,24 @@ GRASS_LUE_MIN_GC_PER_MJ = 0.40
 GRASS_LUE_UPPER_GC_PER_MJ = 0.65
 GRASS_LUE_SOURCE = "LAPIG/MapBiomas - LUEmax para Urochloa spp. em pastagem cultivada no Brasil"
 
-# Razão matéria seca / carbono. O IPCC (2006 GL, Vol.4, Cap.6) adota fração de
-# carbono de 0,47 na biomassa de pastagem, o que corresponde a 1/0,47 = 2,128.
-# O fator 2,7 usado na metodologia LAPIG embute, além da conversão C -> MS, a
-# fração da produção primária bruta que se converte em biomassa aérea colhível.
-# Os dois são mantidos nomeados e separados para que a conta fique auditável.
-CARBON_TO_DRY_MATTER = 2.7
-CARBON_TO_DRY_MATTER_SOURCE = "Metodologia LAPIG (C -> matéria seca aérea); IPCC 2006 GL Vol.4 Cap.6 (fração de C = 0,47)"
+# Razão matéria seca / carbono, nas duas variantes que o script oficial do
+# GPW/LAPIG documenta para o mesmo cálculo:
+#
+#   2,7 - fator IPCC, usado como padrão global no script de referência;
+#   2,3 - "dry matter content associated with pastures in a more conservative way
+#         (MapBiomas Brazil)", a variante brasileira.
+#
+# A variante brasileira é o padrão aqui porque é a que concorda com o produto de
+# biomassa do MapBiomas: medida em 10 pares imóvel-ano, ela fica a -2,4% do
+# MapBiomas, contra +14,5% do fator 2,7. As duas seguem nomeadas e selecionáveis,
+# e a diferença entre elas é o que gera o intervalo de incerteza.
+CARBON_TO_DRY_MATTER_MAPBIOMAS_BR = 2.3
+CARBON_TO_DRY_MATTER_IPCC = 2.7
+CARBON_TO_DRY_MATTER = CARBON_TO_DRY_MATTER_IPCC
+CARBON_TO_DRY_MATTER_SOURCE = (
+    "Script oficial GPW/LAPIG de biomassa de pastagem: IPCC_FACTOR = 2,7 (padrão) e "
+    "IPCC_BR_FACTOR = 2,3 (teor de matéria seca conservador, MapBiomas Brasil)"
+)
 
 # 1 g/m² = 0,01 t/ha. Conversão puramente dimensional.
 GRAMS_PER_M2_TO_TONS_PER_HA = 0.01
@@ -121,20 +132,6 @@ GRAMS_PER_M2_TO_TONS_PER_HA = 0.01
 # -----------------------------------------------------------------------------
 # Contratos dos assets
 # -----------------------------------------------------------------------------
-
-# Eficiência do uso do carbono (NPP/GPP). O produto histórico do Global Pasture
-# Watch entrega GPP bruto em gC/m²; só uma fração vira produção primária líquida.
-# O valor central 0,45 e a faixa 0,40-0,50 são os consolidados na literatura
-# (Zhang et al. 2009, Global Biogeochem. Cycles; Collalti & Prentice 2019,
-# Tree Physiology) e são o que separa GPP de matéria seca colhível.
-CARBON_USE_EFFICIENCY = 0.45
-CARBON_USE_EFFICIENCY_MIN = 0.40
-CARBON_USE_EFFICIENCY_MAX = 0.50
-CARBON_USE_EFFICIENCY_SOURCE = (
-    "Zhang et al. (2009) e Collalti & Prentice (2019) - razão NPP/GPP (carbon use "
-    "efficiency) de 0,40 a 0,50, com valor central 0,45"
-)
-
 
 # -----------------------------------------------------------------------------
 # Contratos dos assets
@@ -241,7 +238,7 @@ GPW_UGPP_HISTORICAL_CONTRACT = AssetUnitContract(
     band="gc_m2",
     dtype="uint16",
     stored_scale=1.0,
-    native_unit="gC/m2/ano (GPP bruto acumulado no ano)",
+    native_unit="uGPP acumulado no ano (radiação absorvida antes do LUEmax; a banda chama-se 'gc_m2' por legado)",
     temporal_support="annual",
     nominal_resolution_m=30.0,
     observation_cadence_days=None,
@@ -257,18 +254,20 @@ GPW_UGPP_HISTORICAL_CONTRACT = AssetUnitContract(
         "25 imagens, system:index '2000'..'2024', system:time_start em 1º de janeiro e "
         "time_end em 31 de dezembro: suporte ANUAL, apesar do sufixo '_m' no nome.",
         "nominalScale medido no GEE: 27,83 m (grade de ~30 m), crs_transform 2,5e-04 grau.",
-        "Valores de 1.700 a 2.100 gC/m²/ano nos imóveis de referência, faixa plausível "
-        "de GPP anual de pastagem tropical. Sem escala a aplicar (stored_scale = 1,0).",
-        "Validação cruzada contra o MapBiomas em 14 pares imóvel-ano (2005 a 2024, dois "
-        "imóveis): o fator empírico MapBiomas / (gC x 2,7 x 0,01) é 0,402 +/- 0,013. "
-        "Com a eficiência do uso do carbono de 0,45 da literatura, a estimativa fica "
-        "+12% acima do MapBiomas em média (máximo +20,6%); a faixa de CUE 0,40-0,50 "
-        "contém o valor do MapBiomas.",
+        "Valores de 1.700 a 2.100 por pixel nos imóveis de referência. Sem escala a "
+        "aplicar (stored_scale = 1,0).",
+        "A cadeia de conversão é a do script oficial GPW/LAPIG: LUEmax x fator C -> MS "
+        "x 0,01, a MESMA estrutura do pipeline mensal do Time2Graze. A banda 'gc_m2' "
+        "não é carbono já convertido: o LUEmax ainda precisa ser aplicado.",
+        "Validação cruzada contra o MapBiomas em 10 pares imóvel-ano (2015 a 2024, dois "
+        "imóveis): com LUEmax 0,50 e fator 2,3 (MapBiomas Brasil) o viés é -2,4% "
+        "(|máx| 7,7%); com o fator 2,7 do IPCC sobe para +14,5% (|máx| 17,3%). O "
+        "LUEmax 0,86 do MOD17A2 daria +97% e não se aplica ao Brasil.",
     ),
     notes=(
-        "Este produto é GPP BRUTO, não matéria seca: exige a eficiência do uso do "
-        "carbono (NPP/GPP) além da conversão carbono -> matéria seca. É a série "
-        "histórica 2000-2024 pedida na issue #112.",
+        "Série histórica 2000-2024 da issue #112. A conversão segue o script oficial "
+        "do GPW/LAPIG (LUEmax de Urochloa para o Brasil x fator C -> MS x 0,01), e não "
+        "uma cadeia própria.",
     ),
 )
 

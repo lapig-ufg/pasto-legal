@@ -69,19 +69,28 @@ Esta é a série histórica e a linha de base do sistema. Ela **não** é a cond
 
 ### 8.1.3. Série histórica on-the-fly 2000-2024 (issue #112)
 
-A série histórica vem do GPP anual do Global Pasture Watch (`ggpp-30m/v1/ugpp_m`), uma imagem por ano de 2000 a 2024, banda `gc_m2` em gC/m²/ano, grade nativa de 27,83 m. Apesar do sufixo `_m` no nome, o suporte é **anual**: `system:time_start` é 1º de janeiro e `system:time_end` é 31 de dezembro.
+A série histórica vem do `ggpp-30m/v1/ugpp_m` do Global Pasture Watch, uma imagem por ano de 2000 a 2024, grade nativa de 27,83 m. Apesar do sufixo `_m` no nome, o suporte é **anual**: `system:time_start` é 1º de janeiro e `system:time_end` é 31 de dezembro.
 
-Este produto é **GPP bruto**, e não matéria seca. A conversão precisa de um fator a mais que a fonte mensal:
+**A banda chama-se `gc_m2`, mas guarda uGPP — não carbono já convertido.** O LUEmax ainda precisa ser aplicado, exatamente como no pipeline mensal do Time2Graze. A cadeia é a do script oficial do GPW/LAPIG:
 
-$$\text{t MS/ha/ano} = gC/m^2 \times CUE \times F_{MS} \times 0{,}01$$
+$$\text{t MS/ha/ano} = uGPP \times LUE_{max} \times F_{MS} \times 0{,}01$$
 
-onde **CUE = 0,45** é a eficiência do uso do carbono (razão NPP/GPP), faixa 0,40 a 0,50, consolidada em Zhang et al. (2009) e Collalti & Prentice (2019). Sem ela a conversão trata toda a fixação de carbono como forragem colhível e superestima a matéria seca em mais de duas vezes.
+que reproduz o `DRY_BIOMASS_FACTOR = GRASS_LUEMAX_FACTOR \times IPCC\_FACTOR \times UNIT\_CONVERSION\_FACTOR` do script de referência.
 
-**Validação cruzada contra o MapBiomas** em 14 pares imóvel-ano (2005 a 2024, dois imóveis): o fator empírico MapBiomas/(gC × 2,7 × 0,01) é **0,402 ± 0,013** — notavelmente estável. Com a CUE de 0,45 da literatura a estimativa fica **+12% acima do MapBiomas em média** (máximo +21%), e a faixa de incerteza derivada de CUE 0,40-0,50 **contém** o valor do MapBiomas em todos os anos. Esse viés é reportado nas limitações de toda estimativa histórica.
+**LUEmax**: 0,50 gC/m²/dia/MJ para *Urochloa* cultivada no Brasil. O script também traz 0,86 (MOD17A2, global) — que nos imóveis de referência quase dobra o valor do MapBiomas (+97%) e não se aplica ao Brasil.
+
+**Fator carbono → matéria seca**: duas variantes documentadas no mesmo script.
+
+| Fator | Origem | Viés vs MapBiomas (10 pares imóvel-ano) |
+|---|---|---|
+| **2,3** (padrão) | "more conservative way (MapBiomas Brazil)" | **−2,4%** (|máx| 7,7%) |
+| 2,7 | Padrão IPCC | +14,5% (|máx| 17,3%) |
+
+O padrão é 2,3 porque é a variante que concorda com o produto de biomassa do MapBiomas — no imóvel de Córrego do Ouro a diferença fica dentro de ±0,3% em todos os anos. O intervalo de incerteza é a distância entre as duas variantes.
 
 **Resolução.** O produto é de 30 m. A série histórica não é, e não deve ser apresentada como, uma análise de 10 m.
 
-**Exportação pixel a pixel.** Além das estatísticas agregadas, a série é exportada para zarr com **todos os pixels** da propriedade (via Xee, em grade UTM métrica derivada do centroide do imóvel), persistida no S3 em produção e em `tmp/` em desenvolvimento. Os valores são gravados em int16 como t MS/ha/ano × 1000, e os pixels fora da máscara de pastagem recebem o sentinela **-32768**, distinto de uma produtividade nula legítima. O arquivo carrega nos seus atributos a proveniência completa: asset de origem, versão, resoluções, máscara, fatores de conversão e versão do modelo.
+**Exportação pixel a pixel.** Além das estatísticas agregadas, a série é exportada para zarr com **todos os pixels** da propriedade (via Xee, em grade UTM métrica derivada do centroide do imóvel), persistida no S3 em produção e em `tmp/` em desenvolvimento. Os valores são gravados em int16 como t MS/ha/ano × 1000, e os pixels fora da máscara de pastagem recebem o sentinela **−32768**, distinto de uma produtividade nula legítima. O arquivo carrega nos seus atributos a proveniência completa.
 
 > **Armadilha do Xee:** o sentinela gravado no arquivo e o `ee_mask_value` passado ao Xee precisam ser **valores diferentes**. Usando o mesmo número nos dois papéis, o Xee converte o sentinela em NaN e o cast para int16 transforma o NaN em 0 — o pixel sem pastagem passaria a valer zero de produtividade. Além disso o `unmask` precisa de `sameFootprint=False`, senão os pixels fora do recorte continuam mascarados.
 

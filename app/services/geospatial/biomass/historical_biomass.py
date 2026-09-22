@@ -4,17 +4,22 @@ Issue #112. A fonte é o GPP bruto anual do Global Pasture Watch
 (`ggpp-30m/v1/ugpp_m`, banda `gc_m2`, uma imagem por ano de 2000 a 2024),
 recortado pela máscara de pastagem do imóvel.
 
-A cadeia de conversão, por pixel, é:
+A cadeia de conversão é a mesma do script oficial do GPW/LAPIG, e a mesma
+estrutura do pipeline mensal do Time2Graze:
 
-    gC/m²/ano
-      x carbon_use_efficiency  -> gC/m²/ano de produção primária líquida
+    uGPP acumulado no ano (banda `gc_m2`)
+      x grass_fraction_or_lue  -> gC/m²/ano
       x carbon_to_dry_matter   -> g MS/m²/ano
       x unit_conversion        -> t MS/ha/ano
 
-O produto é GPP **bruto**: sem a eficiência do uso do carbono (NPP/GPP), a
-conversão superestima a matéria seca em mais de duas vezes. O fator e a sua
-fonte estão em `biomass_validation`, e o contrato do asset registra a validação
-cruzada contra o MapBiomas.
+O nome da banda (`gc_m2`) sugere carbono já convertido, mas **o LUEmax ainda
+precisa ser aplicado** — é o que o script de referência faz. O LUEmax de 0,50
+gC/m²/dia/MJ é o de Urochloa cultivada no Brasil; o 0,86 do MOD17A2 é global e
+superestima em ~97% por aqui.
+
+O fator carbono -> matéria seca tem duas variantes documentadas: 2,3 (MapBiomas
+Brasil, padrão aqui) e 2,7 (IPCC). A diferença entre elas é o intervalo de
+incerteza.
 
 Além das estatísticas agregadas, o módulo exporta **todos os pixels** da
 propriedade para zarr, persistido no S3 em produção e em `tmp/` em
@@ -33,12 +38,11 @@ from agno.utils.log import log_info, log_warning
 
 from app.schemas.biomass_schemas import BiomassEstimate
 from app.services.geospatial.biomass.biomass_validation import (
-    CARBON_TO_DRY_MATTER,
-    CARBON_USE_EFFICIENCY,
-    CARBON_USE_EFFICIENCY_MAX,
-    CARBON_USE_EFFICIENCY_MIN,
+    CARBON_TO_DRY_MATTER_IPCC,
+    CARBON_TO_DRY_MATTER_MAPBIOMAS_BR,
     GPW_UGPP_HISTORICAL_CONTRACT,
     GRAMS_PER_M2_TO_TONS_PER_HA,
+    GRASS_LUE_MAX_GC_PER_MJ,
     ValidationReport,
     assert_within_envelope,
     contract_quality_flags,
@@ -48,7 +52,10 @@ from app.services.geospatial.biomass.pasture_mask import PastureMask, build_past
 
 HISTORICAL_MODEL_VERSION = "historical-productivity-v1"
 
-UNCERTAINTY_METHOD = "faixa de eficiência do uso do carbono da literatura (0,40-0,50)"
+UNCERTAINTY_METHOD = (
+    "variantes documentadas do fator carbono -> matéria seca (2,3 MapBiomas Brasil "
+    "a 2,7 IPCC)"
+)
 
 # Escala de redução/exportação: a grade nativa do produto (~27,8 m).
 HISTORICAL_SCALE_M = 30.0
@@ -65,46 +72,52 @@ _XEE_MASK_VALUE = -9999
 
 
 def historical_conversion_factors(
-    carbon_use_efficiency: float = CARBON_USE_EFFICIENCY,
+    lue: float = GRASS_LUE_MAX_GC_PER_MJ,
+    carbon_to_dry_matter: float = CARBON_TO_DRY_MATTER_MAPBIOMAS_BR,
 ) -> Dict[str, float]:
     """
-    Cadeia de fatores aplicada ao GPP bruto anual.
+    Cadeia de fatores aplicada ao uGPP anual, igual à do script oficial GPW/LAPIG.
 
     Args:
-        carbon_use_efficiency (float): Razão NPP/GPP adotada.
+        lue (float): LUEmax adotado, em gC/m²/dia/MJ.
+        carbon_to_dry_matter (float): Fator carbono -> matéria seca (2,3 ou 2,7).
 
     Returns:
         Dict[str, float]: Fatores nomeados, prontos para ir dentro da estimativa.
     """
     return {
         "asset_scale": GPW_UGPP_HISTORICAL_CONTRACT.stored_scale,
-        "carbon_use_efficiency": carbon_use_efficiency,
-        "carbon_to_dry_matter": CARBON_TO_DRY_MATTER,
+        "grass_fraction_or_lue": lue,
+        "carbon_to_dry_matter": carbon_to_dry_matter,
         "unit_conversion": GRAMS_PER_M2_TO_TONS_PER_HA,
     }
 
 
 def gpp_to_dry_matter_t_ha(
-    gc_per_m2: float,
-    carbon_use_efficiency: float = CARBON_USE_EFFICIENCY,
+    ugpp_per_m2: float,
+    lue: float = GRASS_LUE_MAX_GC_PER_MJ,
+    carbon_to_dry_matter: float = CARBON_TO_DRY_MATTER_MAPBIOMAS_BR,
 ) -> float:
     """
-    Converte GPP bruto anual (gC/m²) em matéria seca (t MS/ha/ano).
+    Converte o uGPP anual acumulado em matéria seca (t MS/ha/ano).
 
     Aritmética pura, sem Earth Engine — é o que o teste de pixel sintético verifica.
+    Reproduz `DRY_BIOMASS_FACTOR = LUEmax * IPCC_FACTOR * UNIT_CONVERSION` do script
+    oficial do GPW/LAPIG.
 
     Args:
-        gc_per_m2 (float): GPP bruto acumulado no ano, em gC/m².
-        carbon_use_efficiency (float): Razão NPP/GPP adotada.
+        ugpp_per_m2 (float): uGPP acumulado no ano (banda `gc_m2`).
+        lue (float): LUEmax adotado, em gC/m²/dia/MJ.
+        carbon_to_dry_matter (float): Fator carbono -> matéria seca (2,3 ou 2,7).
 
     Returns:
         float: Produtividade anual de matéria seca, em t MS/ha/ano.
     """
-    factors = historical_conversion_factors(carbon_use_efficiency)
+    factors = historical_conversion_factors(lue, carbon_to_dry_matter)
     return (
-        gc_per_m2
+        ugpp_per_m2
         * factors["asset_scale"]
-        * factors["carbon_use_efficiency"]
+        * factors["grass_fraction_or_lue"]
         * factors["carbon_to_dry_matter"]
         * factors["unit_conversion"]
     )
@@ -112,17 +125,19 @@ def gpp_to_dry_matter_t_ha(
 
 def historical_uncertainty_bounds(
     value_per_ha: Optional[float],
-    carbon_use_efficiency: float = CARBON_USE_EFFICIENCY,
+    carbon_to_dry_matter: float = CARBON_TO_DRY_MATTER_MAPBIOMAS_BR,
 ) -> Tuple[Optional[float], Optional[float]]:
     """
-    Intervalo derivado da faixa publicada de eficiência do uso do carbono.
+    Intervalo entre as duas variantes documentadas do fator carbono -> matéria seca.
 
-    A estimativa é linear na CUE, então o intervalo é a razão entre os extremos
-    da faixa e o valor adotado.
+    A estimativa é linear nesse fator, então o intervalo é a razão entre os
+    extremos (2,3 e 2,7) e o valor adotado. Com o padrão 2,3 o intervalo é
+    assimétrico para cima, que é a realidade: o fator do IPCC é maior que o
+    brasileiro.
 
     Args:
         value_per_ha (float, optional): Valor central, por hectare.
-        carbon_use_efficiency (float): CUE adotada na estimativa.
+        carbon_to_dry_matter (float): Fator adotado na estimativa.
 
     Returns:
         Tuple[float | None, float | None]: (limite inferior, limite superior).
@@ -130,8 +145,8 @@ def historical_uncertainty_bounds(
     if value_per_ha is None:
         return None, None
     return (
-        value_per_ha * CARBON_USE_EFFICIENCY_MIN / carbon_use_efficiency,
-        value_per_ha * CARBON_USE_EFFICIENCY_MAX / carbon_use_efficiency,
+        value_per_ha * CARBON_TO_DRY_MATTER_MAPBIOMAS_BR / carbon_to_dry_matter,
+        value_per_ha * CARBON_TO_DRY_MATTER_IPCC / carbon_to_dry_matter,
     )
 
 
@@ -154,7 +169,7 @@ def historical_productivity_image(
     roi: ee.Geometry,
     year: int,
     mask: PastureMask,
-    carbon_use_efficiency: float = CARBON_USE_EFFICIENCY,
+    carbon_to_dry_matter: float = CARBON_TO_DRY_MATTER_MAPBIOMAS_BR,
 ) -> Optional[ee.Image]:
     """
     Imagem de produtividade anual em t MS/ha/ano para um ano da série histórica.
@@ -163,7 +178,7 @@ def historical_productivity_image(
         roi (ee.Geometry): Região de interesse.
         year (int): Ano desejado.
         mask (PastureMask): Máscara de pastagem a aplicar.
-        carbon_use_efficiency (float): Razão NPP/GPP adotada.
+        carbon_to_dry_matter (float): Fator carbono -> matéria seca (2,3 ou 2,7).
 
     Returns:
         ee.Image | None: Imagem nomeada 'dm_t_ha_year', ou None quando o ano não
@@ -178,13 +193,13 @@ def historical_productivity_image(
     if int(collection.size().getInfo()) == 0:
         return None
 
-    factors = historical_conversion_factors(carbon_use_efficiency)
+    factors = historical_conversion_factors(carbon_to_dry_matter=carbon_to_dry_matter)
 
     return (
         collection.first()
         .select(GPW_UGPP_HISTORICAL_CONTRACT.band)
         .multiply(factors["asset_scale"])
-        .multiply(factors["carbon_use_efficiency"])
+        .multiply(factors["grass_fraction_or_lue"])
         .multiply(factors["carbon_to_dry_matter"])
         .multiply(factors["unit_conversion"])
         .updateMask(mask.image)
@@ -197,7 +212,7 @@ def estimate_historical_productivity(
     roi: ee.Geometry,
     year: int,
     mask: Optional[PastureMask] = None,
-    carbon_use_efficiency: float = CARBON_USE_EFFICIENCY,
+    carbon_to_dry_matter: float = CARBON_TO_DRY_MATTER_MAPBIOMAS_BR,
 ) -> Optional[BiomassEstimate]:
     """
     Produtividade anual de matéria seca de um ano da série histórica (2000-2024).
@@ -206,7 +221,7 @@ def estimate_historical_productivity(
         roi (ee.Geometry): Região de interesse (polígono do imóvel).
         year (int): Ano desejado.
         mask (PastureMask, optional): Máscara de pastagem; None constrói a oficial.
-        carbon_use_efficiency (float): Razão NPP/GPP adotada.
+        carbon_to_dry_matter (float): Fator carbono -> matéria seca (2,3 ou 2,7).
 
     Returns:
         BiomassEstimate | None: Estimativa anual com metadados completos, ou None
@@ -224,7 +239,7 @@ def estimate_historical_productivity(
 
     pasture_mask = mask or build_pasture_mask(roi=roi, strategy="official")
     image = historical_productivity_image(
-        roi=roi, year=year, mask=pasture_mask, carbon_use_efficiency=carbon_use_efficiency
+        roi=roi, year=year, mask=pasture_mask, carbon_to_dry_matter=carbon_to_dry_matter
     )
 
     if image is None:
@@ -245,7 +260,7 @@ def estimate_historical_productivity(
     report.merge(pasture_mask.quality_flags)
     report.merge(assert_within_envelope("annual_dry_matter_productivity", value_per_ha))
 
-    lower, upper = historical_uncertainty_bounds(value_per_ha, carbon_use_efficiency)
+    lower, upper = historical_uncertainty_bounds(value_per_ha, carbon_to_dry_matter)
 
     return BiomassEstimate(
         metric_type="annual_dry_matter_productivity",
@@ -268,15 +283,15 @@ def estimate_historical_productivity(
         lower_bound_per_ha=lower,
         upper_bound_per_ha=upper,
         uncertainty_method=UNCERTAINTY_METHOD,
-        conversion_factors=historical_conversion_factors(carbon_use_efficiency),
+        conversion_factors=historical_conversion_factors(carbon_to_dry_matter=carbon_to_dry_matter),
         model_version=HISTORICAL_MODEL_VERSION,
         quality_flags=report.quality_flags,
         limitations=[
-            "Série histórica calculada on-the-fly a partir de GPP bruto; a eficiência "
-            "do uso do carbono (NPP/GPP) é o fator que separa GPP de matéria seca "
-            "colhível e responde pela maior parte da incerteza.",
-            "Validação cruzada contra o MapBiomas nos imóveis de referência: viés médio "
-            "de +12% (máximo +21%); a faixa de incerteza contém o valor do MapBiomas.",
+            "Série histórica calculada on-the-fly com a cadeia do script oficial "
+            "GPW/LAPIG (LUEmax de Urochloa x fator carbono -> matéria seca x 0,01).",
+            "Validação cruzada contra o MapBiomas em 10 pares imóvel-ano: viés de "
+            "-2,4% com o fator 2,3 (MapBiomas Brasil); com o fator 2,7 do IPCC o viés "
+            "sobe para +14,5%. O intervalo cobre as duas variantes.",
             f"Resolução do produto: {GPW_UGPP_HISTORICAL_CONTRACT.nominal_resolution_m:g} m. "
             "Não é uma análise de 10 m.",
         ],
@@ -288,7 +303,7 @@ def historical_series(
     start_year: int = 2000,
     end_year: int = 2024,
     mask: Optional[PastureMask] = None,
-    carbon_use_efficiency: float = CARBON_USE_EFFICIENCY,
+    carbon_to_dry_matter: float = CARBON_TO_DRY_MATTER_MAPBIOMAS_BR,
 ) -> List[BiomassEstimate]:
     """
     Série anual completa de produtividade para a propriedade.
@@ -298,7 +313,7 @@ def historical_series(
         start_year (int): Primeiro ano da série.
         end_year (int): Último ano da série (inclusivo).
         mask (PastureMask, optional): Máscara reaproveitada entre os anos.
-        carbon_use_efficiency (float): Razão NPP/GPP adotada.
+        carbon_to_dry_matter (float): Fator carbono -> matéria seca (2,3 ou 2,7).
 
     Returns:
         List[BiomassEstimate]: Estimativas anuais, em ordem cronológica; anos sem
@@ -327,7 +342,7 @@ def historical_series(
             continue
         estimate = estimate_historical_productivity(
             roi=roi, year=year, mask=pasture_mask,
-            carbon_use_efficiency=carbon_use_efficiency,
+            carbon_to_dry_matter=carbon_to_dry_matter,
         )
         if estimate is not None:
             estimates.append(estimate)
@@ -371,7 +386,7 @@ def historical_pixel_dataset(
     start_year: int = 2000,
     end_year: int = 2024,
     mask: Optional[PastureMask] = None,
-    carbon_use_efficiency: float = CARBON_USE_EFFICIENCY,
+    carbon_to_dry_matter: float = CARBON_TO_DRY_MATTER_MAPBIOMAS_BR,
     scale: float = HISTORICAL_SCALE_M,
 ) -> xr.Dataset:
     """
@@ -388,7 +403,7 @@ def historical_pixel_dataset(
         start_year (int): Primeiro ano da série.
         end_year (int): Último ano da série (inclusivo).
         mask (PastureMask, optional): Máscara de pastagem a aplicar.
-        carbon_use_efficiency (float): Razão NPP/GPP adotada.
+        carbon_to_dry_matter (float): Fator carbono -> matéria seca (2,3 ou 2,7).
         scale (float): Tamanho do pixel na exportação, em metros.
 
     Returns:
@@ -410,7 +425,7 @@ def historical_pixel_dataset(
     for year in years:
         image = historical_productivity_image(
             roi=roi, year=year, mask=pasture_mask,
-            carbon_use_efficiency=carbon_use_efficiency,
+            carbon_to_dry_matter=carbon_to_dry_matter,
         )
         if image is None:
             continue
@@ -464,7 +479,7 @@ def historical_pixel_dataset(
         "years": exported_years,
         "exported_at": datetime.datetime.now(tz=datetime.timezone.utc).isoformat(),
         **{f"factor_{name}": value
-           for name, value in historical_conversion_factors(carbon_use_efficiency).items()},
+           for name, value in historical_conversion_factors(carbon_to_dry_matter=carbon_to_dry_matter).items()},
     })
 
     log_info(
@@ -480,7 +495,7 @@ def export_historical_series(
     start_year: int = 2000,
     end_year: int = 2024,
     mask: Optional[PastureMask] = None,
-    carbon_use_efficiency: float = CARBON_USE_EFFICIENCY,
+    carbon_to_dry_matter: float = CARBON_TO_DRY_MATTER_MAPBIOMAS_BR,
     scale: float = HISTORICAL_SCALE_M,
     overwrite: bool = False,
 ) -> Dict:
@@ -498,7 +513,7 @@ def export_historical_series(
         start_year (int): Primeiro ano da série.
         end_year (int): Último ano da série (inclusivo).
         mask (PastureMask, optional): Máscara de pastagem a aplicar.
-        carbon_use_efficiency (float): Razão NPP/GPP adotada.
+        carbon_to_dry_matter (float): Fator carbono -> matéria seca (2,3 ou 2,7).
         scale (float): Tamanho do pixel na exportação, em metros.
         overwrite (bool): Recalcula e sobrescreve mesmo havendo exportação anterior.
 
@@ -516,7 +531,7 @@ def export_historical_series(
 
     key = historical_cache_key(
         feature_id=feature_id, start_year=start_year, end_year=end_year,
-        mask=pasture_mask, carbon_use_efficiency=carbon_use_efficiency, scale=scale,
+        mask=pasture_mask, carbon_to_dry_matter=carbon_to_dry_matter, scale=scale,
     )
     path = historical_cache_path(key)
 
@@ -533,7 +548,7 @@ def export_historical_series(
 
     dataset = historical_pixel_dataset(
         roi=roi, start_year=start_year, end_year=end_year, mask=pasture_mask,
-        carbon_use_efficiency=carbon_use_efficiency, scale=scale,
+        carbon_to_dry_matter=carbon_to_dry_matter, scale=scale,
     )
     save_historical_cache(key, dataset)
 
@@ -555,7 +570,7 @@ def historical_cache_key(
     start_year: int,
     end_year: int,
     mask: PastureMask,
-    carbon_use_efficiency: float = CARBON_USE_EFFICIENCY,
+    carbon_to_dry_matter: float = CARBON_TO_DRY_MATTER_MAPBIOMAS_BR,
     scale: float = HISTORICAL_SCALE_M,
 ) -> str:
     """
@@ -569,7 +584,7 @@ def historical_cache_key(
         start_year (int): Primeiro ano da série.
         end_year (int): Último ano da série.
         mask (PastureMask): Máscara de pastagem usada.
-        carbon_use_efficiency (float): Razão NPP/GPP adotada.
+        carbon_to_dry_matter (float): Fator carbono -> matéria seca (2,3 ou 2,7).
         scale (float): Tamanho do pixel na exportação, em metros.
 
     Returns:
@@ -582,7 +597,7 @@ def historical_cache_key(
         "feature_id": feature_id,
         "years": [start_year, end_year],
         "mask": mask.signature(),
-        "factors": historical_conversion_factors(carbon_use_efficiency),
+        "factors": historical_conversion_factors(carbon_to_dry_matter=carbon_to_dry_matter),
         "scale": scale,
         "model_version": HISTORICAL_MODEL_VERSION,
     }
