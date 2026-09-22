@@ -19,13 +19,50 @@ from app.configs.config import config
 from app.core.step_factory import _agent_executor_factory
 from app.database.agno_db import db
 from app.models.persist_on_success_workflow import PersistOnSuccessWorkflow
+from app.schemas.workflow_state import WorkflowState
+from app.services.session_migration import migrate_session_state
 from app.steps.feedback.remediation import remediation_check_step, INTENT_ROUTER_STEP_NAME
 from app.steps.guardrails_step import guardrails_step
 from app.steps.input_step import input_step
 from app.steps.output_step import output_step
 from app.steps.summarization_step import summarization_step
 from app.workflows.feedback_workflow import feedback_workflow
-from app.workflows.onboarding_gate import _needs_onboarding
+
+
+def _needs_onboarding(step_input: StepInput, session_state: dict[str, Any]) -> bool:
+    """Return True if the user needs to go through onboarding.
+
+    Returns True if the terms have NOT yet been accepted. Lazily initializes
+    the ``workflow_state`` slot in ``session_state`` when missing.
+    """
+    migrated_state = migrate_session_state(session_state)
+    session_state.clear()
+    session_state.update(migrated_state)
+    
+    if session_state.get("workflow_state") is None:
+        session_state["workflow_state"] = WorkflowState().model_dump()
+
+    if session_state.get("terms_accepted"):
+        return False
+
+    user_id = session_state.get("user_id")
+    if not user_id:
+        return True
+
+    db_session = SessionLocal()
+    try:
+        record = db_session.query(UserTermsAcceptance).filter(
+            UserTermsAcceptance.user_id == user_id,
+            UserTermsAcceptance.accepted == True,
+        ).first()
+
+        if record:
+            session_state["terms_accepted"] = True
+            return False
+
+        return True
+    finally:
+        db_session.close()
 
 
 pasto_legal_workflow = PersistOnSuccessWorkflow(
