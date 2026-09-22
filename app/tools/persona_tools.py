@@ -5,7 +5,40 @@ from agno.run import RunContext
 from agno.utils.log import log_debug, log_warning, log_error
 
 from app.configs.prompts import get_tool_description, get_tool_result_text
+from app.database.session import SessionLocal, engine
+from app.database.models import UserProfile
 
+
+# =====================================================================
+# HELPERS INTERNOS (não são tools — o agente não enxerga)
+# =====================================================================
+
+
+def _persistir_perfil(user_id: str, **campos) -> bool:
+    """Grava nome e/ou papel na tabela user_profile (cria a linha se não existir).
+
+    Recebe os campos por keyword (name=..., role=...) para que cada tool grave
+    apenas o que ela conhece, sem apagar o que a outra já gravou.
+    """
+    UserProfile.metadata.create_all(bind=engine)
+
+    db = SessionLocal()
+    try:
+        record = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+        if record is None:
+            record = UserProfile(user_id=user_id, **campos)
+            db.add(record)
+        else:
+            for chave, valor in campos.items():
+                setattr(record, chave, valor)
+        db.commit()
+        return True
+    except Exception as e:
+        db.rollback()
+        log_error(f"_persistir_perfil: falha para user_id={user_id}: {e}")
+        return False
+    finally:
+        db.close()
 
 # =====================================================================
 # TOOLS PARA ATRIBUTOS PRINCIPAIS
@@ -22,17 +55,35 @@ def update_persona_name(name: str, run_context: RunContext) -> str:
     Args:
         name (str): Nome próprio do usuário (ex: "João", "Maria").
     """
+
     log_debug(f"update_persona_name: name={name}")
     try:
+        nome = name.strip()
+
+        if not nome or len(nome) > 60 or any(c.isdigit() for c in nome):
+            log_warning(f"update_persona_name: nome recusado -> {nome!r}")
+            return (
+                "Nome inválido. Peça ao usuário que informe apenas como prefere "
+                "ser chamado, sem números."
+            )
+
         session_state = run_context.session_state or {}
         user_persona = session_state.get("user_persona", {})
 
-        user_persona['name'] = name.strip().title()
+        user_persona['name'] = nome
 
         session_state['user_persona'] = user_persona
         run_context.session_state = session_state
-        log_debug(f"update_persona_name: nome atualizado para {user_persona['name']}")
+
+        user_id = run_context.user_id or session_state.get("user_id")
+        if user_id:
+            _persistir_perfil(user_id, name=nome)
+        else:
+            log_warning("update_persona_name: user_id ausente, perfil salvo apenas na sessão")
+
+        log_debug(f"update_persona_name: nome atualizado para {nome}")
         return get_tool_result_text("persona_tools", "update_persona_name", "success", name=user_persona['name'])
+      
     except Exception as e:
         log_error(f"update_persona_name: {e}")
         return get_tool_result_text("persona_tools", "update_persona_name", "error", error=e)
@@ -54,12 +105,19 @@ def update_persona_role(role: Literal["Produtor", "Técnico"], run_context: RunC
         session_state = run_context.session_state or {}
         user_persona = session_state.get("user_persona", {})
 
-        # Garante a formatação correta de acordo com o Literal recebido
-        user_persona['role'] = role.strip().capitalize()
+        # O Literal do agno já garante que só chega "Produtor" ou "Técnico".
+        user_persona['role'] = role
 
         session_state['user_persona'] = user_persona
         run_context.session_state = session_state
-        log_debug(f"update_persona_role: papel atualizado para {user_persona['role']}")
+
+        user_id = run_context.user_id or session_state.get("user_id")
+        if user_id:
+            _persistir_perfil(user_id, role=role)
+        else:
+            log_warning("update_persona_role: user_id ausente, perfil salvo apenas na sessão")
+
+        log_debug(f"update_persona_role: papel atualizado para {role}")
         return get_tool_result_text("persona_tools", "update_persona_role", "success", role=user_persona['role'])
     except Exception as e:
         log_error(f"update_persona_role: {e}")
