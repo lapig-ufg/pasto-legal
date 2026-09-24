@@ -3,7 +3,7 @@
 Kept in its own module, apart from `pasto_legal_workflow`, so the decision rule
 can be imported (and tested) without pulling in the agents, the knowledge base
 and the embedder that the workflow composition needs. This file must depend
-only on the database models and the session factory.
+only on the database models, the session factory and the persona schema.
 
 External interface:
     _needs_onboarding  -- evaluator consumed by the `Onboarding Check` Condition.
@@ -15,23 +15,32 @@ from agno.workflow.types import StepInput
 
 from app.database.models import UserProfile, UserTermsAcceptance
 from app.database.session import SessionLocal
+from app.schemas.user_persona import is_persona_complete, is_persona_field_informed
 from app.schemas.workflow_state import WorkflowState
 
 
 def _needs_onboarding(step_input: StepInput, session_state: dict[str, Any]) -> bool:
     """Return True if the user still needs to go through onboarding.
 
-    Onboarding covers two things: the formal acceptance of the terms and the
-    identification profile (name + role). Both are looked up in the database, so
-    a user who already completed them is never asked again — not even in a
-    brand new session. On the way out, the stored profile is copied into
-    ``session_state`` so the agent can personalise from the first reply.
+    Onboarding covers the formal acceptance of the terms and the
+    identification profile (name + role). Both are resolved from
+    ``session_state`` when present and only looked up in the database for the
+    parts still missing, so a user who already completed them is never asked
+    again — not even in a brand new session. On the way out, the stored
+    profile is copied into ``session_state`` so the agent can personalise from
+    the first reply.
+
+    The completeness rule (``is_persona_complete``) is shared with the
+    welcoming agent, so the gate and the agent can never disagree on whether
+    the user's identification is done.
     """
     if session_state.get("workflow_state") is None:
         session_state["workflow_state"] = WorkflowState().model_dump()
 
+    terms_accepted = bool(session_state.get("terms_accepted"))
     persona = session_state.get("user_persona") or {}
-    if session_state.get("terms_accepted") and persona.get("name") and persona.get("role"):
+
+    if terms_accepted and is_persona_complete(persona):
         return False
 
     workflow_session = getattr(step_input, "workflow_session", None)
@@ -41,7 +50,7 @@ def _needs_onboarding(step_input: StepInput, session_state: dict[str, Any]) -> b
 
     db_session = SessionLocal()
     try:
-        if not session_state.get("terms_accepted"):
+        if not terms_accepted:
             aceite = db_session.query(UserTermsAcceptance).filter(
                 UserTermsAcceptance.user_id == user_id,
                 UserTermsAcceptance.accepted == True,
@@ -52,17 +61,22 @@ def _needs_onboarding(step_input: StepInput, session_state: dict[str, Any]) -> b
 
             session_state["terms_accepted"] = True
 
-        perfil = db_session.query(UserProfile).filter(
-            UserProfile.user_id == user_id
-        ).first()
+        if not is_persona_complete(persona):
+            perfil = db_session.query(UserProfile).filter(
+                UserProfile.user_id == user_id
+            ).first()
 
-        if perfil is None or not perfil.name or not perfil.role:
-            return True
+            if perfil is None:
+                return True
 
-        persona.setdefault("name", perfil.name)
-        persona.setdefault("role", perfil.role)
-        session_state["user_persona"] = persona
+            # Fill only the fields still missing (or still holding the schema
+            # sentinel), preserving values the agent just wrote this session.
+            for field in ("name", "role"):
+                if not is_persona_field_informed(persona.get(field)) and getattr(perfil, field):
+                    persona[field] = getattr(perfil, field)
 
-        return False
+            session_state["user_persona"] = persona
+
+        return not is_persona_complete(session_state.get("user_persona") or {})
     finally:
         db_session.close()

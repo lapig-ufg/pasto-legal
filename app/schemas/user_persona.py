@@ -48,6 +48,29 @@ class UserPersona(BaseModel):
         """).strip()
 
 
+# UserPersona fields default to a sentinel string instead of None, so a
+# persona built from the schema alone looks "informed". Both the onboarding
+# gate and the welcoming agent must treat the sentinel as missing.
+UNKNOWN_PERSONA_VALUES = {
+    UserPersona.model_fields["name"].default,
+    UserPersona.model_fields["role"].default,
+}
+
+
+def is_persona_field_informed(value) -> bool:
+    """True when a persona field holds an actual value (not None/sentinel)."""
+    return bool(value) and value not in UNKNOWN_PERSONA_VALUES
+
+
+def is_persona_complete(persona) -> bool:
+    """True when both the name and the role are informed (not sentinel)."""
+    persona = persona or {}
+    return (
+        is_persona_field_informed(persona.get("name"))
+        and is_persona_field_informed(persona.get("role"))
+    )
+
+
 class PersonaUpdate(BaseModel):
     """Structured output do agente gerenciador de persona.
 

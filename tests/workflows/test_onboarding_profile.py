@@ -141,3 +141,48 @@ def test_sessao_nao_sobrescreve_nome_recem_gravado(db):
     assert _needs_onboarding(_entrada(), estado) is False
     assert estado["user_persona"]["name"] == "Zé do Pasto"
     assert estado["user_persona"]["role"] == "Produtor"
+
+
+def test_persona_sentinela_no_banco_incompleto_pede_onboarding(db):
+    """Persona com o valor-sentinela do schema não conta como preenchida.
+
+    O `UserPersona` usa "Ainda não conhecido" como default, então uma persona
+    montada a partir do schema parece preenchida mas não é. Sem banco, segue
+    pedindo onboarding.
+    """
+    _aceitar_termos(db)
+    estado: dict[str, Any] = {
+        "user_persona": {"name": "Ainda não conhecido", "role": "Ainda não conhecido"},
+    }
+    assert _needs_onboarding(_entrada(), estado) is True
+
+
+def test_sentinela_na_sessao_e_preenchida_pelo_banco(db):
+    """Sentinela na sessão + perfil completo no banco: libera e cura a sessão.
+
+    O portão precisa reconhecer que o sentinela não é um nome real, buscar o
+    perfil no banco e sobrescrever os campos sentinela — não apenas preencher
+    chaves ausentes.
+    """
+    _aceitar_termos(db)
+    _gravar_perfil(db, name="João", role="Produtor")
+    estado: dict[str, Any] = {
+        "user_persona": {"name": "Ainda não conhecido", "role": "Ainda não conhecido"},
+    }
+
+    assert _needs_onboarding(_entrada(), estado) is False
+    assert estado["user_persona"]["name"] == "João"
+    assert estado["user_persona"]["role"] == "Produtor"
+
+
+def test_perfil_parcial_sentinela_e_preenchido_sem_apagar_sessao(db):
+    """Nome real na sessão + função sentinela: o banco preenche só a função."""
+    _aceitar_termos(db)
+    _gravar_perfil(db, name="João", role="Técnico")
+    estado: dict[str, Any] = {
+        "user_persona": {"name": "Zé do Pasto", "role": "Ainda não conhecido"},
+    }
+
+    assert _needs_onboarding(_entrada(), estado) is False
+    assert estado["user_persona"]["name"] == "Zé do Pasto"
+    assert estado["user_persona"]["role"] == "Técnico"

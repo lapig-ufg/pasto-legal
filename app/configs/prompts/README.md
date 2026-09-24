@@ -86,9 +86,16 @@ Translate the free text (instructions, descriptions, messages). Keep as-is:
   generic name. Keep the word compatible with the surrounding articles
   (e.g. in Portuguese it must remain feminine: "propriedade rural",
   "área de buffer", "feição").
-- `welcoming_agent.instructions` contains `{terms_text}` — the full Terms of
-  Use are injected into it. Keep the reference section header at the end and
-  the `{terms_text}` placeholder on its own line.
+- `welcoming_agent` has one instruction block per onboarding stage:
+  `instructions` (terms acceptance; contains `{terms_text}` — the full Terms
+  of Use are injected into it. Keep the reference section header at the end
+  and the `{terms_text}` placeholder on its own line) and
+  `instructions_persona` (name + role collection; uses `{user_name}` and
+  `{user_role}`, filled with the values collected so far or
+  `persona_not_informed`). `persona_not_informed` is the fallback shown for a
+  missing name/role. Users who completed onboarding skip the welcoming agent
+  entirely, so no block is needed for that case. Translate both blocks
+  together.
 - `persona_agent.instructions` and the `negative_prompt_*` templates describe
   the JSON-like output contract (e.g. `PersonaUpdate`, "Nível 1/Level 1")
   referenced by code and schemas — keep those tokens intact.
