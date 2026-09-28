@@ -296,8 +296,8 @@ def start_registration_by_car(run_context: RunContext, car_codes: List[str]):
                 content=get_tool_result_text("property_tools", "start_registration_by_car", "invalid_car_format"),
             )
 
-        properties = fetch_property_by_car(car_codes=car_codes)
-
+        properties = fetch_property_by_car(car_codes=clean_car_codes)
+        
         if not properties:
             log_warning(f"Nenhuma propriedade encontrada para CARs={car_codes}")
             return ToolResult(

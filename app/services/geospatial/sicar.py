@@ -388,8 +388,15 @@ def clean_car_code(car_code: str) -> str | None:
     Extrai o código via Regex, removendo pontos separadores e padronizando
     os hifens obrigatórios entre a UF, o número sequencial e o identificador.
     """
-    pattern = r"\b([A-Z]{2})-?(\d{7})-([A-Z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\.?([a-z0-9]{4})\b"
+    _sep = r"[.\s]*"
+    _traco = r"[-\s]*"
 
+    pattern = (
+        r"\b([A-Z]{2})" + _traco + r"(\d{7})" + _traco +
+        r"([A-Z0-9]{4})" + _sep + r"([A-Z0-9]{4})" + _sep + r"([A-Z0-9]{4})" + _sep +
+        r"([A-Z0-9]{4})" + _sep + r"([A-Z0-9]{4})" + _sep + r"([A-Z0-9]{4})" + _sep +
+        r"([A-Z0-9]{4})" + _sep + r"([A-Z0-9]{4})\b"
+    )
     search = re.search(pattern, car_code, flags=re.IGNORECASE)
     if not search:
         return None
