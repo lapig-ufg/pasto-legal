@@ -1201,6 +1201,11 @@ _AGE_ASSET = 'projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbioma
 _VIGOR_ASSET = 'projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_vigor_v3'
 _LULC_ASSET = 'projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_integration_v2'
 
+# Banda 0 desses dois assets é classification_1985 (não 2000, como no de vigor) —
+# usado tanto pro clamp de "último ano disponível" quanto pra seleção de banda por índice.
+_AGE_ASSET_BASE_YEAR = 1985
+_LULC_ASSET_BASE_YEAR = 1985
+
 
 def get_pasture_age(roi: ee.Geometry, year: int, month: int = None) -> AgeStats:
     """
@@ -1214,7 +1219,7 @@ def get_pasture_age(roi: ee.Geometry, year: int, month: int = None) -> AgeStats:
 
     Args:
         roi (ee.Geometry): Region of interest (farm polygon).
-        year (int): Reference year of the mapping (band `year - 2000`).
+        year (int): Reference year of the mapping (band `year - 1985`).
         month (int, optional): Ignored; kept for signature compatibility.
 
     Returns:
@@ -1222,9 +1227,9 @@ def get_pasture_age(roi: ee.Geometry, year: int, month: int = None) -> AgeStats:
     """
     AGE_DICT = {'1':'1-10', '2':'10-20', '3':'20-30', '4':'30-40', '5':'≥40 (idade real indeterminada)'}
 
-    target_year = min(year, _latest_asset_year(_AGE_ASSET))
+    target_year = min(year, _latest_asset_year(_AGE_ASSET, base_year=_AGE_ASSET_BASE_YEAR))
     age_asset = ee.Image(_AGE_ASSET)
-    raw_age = age_asset.select(target_year - 2000).subtract(200)
+    raw_age = age_asset.select(target_year - _AGE_ASSET_BASE_YEAR).subtract(200)
     is_censored = raw_age.eq(-100)
 
     last_age = raw_age.where(is_censored, 40)
@@ -1311,7 +1316,7 @@ def get_land_use_land_cover(roi: ee.Geometry, year: int, month: int = None) -> L
 
     Args:
         roi (ee.Geometry): Region of interest (farm polygon).
-        year (int): Reference year of the mapping (band `year - 2000`).
+        year (int): Reference year of the mapping (band `year - 1985`).
         month (int, optional): Ignored; kept for signature compatibility.
 
     Returns:
@@ -1331,9 +1336,9 @@ def get_land_use_land_cover(roi: ee.Geometry, year: int, month: int = None) -> L
         '31':'Aquicultura', '27':'Não observado'
     }
 
-    target_year = min(year, _latest_asset_year(_LULC_ASSET))
+    target_year = min(year, _latest_asset_year(_LULC_ASSET, base_year=_LULC_ASSET_BASE_YEAR))
     class_asset = ee.Image(_LULC_ASSET)
-    last_class = class_asset.select(target_year - 2000)
+    last_class = class_asset.select(target_year - _LULC_ASSET_BASE_YEAR)
 
     areaImg = ee.Image.pixelArea().divide(10000).addBands(last_class)
 
