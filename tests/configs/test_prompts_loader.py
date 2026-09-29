@@ -1,35 +1,35 @@
 """Tests for the prompts loader fallback behavior (English defaults).
 
-The loader merges the localized YAML files (app/configs/prompts/*.yml) over
-the English defaults (app/configs/prompts/defaults/*.yml), warning per gap.
-These tests drive it with temporary directories via monkeypatched path
-constants and a cleared cache.
+The loader merges the app's localized YAML files (e.g. ``domain/prompts/*.yml``,
+resolved via ``set_prompts_dir``) over the English defaults
+(``semente/configs/prompts/defaults/*.yml``), warning per gap. These tests
+drive it with temporary directories via monkeypatched module globals and a
+cleared cache.
 """
 
 import textwrap
 from pathlib import Path
 
 import pytest
-from agno.utils.log import logger as agno_logger
 
 import semente.configs.prompts as prompts
 
 
 @pytest.fixture
 def prompt_dirs(tmp_path, monkeypatch):
-    """Isolated prompts/ and defaults/ directories with a cleared cache.
+    """Isolated localized/ and defaults/ directories with a cleared cache.
 
-    agno's logger does not propagate (its rich handler prints directly), so
-    propagation is enabled to let caplog capture the loader warnings.
+    The app's prompts dir is the loader's override global (set by
+    ``set_prompts_dir`` at runtime); DEFAULTS_DIR is the bundled English
+    fallback. Both are pointed at tmp_path and the YAML caches cleared.
     """
     localized_dir = tmp_path / "prompts"
     defaults_dir = localized_dir / "defaults"
     localized_dir.mkdir()
     defaults_dir.mkdir()
 
-    monkeypatch.setattr(prompts, "PROMPTS_DIR", localized_dir)
+    monkeypatch.setattr(prompts, "_prompts_dir_override", localized_dir)
     monkeypatch.setattr(prompts, "DEFAULTS_DIR", defaults_dir)
-    monkeypatch.setattr(agno_logger, "propagate", True)
     prompts._load_yaml.cache_clear()
     prompts._read_yaml.cache_clear()
 
@@ -149,7 +149,7 @@ def test_blank_subkey_falls_back(prompt_dirs, caplog):
     assert "my_tools.tool_two" in caplog.text
 
 
-def test_unknown_key_warns_but_is_ignored(prompt_dirs, caplog):
+def test_unknown_key_warns_but_is_included(prompt_dirs, caplog):
     localized_dir, defaults_dir = prompt_dirs
     _write(defaults_dir / "agents.yml", DEFAULT_AGENTS)
     _write(localized_dir / "agents.yml", """\
@@ -164,8 +164,9 @@ def test_unknown_key_warns_but_is_ignored(prompt_dirs, caplog):
 
     assert config["name"] == "Localized Agent"
     assert "instrutions" in caplog.text
-    # The typo'd key is not part of the merged config.
-    assert "instrutions" not in config
+    assert "not in the English default" in caplog.text
+    # Keys unknown to the default are kept as domain-specific additions.
+    assert config["instrutions"].strip() == "Ooops, typo."
 
 
 def test_unknown_top_level_agent_warns(prompt_dirs, caplog):

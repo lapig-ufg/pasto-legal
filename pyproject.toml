@@ -26,6 +26,7 @@ dependencies = [
     "openmeteo-requests>=1.3.0",
     "requests-cache>=1.2.0",
     "retry-requests>=1.0.0",
+    "semente-agents[gee,geo,weather,knowledge]>=0.3.0",
     "pgvector>=0.4.2",
     "psycopg2>=2.9.11",
     "psycopg[binary]>=3.3.2",
@@ -57,3 +58,12 @@ dev = [
     "ollama>=0.6.1",
     "scikit-learn>=1.9.0",
 ]
+
+# Semente framework source. Branch policy: this branch (future develop) tracks
+# the framework's develop branch; main tracks the framework's main branch.
+# To bump: uv lock --upgrade-package semente-agents
+[tool.uv.sources]
+semente-agents = { git = "https://github.com/lapig-ufg/semente.git", rev = "develop" }
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

@@ -2,7 +2,7 @@
 
 **AI-powered agricultural extension via WhatsApp** — delivering satellite-based pasture diagnostics, agronomic consultancy, and property management to rural producers in Brazil.
 
-[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/) [![License: GPLv3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE) [![Status: Alpha](https://img.shields.io/badge/status-alpha-orange.svg)]() [![Built on Semente](https://img.shields.io/badge/built%20on-Semente%20AI-brightgreen.svg)](#-built-on-semente-ai)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/) [![License: GPLv3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE) [![Status: Alpha](https://img.shields.io/badge/status-alpha-orange.svg)]() [![Built on Semente](https://img.shields.io/badge/built%20on-Semente%20AI-brightgreen.svg)](#-built-on-semente)
 
 ---
 
@@ -23,13 +23,13 @@ The system is designed to be as natural as talking to a trusted agronomist — n
 
 ---
 
-## 🌱 Built on Semente AI
+## 🌱 Built on Semente
 
-Pasto Legal is a **[Semente](https://github.com/semente-ai/semente) app** — the first one.
+Pasto Legal is a **[Semente](https://github.com/lapig-ufg/semente) app** — the first one.
 
-[Semente](https://github.com/semente-ai/semente) ("seed" in Portuguese) is the multi-agent AI chat framework **extracted from Pasto Legal** (LAPIG/UFG). It keeps everything domain-neutral — the workflow orchestration, WhatsApp + Streamlit channels, persona/feedback loop, PII guardrails, i18n prompts, TTS — and lets any land-use assistant be grown by supplying a **domain**: tools, knowledge base, skills, and prompts.
+[Semente](https://github.com/lapig-ufg/semente) ("seed" in Portuguese) is the multi-agent AI chat framework **extracted from Pasto Legal** (LAPIG/UFG). It keeps everything domain-neutral — the workflow orchestration, WhatsApp + Streamlit channels, persona/feedback loop, PII guardrails, i18n prompts, TTS — and lets any land-use assistant be grown by supplying a **domain**: tools, knowledge base, skills, and prompts.
 
-**📖 Semente documentation:** https://semente-ai.github.io (see the [Domain API](https://semente-ai.github.io/guide/domain-api) for the surface this app consumes)
+**📖 Semente documentation:** [`docs/`](https://github.com/lapig-ufg/semente/tree/develop/docs) in the framework repository (see the [Domain API](https://github.com/lapig-ufg/semente/blob/develop/docs/guide/domain-api.md) guide for the surface this app consumes)
 
 **The split:**
 
@@ -44,7 +44,7 @@ Pasto Legal is a **[Semente](https://github.com/semente-ai/semente) app** — th
 
 In practice: this repository contains a `domain/` package plus a `semente.yaml` manifest. Semente assembles the entire application from them — including the engine (Agno by default), configurable via `engine:` in the manifest or the `SEMENTE_ENGINE` environment variable.
 
-> *Pasto Legal was the first seed.* If you want to build a similar assistant for a different domain (crops, forestry, water, climate), start from [Semente](https://github.com/semente-ai/semente) — its [Echo domain](https://github.com/semente-ai/semente/tree/main/examples/echo_domain) example boots in minutes.
+> *Pasto Legal was the first seed.* If you want to build a similar assistant for a different domain (crops, forestry, water, climate), start from [Semente](https://github.com/lapig-ufg/semente) — its [Echo domain](https://github.com/lapig-ufg/semente/tree/main/examples/echo_domain) example boots in minutes.
 
 ---
 
@@ -83,7 +83,7 @@ Pasto Legal runs on the **Semente workflow** — an engine-free orchestration th
 graph TD
     User((WhatsApp / Streamlit User)) <--> CH[Semente Channels]
 
-    subgraph Semente["Semente framework (semente-ai/semente)"]
+    subgraph Semente["Semente framework (lapig-ufg/semente)"]
         CH --> WF{Semente Workflow}
         WF --> IN[Input Step<br/>media → text]
         IN --> GR[PII / LGPD Guardrail]
@@ -114,7 +114,7 @@ graph TD
 | **Pasto Legal Agent** | Domain (`domain/agent.py`) | One integrated agent: property manager + agronomic extension + Q&A — dynamic tool selection and instructions driven by the registration state (pending / final / default) |
 | **Feedback Workflow** | Semente | Evaluates user satisfaction (1–5), adapts the persona, applies remediation when needed |
 | **Summarization** | Semente | Rolling conversation summary + `<history_context>` blocks fed to the agent |
-| **PII Guardrail** | Semente | Blocks CPF/CNPJ/card/email/RG before the message reaches the agents (LGPD) |
+| **PII Guardrail** | Semente | Redacts CPF/CNPJ/card/email/RG before the message reaches the agents (LGPD) |
 | **Channels** | Semente | WhatsApp Business API webhook (debouncing, `[PAUSA]` chunking, typing indicator) + Streamlit debug UI |
 
 ---
@@ -123,7 +123,7 @@ graph TD
 
 | Layer | Technology |
 |---|---|
-| **Application framework** | [Semente AI](https://github.com/semente-ai/semente) 0.3 — multi-agent chat framework for land use (engine-free domain API) |
+| **Application framework** | [Semente](https://github.com/lapig-ufg/semente) 0.3 — multi-agent chat framework for land use (engine-free domain API) |
 | **Agent engine** | [Agno](https://github.com/agno-agi/agno) 2.6 (default; swappable via `SEMENTE_ENGINE` — ADK and bare backends also available) |
 | **Language** | Python 3.12+ |
 | **LLM** | Google Gemini (`gemini-3.5-flash-lite` by default) — configurable to Ollama for local models |
@@ -148,17 +148,18 @@ Pasto Legal is a Semente app: Semente must be installed first, then the app runs
 - A **Google Earth Engine service account** with access to MapBiomas collections (a JSON key file) — required by the pasture analysis tools
 - *(WhatsApp channel only)* a **WhatsApp Business API** app and **Valkey/Redis** for message debouncing
 
-### 1. Install Semente
+### 1. Install
 
-Semente is not yet on PyPI — install it from source (clone it next to this repo):
+Semente is not yet on PyPI — `pyproject.toml` declares it as a git dependency on [lapig-ufg/semente](https://github.com/lapig-ufg/semente), so a single `uv sync` installs everything:
 
 ```bash
-git clone https://github.com/semente-ai/semente.git ../semente
-cd ../semente
+uv sync
+```
 
-uv venv .venv
-source .venv/bin/activate
-uv pip install -e ".[gee,weather,knowledge]"
+**Branch policy:** this repository's `develop` branch tracks the framework's `develop` branch, and `main` tracks the framework's `main` branch (pinned in `pyproject.toml` under `[tool.uv.sources]` and recorded in `uv.lock`). The framework bump procedure is:
+
+```bash
+uv lock --upgrade-package semente-agents
 ```
 
 This installs the `semente` package, the `semente` CLI, and the geospatial extras the Pasto Legal domain needs.
@@ -168,7 +169,7 @@ This installs the `semente` package, the `semente` CLI, and the geospatial extra
 The SICAR lookup loads DuckDB's spatial extension at startup:
 
 ```bash
-python -c "import duckdb; duckdb.connect().execute('INSTALL spatial')"
+uv run python -c "import duckdb; duckdb.connect().execute('INSTALL spatial')"
 ```
 
 ### 3. Configure the environment
@@ -176,7 +177,6 @@ python -c "import duckdb; duckdb.connect().execute('INSTALL spatial')"
 From the **pasto-legal root**:
 
 ```bash
-cd ../pasto-legal
 cp .env.example .env
 ```
 
@@ -191,16 +191,16 @@ Edit `.env` and fill in:
 | `GEE_SERVICE_ACCOUNT` | GEE service account email |
 | `GEE_KEY_FILE` | Path to the GEE service account JSON key |
 
-Model selection comes from `semente.yaml` (`models:` block) and can be overridden with `PRIMARY_MODEL_*` / `FALLBACK_*` env vars. To use a local model via Ollama instead of Gemini, see `examples/echo_domain/.env.example` in the Semente repo for the Ollama variables.
+Model selection comes from `semente.yaml` (`models:` block) and can be overridden with `PRIMARY_MODEL_*` / `FALLBACK_*` env vars. To use a local model via Ollama instead of Gemini, see `examples/echo_domain/.env.example` in the [Semente repository](https://github.com/lapig-ufg/semente) for the Ollama variables.
 
 ### 4. Run
 
-Still in the pasto-legal root, with the Semente venv activated:
+Still in the pasto-legal root, with the environment installed via `uv sync`:
 
 **Streamlit (development UI — recommended first):**
 
 ```bash
-semente streamlit
+uv run semente streamlit
 ```
 
 Open **http://localhost:8501**. Register a property (CAR code, GPS pin, Google Maps link, or draw a buffer), then ask for a diagnosis.
@@ -208,7 +208,7 @@ Open **http://localhost:8501**. Register a property (CAR code, GPS pin, Google M
 **WhatsApp (production channel):**
 
 ```bash
-python main.py            # FastAPI webhook on http://0.0.0.0:3000
+uv run python main.py     # FastAPI webhook on http://0.0.0.0:3000
 ngrok http 3000           # expose it, then set the webhook URL in Meta's dashboard
 ```
 
@@ -217,7 +217,7 @@ The WhatsApp channel additionally requires `WHATSAPP_*` and `VALKEY_*` variables
 **Switching the engine (optional):**
 
 ```bash
-SEMENTE_ENGINE=adk python main.py   # or bare — see Semente's "Engines" docs
+SEMENTE_ENGINE=adk uv run python main.py   # or bare — see Semente's "Engines" docs
 ```
 
 ### 5. Docker
@@ -265,13 +265,13 @@ pasto-legal/
 └── .env.example                   # environment variable template
 ```
 
-> The `app/` directory from earlier releases no longer exists — the engine-neutral modules live in [Semente](https://github.com/semente-ai/semente) now; the Pasto Legal–specific modules live in `domain/`.
+> The `app/` directory from earlier releases no longer exists — the engine-neutral modules live in [Semente](https://github.com/lapig-ufg/semente) now; the Pasto Legal–specific modules live in `domain/`.
 
 ---
 
 ## Documentation
 
-- **[Semente AI](https://github.com/semente-ai/semente)** — the framework this app is built on (architecture, Domain API, engines, deployment guides)
+- **[Semente](https://github.com/lapig-ufg/semente)** — the framework this app is built on (architecture, Domain API, engines, deployment guides)
 - **[Technical architecture & workflow](docs/README.md)** — agent roles, tools, and data flow
 - **[Workflow diagrams](docs/workflow-diagrams.md)** — Mermaid diagrams of the orchestration
 - **[Knowledge base](docs/knowledge/)** — reference material used by the Q&A agent (Portuguese)
@@ -288,7 +288,7 @@ We encourage others to build upon this project and create their own solutions. I
 1. **Keep it open** — any derivative work must be released under an open-source and/or open-science license (copyleft).
 2. **Give credit** — clearly reference and attribute **Pasto Legal**, **LAPIG**, and **UFG** in your project, documentation, and any published outputs.
 
-> **Note:** The "Pasto Legal" brand name, logo, and visual identity are owned by **UFG/LAPIG** and may not be reproduced without prior authorization. Geospatial data used in the platform comes from public sources (Copernicus/ESA) and is subject to their respective licenses. [Semente](https://github.com/semente-ai/semente) is likewise GPL-3.0-or-later, as a derivative of Pasto Legal.
+> **Note:** The "Pasto Legal" brand name, logo, and visual identity are owned by **UFG/LAPIG** and may not be reproduced without prior authorization. Geospatial data used in the platform comes from public sources (Copernicus/ESA) and is subject to their respective licenses. [Semente](https://github.com/lapig-ufg/semente) is likewise GPL-3.0-or-later, as a derivative of Pasto Legal.
 
 ---
 
