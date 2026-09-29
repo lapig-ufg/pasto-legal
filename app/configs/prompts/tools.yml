@@ -157,16 +157,20 @@ analysis_tools:
   generate_property_boletim:
     description: |
       Gera um boletim em PDF consolidando as análises da propriedade rural — localização,
-      classificação de pastagem, biomassa, vigor e tipos de solo — com os mapas
-      correspondentes, pronto para compartilhar com agrônomos ou parceiros.
+      classificação de pastagem, biomassa, vigor, tipos de solo, histórico de biomassa
+      (série 2000-atual), topografia e panorama climático (chuva/temperatura previstos) —
+      com os mapas e gráficos correspondentes, pronto para compartilhar com agrônomos ou
+      parceiros.
 
       IMPORTANTE: a biomassa é calculada para o mês/ano atual; idade, vigor e uso do
       solo (LULC) refletem o ano mais recente disponível no MapBiomas (2024). Avise o
       usuário sobre essa defasagem ao entregar o boletim.
 
       Use apenas quando o usuário pedir explicitamente um boletim, relatório ou PDF
-      para compartilhar ou baixar. A geração consulta o satélite e gera vários mapas em
-      tempo real, podendo levar dezenas de segundos.
+      para compartilhar ou baixar. A geração consulta o satélite, o histórico de biomassa
+      (exportação pixel a pixel) e serviços de previsão do tempo, podendo levar alguns
+      minutos na primeira vez (chamadas seguintes para a mesma propriedade são mais
+      rápidas graças ao cache do histórico de biomassa).
 
       params:
           feature_id (str): Identificador (id) da feição registrada.

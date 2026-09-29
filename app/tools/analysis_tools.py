@@ -23,6 +23,7 @@ from app.services.geospatial.gee import (
     retrieve_t2g_biomass_video,
     retrieve_pasture_vigor_image,
     retrieve_feature_soil_texture_image,
+    get_soil_texture_stats,
     query_pasture_statistics,
     query_topographic_stats,
     )
@@ -30,7 +31,9 @@ from app.services.geospatial.pasture_classification import classify_pasture_on_t
 from app.services.geospatial.pasture_biomass import estimate_pasture_biomass_history
 from app.services.geospatial.pasture_age import estimate_pasture_age_on_the_fly
 from app.services.geospatial.pasture_vigor import estimate_pasture_vigor_on_the_fly
-from app.services.boletim_scripts import build_boletim_chat_summary, build_boletim_story
+from app.services.geospatial.season_forecast import get_rain_onset, get_dry_season_onset
+from app.services.geospatial.climate_outlook import estimate_monthly_precipitation_outlook, estimate_temperature_outlook
+from app.services.boletim_scripts import build_boletim_chat_summary, build_boletim_story, generate_boletim_diagnostic
 from app.services.pdf_scripts import render_document
 from app.schemas.property_stats import PastureStats, PropertyStats, TopographicStats
 from app.utils.feature_utils import resolve_feature
@@ -471,16 +474,20 @@ def _safe_fetch_image(label: str, fetch_fn):
 def generate_property_boletim(run_context: RunContext, feature_id: str) -> ToolResult:
     """
     Gera um boletim em PDF consolidando as análises da propriedade rural — localização,
-    classificação de pastagem, biomassa, vigor e tipos de solo — com os mapas
-    correspondentes, pronto para compartilhar com agrônomos ou parceiros.
+    classificação de pastagem, biomassa, vigor, tipos de solo, histórico de biomassa
+    (série 2000-atual), topografia e panorama climático (chuva/temperatura previstos) —
+    com os mapas e gráficos correspondentes, pronto para compartilhar com agrônomos ou
+    parceiros.
 
     IMPORTANTE: a biomassa é calculada para o mês/ano atual; idade, vigor e uso do
     solo (LULC) refletem o ano mais recente disponível no MapBiomas (2024). Avise o
     usuário sobre essa defasagem ao entregar o boletim.
 
     Use apenas quando o usuário pedir explicitamente um boletim, relatório ou PDF
-    para compartilhar ou baixar. A geração consulta o satélite e gera vários mapas em
-    tempo real, podendo levar dezenas de segundos.
+    para compartilhar ou baixar. A geração consulta o satélite, o histórico de biomassa
+    (exportação pixel a pixel) e serviços de previsão do tempo, podendo levar alguns
+    minutos na primeira vez (chamadas seguintes para a mesma propriedade são mais
+    rápidas graças ao cache do histórico de biomassa).
 
     params:
         feature_id (str): Identificador (id) da feição registrada.
@@ -518,6 +525,25 @@ def generate_property_boletim(run_context: RunContext, feature_id: str) -> ToolR
         vigor_map_image = _safe_fetch_image("mapa de vigor", lambda: retrieve_pasture_vigor_image(coords))
         soil_map_image = _safe_fetch_image("mapa de textura do solo", lambda: retrieve_feature_soil_texture_image(coords))
 
+        soil_stats = _safe_fetch_image("estatísticas de solo", lambda: get_soil_texture_stats(roi=roi))
+        topographic_stats = _safe_fetch_image("dados topográficos", lambda: query_topographic_stats(coords=coords))
+
+        biomass_history = _safe_fetch_image("histórico de biomassa", lambda: estimate_pasture_biomass_history(roi=roi, car_code=selected_property.id))
+        biomass_history_image_bytes = _pil_to_png_bytes(biomass_history["imagem"]) if biomass_history else None
+        biomass_history_start_year = biomass_history["history_start_year"] if biomass_history else None
+        biomass_history_end_year = biomass_history["history_end_year"] if biomass_history else None
+        biomass_history_latest_avg_t_ha = (
+            biomass_history["yearly_avg_t_ha"].get(biomass_history_end_year) if biomass_history else None
+        )
+
+        latitude, longitude = selected_property.get_centroid()
+        rain_onset = _safe_fetch_image("início da estação chuvosa", lambda: get_rain_onset(latitude, longitude, today))
+        dry_onset = _safe_fetch_image("início da estação seca", lambda: get_dry_season_onset(latitude, longitude, today))
+        temperature_outlook = _safe_fetch_image("previsão de temperatura", lambda: estimate_temperature_outlook(latitude, longitude))
+        precipitation_outlook = _safe_fetch_image("previsão de precipitação", lambda: estimate_monthly_precipitation_outlook(latitude, longitude))
+
+        diagnostic_text = generate_boletim_diagnostic(pasture_stats, soil_stats)
+
         story = build_boletim_story(
             selected_property,
             stats,
@@ -526,6 +552,17 @@ def generate_property_boletim(run_context: RunContext, feature_id: str) -> ToolR
             vigor_map_image_bytes=_pil_to_png_bytes(vigor_map_image) if vigor_map_image else None,
             biomass_map_image_bytes=_pil_to_png_bytes(biomass_map_image) if biomass_map_image else None,
             soil_map_image_bytes=_pil_to_png_bytes(soil_map_image) if soil_map_image else None,
+            soil_stats=soil_stats,
+            diagnostic_text=diagnostic_text,
+            biomass_history_image_bytes=biomass_history_image_bytes,
+            biomass_history_start_year=biomass_history_start_year,
+            biomass_history_end_year=biomass_history_end_year,
+            biomass_history_latest_avg_t_ha=biomass_history_latest_avg_t_ha,
+            topographic_stats=topographic_stats,
+            rain_onset=rain_onset,
+            dry_onset=dry_onset,
+            temperature_outlook=temperature_outlook,
+            precipitation_outlook=precipitation_outlook,
         )
         pdf_bytes = render_document(story)
 

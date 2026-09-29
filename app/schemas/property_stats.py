@@ -92,6 +92,26 @@ class LULCStats(BaseModel):
         )
 
 
+class SoilData(BaseModel):
+    soil_class: str = Field(..., description="Classe textural do solo (0-30cm).")
+    amount: Value = Field(..., description="Área territorial ocupada pela classe textural.")
+
+    def __str__(self) -> str:
+        return f"  * Classe textural '{self.soil_class}': {self.amount} ocupados."
+
+
+class SoilStats(BaseModel):
+    observation_year: int = Field(..., description="Ano de referência do mapeamento.")
+    data: List[SoilData] = Field(..., description="Classes de textura de solo presentes na propriedade.")
+
+    def __str__(self) -> str:
+        linhas_dados = "\n".join(str(item) for item in self.data)
+        return (
+            f"- Ano de Referência: {self.observation_year}\n"
+            f"- Mapeamento de textura do solo (0-30cm):\n{linhas_dados}"
+        )
+
+
 class PastureStats(BaseModel):
     biomass_stats: Optional[BiomassStats] = Field(None, description="Dados de produtividade primária (biomassa).")
     age_stats: Optional[AgeStats] = Field(None, description="Distribuição histórica da pastagem.")
@@ -148,7 +168,7 @@ class PropertyStats(BaseModel):
         description="Indicadores biofísicos e geográficos da área de pastagem.",
         default_factory=list
     )
-    list_soil_texture_stats: Optional[List[TopographicStats]] = Field(
+    list_soil_texture_stats: Optional[List[SoilStats]] = Field(
         description="Mapeamento de textura de solo.",
         default_factory=list
     )

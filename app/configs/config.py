@@ -76,7 +76,7 @@ class BaseConfig:
             case "google":
                 if self.GOOGLE_API_KEY is None:
                     raise ValueError("GOOGLE_API_KEY environment variables must be set.")
-                return Gemini(id=self.PRIMARY_MODEL_ID, temperature=0.4, api_key=self.GOOGLE_API_KEY)
+                return Gemini(id=self.PRIMARY_MODEL_ID, temperature=0.4, api_key=self.GOOGLE_API_KEY, include_thoughts=True)
             case "ollama":
                 if self.OLLAMA_API_KEY is None and self.OLLAMA_HOST is not None:
                     raise ValueError("OLLAMA_API_KEY environment variable must be set.")
@@ -93,7 +93,7 @@ class BaseConfig:
             case "google":
                 if self.GOOGLE_API_KEY is None:
                     raise ValueError("GOOGLE_API_KEY environment variable must be set.")
-                return Gemini(id=self.FALLBACK_MODEL_ID, temperature=0.4, api_key=self.GOOGLE_API_KEY)
+                return Gemini(id=self.FALLBACK_MODEL_ID, temperature=0.4, api_key=self.GOOGLE_API_KEY, include_thoughts=True)
             case "ollama":
                 if self.OLLAMA_API_KEY is None and self.OLLAMA_HOST is not None:
                     raise ValueError("OLLAMA_API_KEY environment variable must be set.")

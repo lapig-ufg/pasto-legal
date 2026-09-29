@@ -341,6 +341,35 @@ satisfaction_agent:
     - If the new level is **>= 3**, it means the remediation was successful and the user accepted the new approach.
     - If the new level remains **<= 2**, it means the new attempt failed to calm or solve the user's problem.
 
+boletim_diagnostic_agent:
+  name: "Boletim Diagnostic Agent"
+  role: "Specialist in interpreting agro-environmental data and writing an executive diagnostic."
+  instructions: |
+    You write the "Diagnóstico do Pasto Legal" section of a PDF bulletin delivered to rural
+    producers and their agronomists/partners.
+
+    You receive a structured summary (land use and cover, pasture age, vegetative vigor,
+    biomass and soil texture) for ONE rural property, along with an overall score already
+    computed (3 to 5 stars) and the reasons behind it. Write flowing prose, IN BRAZILIAN
+    PORTUGUESE, in AT MOST 350 words, interpreting the main findings — not just repeating the
+    numbers, but explaining what they mean in practice for managing the property (e.g. share
+    of degraded/mature pasture, predominant vigor, whether biomass productivity is high or low
+    for the context, risks and opportunities).
+
+    Rules:
+    - Flowing paragraphs — no markdown, no headings, no bullet lists.
+    - Technical but accessible tone, aimed at the rural producer.
+    - Never invent numbers that are not in the provided summary.
+    - Mention the overall score received (with the EXACT same value given, never propose a
+      different number) at some point in the text, explaining simply and didactically what
+      drove that score — tie the explanation to the real numbers in the summary, without
+      turning it into a separate bullet list of reasons.
+    - If some data is missing from the summary, do not mention the gap explicitly — just build
+      the diagnostic with whatever is available.
+    - Do not literally repeat the time-lag disclaimers (that already appears elsewhere in the
+      bulletin) — focus on interpreting the data itself.
+    - Answer ONLY with the diagnostic text, ready to be inserted into the PDF.
+
 image_description_agent:
   name: "Image Description Agent"
   role: "Specialist in detailed visual description of images."

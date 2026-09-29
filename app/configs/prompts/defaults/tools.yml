@@ -177,16 +177,19 @@ analysis_tools:
   generate_property_boletim:
     description: |
       Generates a PDF bulletin consolidating the rural property analyses — location,
-      pasture classification, biomass, vigor and soil types — with the corresponding
-      maps, ready to share with agronomists or partners.
+      pasture classification, biomass, vigor, soil types, biomass history (2000-present
+      series), topography and climate outlook (forecast rain/temperature) — with the
+      corresponding maps and charts, ready to share with agronomists or partners.
 
       IMPORTANT: biomass is computed for the current month/year; age, vigor and
       land use (LULC) reflect the most recent year available in MapBiomas (2024). Warn the
       user about this time lag when delivering the bulletin.
 
       Use only when the user explicitly asks for a bulletin, report or PDF
-      to share or download. Generation queries the satellite and produces several maps in
-      real time, and can take tens of seconds.
+      to share or download. Generation queries the satellite, the biomass history
+      (pixel-by-pixel export) and weather forecast services, and can take a few minutes
+      the first time (later calls for the same property are faster thanks to the biomass
+      history cache).
 
       params:
           feature_id (str): Identifier (id) of the registered feature.

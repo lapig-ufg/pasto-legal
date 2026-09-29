@@ -24,6 +24,8 @@ from app.schemas.property_stats import (
     VigorStats,
     LULCData,
     LULCStats,
+    SoilData,
+    SoilStats,
     PastureStats
     )
 from app.configs.config import config
@@ -1361,6 +1363,56 @@ def get_land_use_land_cover(roi: ee.Geometry, year: int, month: int = None) -> L
             lulc_class_data_list.append(LULCData(lulc_class=class_name, amount=Value(value=area_value, unity="hectares")))
 
     return LULCStats(observation_year=target_year, data=lulc_class_data_list)
+
+
+_SOIL_TEXTURE_ASSET = "projects/mapbiomas-public/assets/brazil/soil/collection3/mapbiomas_brazil_collection3_soil_textural_group_v1"
+
+_SOIL_TEXTURE_CLASSES = {
+    '1': 'Afloramento', '2': 'Muito Argiloso', '3': 'Argila',
+    '4': 'Siltoso', '5': 'Arenoso', '6': 'Médio',
+}
+
+
+def get_soil_texture_stats(roi: ee.Geometry) -> SoilStats:
+    """
+    Computes area (ha) per soil textural class (0-30cm) via MapBiomas (Collection 3).
+
+    Mesmo asset e mesmas classes de `retrieve_feature_soil_texture_image` — a
+    textura do solo não varia por ano, então não há um `year` de referência
+    real; usa-se o ano corrente só como data do relatório.
+
+    Args:
+        roi (ee.Geometry): Region of interest (farm polygon).
+
+    Returns:
+        SoilStats: Observation year (ano corrente) and list of areas per
+        textural class (ha).
+    """
+    soil_asset = ee.ImageCollection(_SOIL_TEXTURE_ASSET).toBands().select(['textural_group_000_030_v1_textural_group'])
+    soil_asset = soil_asset.rename(['class'])
+
+    areaImg = ee.Image.pixelArea().divide(10000).addBands(soil_asset)
+
+    stats = areaImg.reduceRegion(
+        reducer=ee.Reducer.sum().group(groupField=1, groupName='class'),
+        geometry=roi,
+        scale=30,
+        maxPixels=1e13
+    )
+
+    groups_info = stats.get('groups').getInfo()
+    soil_data_list: List[SoilData] = []
+
+    if groups_info:
+        for group in groups_info:
+            class_id = str(int(group['class']))
+            class_name = _SOIL_TEXTURE_CLASSES.get(class_id, f"Classe {class_id}")
+            area_value = round(float(group['sum']), 2)
+
+            soil_data_list.append(SoilData(soil_class=class_name, amount=Value(value=area_value, unity="hectares")))
+
+    return SoilStats(observation_year=datetime.date.today().year, data=soil_data_list)
+
 
 def query_pasture_statistics(coords: List[List[List[List[float]]]], month: int, year: int) -> PropertyStats:
     """
