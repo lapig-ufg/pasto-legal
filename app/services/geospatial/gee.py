@@ -5,9 +5,12 @@ import requests
 import traceback
 
 from io import BytesIO
-from typing import List
+from typing import List, Optional, Tuple
 
-from agno.utils.log import log_error
+from PIL import ImageDraw, ImageFont
+from shapely.geometry import shape as shapely_shape
+
+from agno.utils.log import log_error, log_warning
 
 from app.services.geospatial.image import append_discrete_legend, append_continuous_colorbar
 from app.services.geospatial.pasture_biomass import DRY_BIOMASS_FACTOR, _annual_biomass_image, _latest_gpw_year
@@ -29,6 +32,12 @@ from app.configs.config import config
 _FEATURE_BUFFER = 256
 
 _IMAGE_DIMENSION = 512
+
+# Higher resolution used on the property confirmation image so that the
+# paddock labels remain readable after WhatsApp compression.
+_OVERVIEW_IMAGE_DIMENSION = 1024
+
+_LABEL_FONT_PATH = "assets/fonts/DejaVuSans-Bold.ttf"
 
 _HIGHVOLUME_URL = "https://earthengine-highvolume.googleapis.com"
 
@@ -62,6 +71,7 @@ def _get_base_image(roi: ee.Geometry, year: int = None) -> ee.Image:
 
         # Função de escalonamento para Landsat C2 L2
         def apply_scale_landsat(image: ee.Image):
+            """Applies the scale/offset factors to the optical bands (SR_B.*) of a Landsat Collection 2 Level-2 image."""
             optical_bands = image.select('SR_B.').multiply(0.0000275).add(-0.2)
             return image.addBands(optical_bands, None, True)
 
@@ -139,7 +149,16 @@ def _get_base_image(roi: ee.Geometry, year: int = None) -> ee.Image:
         )
 
 
-def _draw_feature_boundaries(roi):
+def _draw_feature_boundaries(roi) -> ee.Image:
+    """
+    Draws a red outline of a polygon on an empty image.
+
+    Args:
+        roi (ee.Geometry): Region of interest to be outlined.
+
+    Returns:
+        ee.Image: RGB image containing only the outline (red, 3px width).
+    """
     empty = ee.Image().byte()
     outline = empty.paint(ee.FeatureCollection([ee.Feature(roi)]), 1, 3)
     outline = outline.updateMask(outline)
@@ -269,32 +288,261 @@ def retrieve_plain_satellite_image(coords: List[List[List[List[float]]]]) -> Lis
         )
 
 
-def _get_t2g_biomass_image(roi, month, year, day=1):
+def _paddock_centroid(coords: List[List[List[List[float]]]]) -> Tuple[float, float]:
+    """
+    Returns the (latitude, longitude) representative point of a paddock
+    (GeoJSON MultiPolygon nesting: ``[[shell, hole, ...], ...]``), always
+    inside the geometry.
+
+    Note: shapely's ``MultiPolygon(coords)`` constructor expects a different
+    nesting (``[(shell, holes), ...]``), so the geometry is built through
+    ``shapely.geometry.shape`` instead.
+    """
+    geometry = shapely_shape({"type": "MultiPolygon", "coordinates": coords})
+    point = geometry.representative_point()
+    return float(point.y), float(point.x)
+
+
+def _draw_paddock_labels(
+    image: PIL.Image,
+    region_bounds: Tuple[float, float, float, float],
+    labels: List[Tuple[str, Tuple[float, float]]],
+) -> PIL.Image:
+    """
+    Draws the paddock labels centered on each paddock representative point.
+
+    The satellite thumbnail is rendered for ``region_bounds`` (west, south,
+    east, north) preserving its aspect ratio, so the coordinate-to-pixel
+    mapping is a linear interpolation over that rectangle.
+
+    Args:
+        image: The satellite thumbnail (RGB).
+        region_bounds: The geographic bounds rendered in the thumbnail.
+        labels: List of (text, (latitude, longitude)) pairs.
+
+    Returns:
+        PIL.Image: A copy of the image with the labels drawn.
+    """
+    west, south, east, north = region_bounds
+    width, height = image.size
+
+    span_lon = east - west
+    span_lat = north - south
+    if span_lon <= 0 or span_lat <= 0:
+        return image
+
+    font_size = max(12, int(height * 0.022))
+    try:
+        font = ImageFont.truetype(_LABEL_FONT_PATH, font_size)
+    except IOError:
+        font = ImageFont.load_default()
+
+    labeled = image.copy()
+    draw = ImageDraw.Draw(labeled)
+
+    for text, (latitude, longitude) in labels:
+        x = int((longitude - west) / span_lon * width)
+        y = int((north - latitude) / span_lat * height)
+        if not (0 <= x < width and 0 <= y < height):
+            continue
+
+        # Keep only the paddock number ("Paddock_12" -> "12") and shrink the
+        # stroke so the label fits inside small paddocks.
+        number = text.rsplit("_", 1)[-1]
+
+        draw.text(
+            (x, y),
+            number,
+            font=font,
+            fill=(255, 255, 255),
+            stroke_width=2,
+            stroke_fill=(0, 0, 0),
+            anchor="mm",
+        )
+
+    return labeled
+
+
+def retrieve_property_overview_image(
+    property_coords: List[List[List[List[float]]]],
+    paddocks: Optional[List[Tuple[List[List[List[List[float]]]], str]]] = None,
+    dimension: int = _OVERVIEW_IMAGE_DIMENSION,
+) -> PIL.Image:
+    """
+    Generates a single satellite image for the property registration
+    confirmation, highlighting the property boundaries.
+
+    For a single polygon the image shows its boundary. When paddocks are
+    provided, all paddock boundaries are drawn on the same image with a
+    numeric label (the paddock number only) at the center of each one,
+    using a higher resolution so the labels remain readable.
+
+    Args:
+        property_coords: The rural property MultiPolygon coordinates.
+        paddocks: Optional list of (paddock coords, label) pairs.
+        dimension: Longest side of the generated image, in pixels.
+
+    Returns:
+        PIL.Image: Satellite image with boundaries (and paddock labels).
+
+    Raises:
+        RuntimeError: On Earth Engine processing, image server, connection,
+            image format or unexpected failures.
+    """
+    try:
+        roi = ee.Geometry.MultiPolygon(property_coords)
+
+        base_image = _get_base_image(roi=roi)
+
+        if paddocks:
+            features = [
+                ee.Feature(ee.Geometry.MultiPolygon(coords))
+                for coords, _label in paddocks
+            ]
+            outline = ee.Image().byte()
+            outline = outline.paint(ee.FeatureCollection(features), 1, 3)
+            outline = outline.updateMask(outline)
+            outline = outline.visualize(**{"palette": ["FF0000"]})
+        else:
+            outline = _draw_feature_boundaries(roi=roi)
+
+        region = roi.buffer(_FEATURE_BUFFER).bounds()
+        final_image = base_image.blend(outline).clip(region)
+
+        bounds_info = region.coordinates().getInfo()[0]
+        west = min(coord[0] for coord in bounds_info)
+        east = max(coord[0] for coord in bounds_info)
+        south = min(coord[1] for coord in bounds_info)
+        north = max(coord[1] for coord in bounds_info)
+
+        span_lon = east - west
+        span_lat = north - south
+        if span_lon >= span_lat:
+            width = dimension
+            height = max(1, int(round(dimension * span_lat / span_lon)))
+        else:
+            height = dimension
+            width = max(1, int(round(dimension * span_lon / span_lat)))
+
+        url = final_image.getThumbURL(
+            {"dimensions": f"{width}x{height}", "format": "png"}
+        )
+
+        response = requests.get(url, timeout=60)
+        response.raise_for_status()
+
+        img_pil = PIL.Image.open(BytesIO(response.content)).convert("RGB")
+
+        if paddocks:
+            labels = [
+                (label, _paddock_centroid(coords))
+                for coords, label in paddocks
+            ]
+            img_pil = _draw_paddock_labels(
+                img_pil, (west, south, east, north), labels
+            )
+
+        return img_pil
+
+    except ee.EEException as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Falha ao processar as coordenadas no satélite. "
+            f"Verifique se as coordenadas da área estão corretas. Detalhes: {str(error)}"
+        )
+    except requests.exceptions.HTTPError as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"O servidor de imagens do satélite retornou um erro. "
+            f"Tente solicitar a imagem novamente em alguns instantes. Detalhes: {str(error)}"
+        )
+    except requests.exceptions.RequestException as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Não foi possível baixar a imagem por falha de conexão. "
+            f"Pode haver instabilidade na rede. Detalhes: {str(error)}"
+        )
+    except PIL.UnidentifiedImageError as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"O arquivo recebido do satélite está corrompido ou num formato inesperado. Detalhes: {str(error)}"
+        )
+    except Exception as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Ocorreu um erro inesperado ao gerar a imagem da fazenda. Detalhes: {str(error)}"
+        )
+
+
+def _reference_period(year: int, month: int) -> tuple[datetime.date, datetime.date]:
+    """
+    Regra do mês de referência: o período acumulado é o mês anterior ao mês/ano informado.
+
+    Args:
+        year (int): Ano de referência.
+        month (int): Mês de referência.
+
+    Returns:
+        tuple[datetime.date, datetime.date]: (início, fim) com fim exclusivo.
+    """
+    start_year, start_month = (year - 1, 12) if month == 1 else (year, month - 1)
+    start_date = datetime.date(start_year, start_month, 1)
+    end_date = datetime.date(year, month, 1)
+    return start_date, end_date
+
+
+def _get_t2g_biomass_image(
+    roi,
+    start_year: int,
+    start_month: int,
+    start_day: int,
+    end_year: int,
+    end_month: int,
+    end_day: int,
+):
+    """
+    Computes the accumulated dry biomass image (ton/ha) from UGPP productivity.
+
+    Uses the Time2Graze collection (10m UGPP) accumulated over the given period,
+    multiplied by the scale factor, LUEmax, the IPCC factor (C -> dry biomass) and
+    the ton/ha conversion factor, masked by Global Pasture Watch grassland areas.
+
+    Args:
+        roi (ee.Geometry): Region of interest (farm polygon).
+        start_year (int): Start year of the accumulation period.
+        start_month (int): Start month of the accumulation period.
+        start_day (int): Start day of the accumulation period.
+        end_year (int): End year (exclusive) of the accumulation period.
+        end_month (int): End month (exclusive) of the accumulation period.
+        end_day (int): End day (exclusive) of the accumulation period.
+
+    Returns:
+        tuple[ee.Image, int, int]: (biomass image 'tonC_hec', start year, start month),
+        or None if there is no UGPP data for the period/region.
+    """
+    # DRY_BIOMASS_FACTOR (LUEmax x fator carbono x conversão gC/m²->ton/ha) vem
+    # de pasture_biomass.py — mesma constante usada na série histórica GPW, para
+    # as duas fontes (T2G mensal e GPW anual) nunca divergirem silenciosamente.
     UGPP_SCALE_FACTOR = 0.1
 
-    # Apply a 7-day margin to the reference date, then select the full month
-    # containing that shifted date (e.g. run on Oct 5 -> Sep 28 -> September).
-    ref_date = datetime.date(year, month, day) - datetime.timedelta(days=7)
-    target_year, target_month = ref_date.year, ref_date.month
-
-    start_date = ee.Date.fromYMD(target_year, target_month, 1)
-    end_date = start_date.advance(1, 'month')
+    start_date = ee.Date.fromYMD(start_year, start_month, start_day)
+    end_date = ee.Date.fromYMD(end_year, end_month, end_day)
 
     n_days = ee.Number(end_date.difference(start_date, 'day'))
 
-    ugpp = ee.ImageCollection("projects/wri-lcl-time2graze/assets/ugpp_prod_10m_v1")
+    ugpp = ee.ImageCollection("projects/wri-lcl-time2graze/assets/ugpp_prod_10m_v1").filter(ee.Filter.date('2025-07-03', '2025-07-04').Not())
     ugpp_col = ugpp.filterBounds(roi).filterDate(start_date, end_date)
 
     # Máscara de pastagem no mesmo ano do período de biomassa pedido (não mais fixa em 2024) —
     # limitada ao último ano publicado pelo GPW, já que o asset não cobre anos futuros.
-    mask_year = min(target_year, _latest_gpw_year())
+    mask_year = min(start_year, _latest_gpw_year())
     grassland_asset = ee.ImageCollection("projects/global-pasture-watch/assets/ggc-30m/v1-1/grassland_c")
     grassland_mask = grassland_asset.filterBounds(roi).filterDate(f'{mask_year}-01-01', f'{mask_year + 1}-01-01').first().gte(1)
 
     if ugpp_col.size().eq(0).getInfo():
         log_error(
             f"_get_t2g_biomass_image returned None: empty UGPP collection "
-            f"for roi={roi}, month={month}, year={year}, day={day}"
+            f"for roi={roi}, period={start_year}/{start_month}/{start_day} - {end_year}/{end_month}/{end_day}"
         )
         return None
 
@@ -302,17 +550,55 @@ def _get_t2g_biomass_image(roi, month, year, day=1):
         .multiply(ee.Image(n_days)).multiply(ee.Image(UGPP_SCALE_FACTOR)).multiply(DRY_BIOMASS_FACTOR) \
         .updateMask(grassland_mask).clip(roi).rename('tonC_hec')
     
-    return grassland_image, target_year, target_month
+    return grassland_image, start_year, start_month
     
 
-def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int, year: int, day: int = 1) -> PIL.Image.Image | None:
+def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int, year: int) -> tuple[PIL.Image.Image, int, int] | None:
+    """
+    Generates a satellite image with the T2G (Time2Graze) biomass layer overlaid,
+    relative to the reference month (the month before the one given), with a colorbar.
+
+    Args:
+        coords: List of coordinates representing the farm MultiPolygon.
+        month (int): Reference month (the accumulation uses the previous month).
+        year (int): Reference year.
+
+    Returns:
+        tuple[PIL.Image.Image, int, int]: (final image with satellite, biomass,
+        outline and colorbar, effective accumulation year and month), or None
+        when no UGPP data is available for the period. If the chosen month has
+        no data, falls back once to the previous month before returning None.
+
+    Raises:
+        ValueError: If the area contains no mapped pasture with computable biomass.
+        RuntimeError: On processing, server, connection or unexpected failures
+            (with a message ready to be relayed to the user).
+    """
     try:
         roi = ee.Geometry.MultiPolygon(coords)
 
-        result = _get_t2g_biomass_image(roi, month, year, day)
+        start_date, end_date = _reference_period(year, month)
+        result = _get_t2g_biomass_image(
+            roi,
+            start_date.year, start_date.month, start_date.day,
+            end_date.year, end_date.month, end_date.day
+        )
 
         if result is None:
-            return None
+            fallback_month, fallback_year = (12, year - 1) if month == 1 else (month - 1, year)
+            log_warning(
+                f"retrieve_t2g_biomass_image: no UGPP data for reference period of {month}/{year}; "
+                f"falling back to previous month {fallback_month}/{fallback_year}"
+            )
+            start_date, end_date = _reference_period(fallback_year, fallback_month)
+            result = _get_t2g_biomass_image(
+                roi,
+                start_date.year, start_date.month, start_date.day,
+                end_date.year, end_date.month, end_date.day
+            )
+
+            if result is None:
+                return None
 
         biomass_img, _target_year, _target_month = result
         
@@ -332,7 +618,7 @@ def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int
         min_bio_val = stats[min_key]
         max_bio_val = stats[max_key]    
         
-        palette = ['#000033','#9400D3','#FF00FF','#00FFFF','#FFFFFF']
+        palette = ["#f75639", "#eef79c", "#f5d570", "#8aa637", "#0b391f"]
         bioprop = biomass_img.visualize(**{"min": min_bio_val, "max": max_bio_val, "palette": palette})        
         
         base_image = _get_base_image(roi=roi, year=year)
@@ -351,10 +637,12 @@ def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int
 
         img = append_continuous_colorbar(
             img, 
-            title=f"Biomassa\n({str(_target_year)}/{str(_target_month)}) - T2G", 
-            vmin=round(min_bio_val),
-            vmax=round(max_bio_val),
-            palette=palette
+            title=f"Biomassa ({str(_target_year)}/{str(_target_month)}) - T2G", 
+            vmin=round(min_bio_val, 1),
+            vmax=round(max_bio_val, 1),
+            unit="ton/ha",
+            palette=palette,
+            ndigits=1
         )
 
         return img, _target_year, _target_month
@@ -386,7 +674,6 @@ def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int
             f"Peça desculpas e informe que houve um erro inesperado.\n"
             "Peça ao usuário que tente novamente mais tarde."
         )
-
 
 def retrieve_gpw_biomass_image(coords: List[List[List[List[float]]]], year: int = None) -> PIL.Image.Image:
     """
@@ -446,7 +733,248 @@ def retrieve_gpw_biomass_image(coords: List[List[List[List[float]]]], year: int 
     return img
 
 
-def retrieve_feature_soil_texture_image(coords: List[List[List[List[float]]]]):
+BIOMASS_VIDEO_MIN_YEAR = 2025
+
+BIOMASS_VIDEO_PALETTE = ['#000033', '#9400D3', '#FF00FF', '#00FFFF', '#FFFFFF']
+
+
+def _iterate_reference_months(
+    start_year: int,
+    start_month: int,
+    end_year: int,
+    end_month: int,
+) -> tuple[list[tuple[int, int]], tuple[int, int], tuple[int, int]]:
+    """
+    Valida e normaliza o intervalo de meses de referência para o vídeo de biomassa.
+
+    Regras:
+        - O ano inicial não pode ser anterior a 2025 (início da série UGPP/T2G).
+        - O intervalo final é limitado ao mês de referência atual (mês corrente,
+          o mesmo limite aplicado por `_reference_period`); pedidos além disso
+          são ajustados (clamp) para o limite, sem erro.
+        - Meses fora de 1-12 geram erro.
+
+    Args:
+        start_year (int): Ano inicial solicitado.
+        start_month (int): Mês inicial solicitado.
+        end_year (int): Ano final solicitado (inclusivo).
+        end_month (int): Mês final solicitado (inclusivo).
+
+    Returns:
+        tuple: (lista de (ano, mês) de referência, início efetivo, fim efetivo).
+
+    Raises:
+        ValueError: Se ano/mês inicial for inválido, meses fora de 1-12 ou
+            intervalo vazio após o clamp.
+    """
+    today = datetime.date.today()
+
+    if not 1 <= start_month <= 12 or not 1 <= end_month <= 12:
+        raise ValueError("Os meses informados devem estar entre 1 (janeiro) e 12 (dezembro).")
+
+    if start_year < BIOMASS_VIDEO_MIN_YEAR:
+        raise ValueError(
+            f"Os dados de biomassa (T2G) estão disponíveis apenas a partir de "
+            f"{BIOMASS_VIDEO_MIN_YEAR}. Informe um ano inicial maior ou igual a {BIOMASS_VIDEO_MIN_YEAR}."
+        )
+
+    requested_end = (end_year, end_month)
+    current_limit = (today.year, today.month)
+
+    if requested_end > current_limit:
+        log_warning(
+            f"_iterate_reference_months: end {end_year}/{end_month} clamped to current reference month {current_limit[0]}/{current_limit[1]}"
+        )
+        end_year, end_month = current_limit
+
+    effective_start = (start_year, start_month)
+    effective_end = (end_year, end_month)
+
+    if effective_start > effective_end:
+        raise ValueError(
+            "O mês/ano inicial deve ser anterior ou igual ao mês/ano final "
+            "(considerando que o período final é limitado ao mês atual)."
+        )
+
+    months: list[tuple[int, int]] = []
+    year, month = effective_start
+    while (year, month) <= effective_end:
+        months.append((year, month))
+        if month == 12:
+            year, month = year + 1, 1
+        else:
+            month += 1
+
+    return months, effective_start, effective_end
+
+
+def retrieve_t2g_biomass_video(
+    coords: List[List[List[List[float]]]],
+    start_year: int,
+    start_month: int,
+    end_year: int,
+    end_month: int,
+) -> tuple[bytes, tuple[int, int], tuple[int, int]] | None:
+    """
+    Gera um GIF animado da biomassa acumulada (ton/ha) mês a mês, usando a
+    série T2G (Time2Graze/UGPP), sobre a imagem de satélite e com o contorno
+    da propriedade em cada frame, com escala de cores fixa entre os frames.
+
+    Para cada mês de referência no intervalo (inclusivo), acumula o mês anterior
+    via `_reference_period` + `_get_t2g_biomass_image` e empilha os frames
+    compostos como no mapa estático de biomassa: imagem de satélite de fundo,
+    camada de biomassa visualizada com a mesma paleta e contorno vermelho da
+    propriedade. Meses sem dados UGPP são ignorados.
+
+    Args:
+        coords: Lista de coordenadas representando o MultiPolygon da fazenda.
+        start_year (int): Ano do primeiro mês de referência (>= 2025).
+        start_month (int): Mês do primeiro mês de referência (1-12).
+        end_year (int): Ano do último mês de referência (limitado ao mês atual).
+        end_month (int): Mês do último mês de referência (1-12, limitado ao mês atual).
+
+    Returns:
+        tuple[bytes, tuple, tuple, list, float, float] | None: (GIF em bytes,
+        (ano, mês) inicial efetivo, (ano, mês) final efetivo, lista de
+        (ano, mês) de acumulação de cada frame, biomassa mínima global,
+        biomassa máxima global), ou None quando menos de 2 meses possuem
+        dados UGPP.
+
+    Raises:
+        ValueError: Se o intervalo informado for inválido (ver `_iterate_reference_months`).
+        RuntimeError: Em falhas de processamento, servidor, conexão ou erros
+            inesperados (com mensagem pronta para ser repassada ao usuário).
+    """
+    try:
+        months, effective_start, effective_end = _iterate_reference_months(
+            start_year, start_month, end_year, end_month
+        )
+
+        roi = ee.Geometry.MultiPolygon(coords)
+
+        frames: list[tuple[int, ee.Image, int, int]] = []
+        global_min: float | None = None
+        global_max: float | None = None
+
+        for ref_year, ref_month in months:
+            start_date, end_date = _reference_period(ref_year, ref_month)
+            result = _get_t2g_biomass_image(
+                roi,
+                start_date.year, start_date.month, start_date.day,
+                end_date.year, end_date.month, end_date.day
+            )
+
+            if result is None:
+                log_warning(
+                    f"retrieve_t2g_biomass_video: sem dados UGPP para {ref_month}/{ref_year}; frame ignorado"
+                )
+                continue
+
+            biomass_img, _target_year, _target_month = result
+
+            stats = biomass_img.reduceRegion(
+                reducer=ee.Reducer.minMax(),
+                geometry=roi,
+                scale=10,
+                maxPixels=1e13
+            ).getInfo()
+
+            min_key = next((k for k in stats if k.endswith('_min')), None)
+            max_key = next((k for k in stats if k.endswith('_max')), None)
+
+            if not min_key or stats[min_key] is None or stats[max_key] is None:
+                log_warning(
+                    f"retrieve_t2g_biomass_video: estatísticas vazias para {ref_month}/{ref_year}; frame ignorado"
+                )
+                continue
+
+            frame_min = float(stats[min_key])
+            frame_max = float(stats[max_key])
+            global_min = frame_min if global_min is None else min(global_min, frame_min)
+            global_max = frame_max if global_max is None else max(global_max, frame_max)
+
+            frames.append((ref_year, biomass_img, start_date.year, start_date.month))
+
+        if len(frames) < 2:
+            log_warning(
+                f"retrieve_t2g_biomass_video: apenas {len(frames)} frame(s) com dados UGPP "
+                f"para o período {effective_start} - {effective_end}; retornando None"
+            )
+            return None
+
+        frame_months: list[tuple[int, int]] = [(acc_year, acc_month) for _, _, acc_year, acc_month in frames]
+
+        outline = _draw_feature_boundaries(roi=roi)
+        frame_region = roi.buffer(_FEATURE_BUFFER).bounds()
+
+        base_by_year: dict[int, ee.Image] = {
+            year: _get_base_image(roi=roi, year=year) for year in {year for year, _, _, _ in frames}
+        }
+
+        visualized = []
+        for year, frame, _acc_year, _acc_month in frames:
+            bioprop = frame.visualize(
+                **{"min": global_min, "max": global_max, "palette": BIOMASS_VIDEO_PALETTE}
+            )
+            composed = base_by_year[year].blend(bioprop.clip(roi)).blend(outline).clip(frame_region)
+            visualized.append(composed)
+
+        video_collection = ee.ImageCollection.fromImages(visualized)
+
+        url = video_collection.getVideoThumbURL({
+            "dimensions": _IMAGE_DIMENSION,
+            "region": frame_region,
+            "framesPerSecond": 2,
+            "format": "gif",
+        })
+
+        response = requests.get(url, timeout=120)
+        response.raise_for_status()
+
+        return response.content, effective_start, effective_end, frame_months, global_min, global_max
+
+    except ValueError as error:
+        raise error
+    except ee.EEException as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Falha ao processar as coordenadas no satélite. "
+            f"Verifique se as coordenadas da área estão corretas. Detalhes: {str(error)}"
+        )
+    except requests.exceptions.HTTPError as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"O servidor de imagens do satélite retornou um erro ao gerar o vídeo. "
+            f"Tente solicitar o vídeo novamente em alguns instantes. Detalhes: {str(error)}"
+        )
+    except requests.exceptions.RequestException as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Não foi possível baixar o vídeo por falha de conexão. "
+            f"Pode haver instabilidade na rede. Detalhes: {str(error)}"
+        )
+    except Exception as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Ocorreu um erro inesperado ao gerar o vídeo da biomassa. Detalhes: {str(error)}"
+        )
+
+def retrieve_feature_soil_texture_image(coords: List[List[List[List[float]]]]) -> PIL.Image.Image:
+    """
+    Generates a satellite image with the soil texture layer (0-30cm, MapBiomas
+    Collection 3) overlaid, with a discrete legend of the texture classes.
+
+    Args:
+        coords: List of coordinates representing the farm MultiPolygon.
+
+    Returns:
+        PIL.Image: Final blended image containing satellite, soil texture,
+        outline and legend.
+
+    Raises:
+        RuntimeError: On Earth Engine processing, image server, connection,
+            image format or unexpected failures.
+    """
     try:
         PALETTE = {
             'Afloramento':'#707070',
@@ -587,8 +1115,29 @@ def retrieve_pasture_vigor_image(coords: List[List[List[List[float]]]], year: in
         )
 
 
-def get_biomass(roi: ee.Geometry, year: int, month: int, day: int = 1) -> 'BiomassStats':
-    result = _get_t2g_biomass_image(roi, month, year, day)
+def get_biomass(roi: ee.Geometry, month: int, year: int) -> BiomassStats:
+    """
+    Computes pasture dry biomass accumulated in the reference month (the month
+    before the one given), using the Time2Graze collection (10m UGPP).
+
+    When there is no UGPP data for the period/region, falls back to the MapBiomas
+    asset (2024 annual biomass, 0.09 scale, value accumulated over the year).
+
+    Args:
+        roi (ee.Geometry): Region of interest (farm polygon).
+        month (int): Reference month (the accumulation uses the previous month).
+        year (int): Reference year.
+
+    Returns:
+        BiomassStats: Observation year and accumulated value with unit
+        ("tonelada(s) de matéria seca acumulada no mês ..." or "... no ano").
+    """
+    start_date, end_date = _reference_period(year, month)
+    result = _get_t2g_biomass_image(
+        roi,
+        start_date.year, start_date.month, start_date.day,
+        end_date.year, end_date.month, end_date.day
+    )
 
     # Fallback pro Global Pasture Watch (cobertura nacional/global) se o T2G não cobrir a propriedade
     if result is None:
@@ -653,10 +1202,24 @@ _VIGOR_ASSET = 'projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbio
 _LULC_ASSET = 'projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_integration_v2'
 
 
-def get_pasture_age(roi: ee.Geometry, year: int, month: int = None) -> List['AgeStats']:
-    # 30-40 = idade calculada com precisão nesse intervalo; ≥40 = pixel bateu no valor
-    # sentinela do asset (pastagem já madura ao início da série, idade real desconhecida
-    # e possivelmente bem maior que 40) — não misturamos as duas coisas na mesma classe.
+def get_pasture_age(roi: ee.Geometry, year: int, month: int = None) -> AgeStats:
+    """
+    Computes pasture area (ha) per age class via MapBiomas (Collection 10).
+
+    Raw ages are reclassified into 4 ranges (1-10, 10-20, 20-30, 30-40 years)
+    plus a 5th class for pixels that hit the asset's sentinel value (pasture
+    already mature at the start of the series, real age unknown and possibly
+    much older than 40) — kept separate so a precisely computed 30-40 is never
+    mixed with a censored, indeterminate age.
+
+    Args:
+        roi (ee.Geometry): Region of interest (farm polygon).
+        year (int): Reference year of the mapping (band `year - 2000`).
+        month (int, optional): Ignored; kept for signature compatibility.
+
+    Returns:
+        AgeStats: Observation year and list of areas per age range (ha).
+    """
     AGE_DICT = {'1':'1-10', '2':'10-20', '3':'20-30', '4':'30-40', '5':'≥40 (idade real indeterminada)'}
 
     target_year = min(year, _latest_asset_year(_AGE_ASSET))
@@ -694,7 +1257,21 @@ def get_pasture_age(roi: ee.Geometry, year: int, month: int = None) -> List['Age
 
     return AgeStats(observation_year=target_year, data=age_data_list)
 
-def get_pasture_vigor(roi: ee.Geometry, year: int, month: int = None) -> List['VigorStats']:
+def get_pasture_vigor(roi: ee.Geometry, year: int, month: int = None) -> VigorStats:
+    """
+    Computes pasture area (ha) per vigor class via MapBiomas (Collection 10).
+
+    Classes: 1 = Low (severe degradation, potentially biological),
+    2 = Medium (moderate degradation), 3 = High (high vegetative vigor).
+
+    Args:
+        roi (ee.Geometry): Region of interest (farm polygon).
+        year (int): Reference year of the mapping (band `year - 2000`).
+        month (int, optional): Ignored; kept for signature compatibility.
+
+    Returns:
+        VigorStats: Observation year and list of areas per vigor class (ha).
+    """
     VIGOR_DICT = {
         '1':'Baixo: pastagens com baixo vigor vegetativo e indícios de degradação severa, potencialmente biológica.',
         '2':'Médio: pastagens com médio vigor vegativo e indícios de degração moderada.',
@@ -727,7 +1304,19 @@ def get_pasture_vigor(roi: ee.Geometry, year: int, month: int = None) -> List['V
 
     return VigorStats(observation_year=target_year, data=vigor_data_list)
 
-def get_land_use_land_cover(roi: ee.Geometry, year: int, month: int = None) -> List['LULCStats']:
+def get_land_use_land_cover(roi: ee.Geometry, year: int, month: int = None) -> LULCStats:
+    """
+    Computes area (ha) per land use and land cover class via MapBiomas
+    (Collection 10, annual integration).
+
+    Args:
+        roi (ee.Geometry): Region of interest (farm polygon).
+        year (int): Reference year of the mapping (band `year - 2000`).
+        month (int, optional): Ignored; kept for signature compatibility.
+
+    Returns:
+        LULCStats: Observation year and list of areas per LULC class (ha).
+    """
     CLASSES = {
         '3':'Formação Florestal', '4':'Formação Savânica', '5':'Mangue',
         '6':'Floresta Alagável', '9':'Silvicultura', '11':'Campo Alagado e Área Pantanosa',
@@ -768,14 +1357,27 @@ def get_land_use_land_cover(roi: ee.Geometry, year: int, month: int = None) -> L
 
     return LULCStats(observation_year=target_year, data=lulc_class_data_list)
 
-def query_pasture_statistics(coords: List[List[List[List[float]]]], year: int, month: int, day: int = 1) -> PropertyStats:
+def query_pasture_statistics(coords: List[List[List[List[float]]]], month: int, year: int) -> PropertyStats:
     """
-    Extração de estatísticas de pastagem (biomassa, vigor, idade e chuva).
+    Extracts pasture statistics (biomass, age, vigor and land use/land cover).
+
+    Args:
+        coords: List of coordinates representing the farm MultiPolygon.
+        month (int): Reference month (biomass accumulates the previous month).
+        year (int): Reference year.
+
+    Returns:
+        PropertyStats: PastureStats object combining BiomassStats, AgeStats,
+        VigorStats and LULCStats.
+
+    Raises:
+        RuntimeError: On processing, server, connection or unexpected failures
+            (with a message ready to be relayed to the user).
     """
     try:
         roi = ee.Geometry.MultiPolygon(coords)
 
-        biomass_stats = get_biomass(roi, year, month, day)
+        biomass_stats = get_biomass(roi, month, year)
         # cada função clampa sozinha pro último ano publicado no respectivo asset MapBiomas
         # (não trava mais em 2024 — avança automaticamente quando a MapBiomas atualizar)
         age_stats = get_pasture_age(roi, year, month)
@@ -823,7 +1425,17 @@ def query_pasture_statistics(coords: List[List[List[List[float]]]], year: int, m
         )
     
 
-def query_topographic_stats(coords: List[List[List[List[float]]]]):
+def query_topographic_stats(coords: List[List[List[List[float]]]]) -> TopographicStats:
+    """
+    Computes average topographic statistics for the property using Copernicus
+    DEM GLO30 (mean elevation in meters and mean slope in degrees).
+
+    Args:
+        coords: List of coordinates representing the farm MultiPolygon.
+
+    Returns:
+        TopographicStats: Mean elevation (meters) and mean slope (degrees).
+    """
     from app.schemas.property_stats import Value
 
     roi = ee.Geometry.MultiPolygon(coords)

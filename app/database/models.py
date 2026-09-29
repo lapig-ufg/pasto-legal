@@ -11,6 +11,16 @@ class UserTermsAcceptance(Base):
     accepted = Column(Boolean, default=False, nullable=False, comment="Flag indicating acceptance")
     accepted_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False, comment="Date and time of formal acceptance")
     
+
+
+class UserProfile(Base):
+    """Table that stores the identification profile captured during onboarding."""
+    __tablename__ = "user_profile"
+
+    user_id = Column(String, primary_key=True, index=True, comment="Unique identifier (e.g., wa:5511999999999)")
+    name = Column(String, nullable=True, comment="User's given name")
+    role = Column(String, nullable=True, comment="'Produtor' or 'Técnico'")
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=False)   
     
 class NegativeFeedback(Base):
     __tablename__ = 'negative_feedbacks'

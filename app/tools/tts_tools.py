@@ -16,7 +16,7 @@ from agno.tools import tool
 from agno.tools.function import ToolResult
 from agno.utils.log import log_debug, log_error
 
-from app.configs.prompts import get_tool_description
+from app.configs.prompts import get_tool_description, get_tool_result_text
 
 
 @tool(description=get_tool_description("tts_tools", "generate_speech"))
@@ -36,7 +36,7 @@ def generate_speech(text: str) -> ToolResult:
     """
     log_debug("generate_speech: marcando turn para síntese de áudio")
     try:
-        return ToolResult(content="Áudio gerado com sucesso!", audios=[Audio(content=bytes(), transcript=text)])
+        return ToolResult(content=get_tool_result_text("tts_tools", "generate_speech", "success"), audios=[Audio(content=bytes(), transcript=text)])
     except Exception as e:
         log_error(f"generate_speech: {e}")
-        return ToolResult(content=f"Erro ao gerar áudio: {str(e)}")
+        return ToolResult(content=get_tool_result_text("tts_tools", "generate_speech", "error", error=e))

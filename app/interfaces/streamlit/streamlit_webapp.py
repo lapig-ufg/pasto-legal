@@ -5,7 +5,7 @@ import tempfile
 import streamlit as st
 
 from typing import List
-from agno.media import Image, Audio
+from agno.media import Image, Audio, File
 
 from app.configs.config import config
 from app.interfaces.streamlit.debug_helpers import extract_workflow_debug_data, extract_session_state
@@ -154,13 +154,31 @@ if "debug_messages" not in st.session_state:
     st.session_state.debug_messages = []
 
 # Exibe mensagens anteriores
+import re
 for msg_idx, message in enumerate(st.session_state.messages):
     with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+        # A variável precisa nascer aqui para TODAS as mensagens
+        proactive_text = None 
+        
+        if message["role"] == "assistant" and message.get("content"):
+            chunks = [c.strip() for c in re.split(r'\s*\[PAUS[EA]\]\s*', message["content"], maxsplit=1, flags=re.IGNORECASE) if c.strip()]
+            if chunks:
+                st.markdown(chunks[0])
+                if len(chunks) > 1:
+                    proactive_text = chunks[1]
+            else:
+                st.markdown(message["content"])
+        else:
+            st.markdown(message["content"])
+        
         if "images" in message:
             for img in message["images"]:
                 if img is not None:
                     st.image(img, use_container_width=True)
+        if "videos" in message:
+            for vid in message["videos"]:
+                if vid is not None:
+                    st.video(vid, format="video/mp4")
         if "audio" in message:
             for aud in message["audio"]:
                 if aud is not None:
@@ -174,15 +192,22 @@ for msg_idx, message in enumerate(st.session_state.messages):
                     mime=f["mime_type"] or "application/octet-stream",
                     key=f"dl_hist_{msg_idx}_{file_idx}",
                 )
+        
+    
+        if proactive_text:
+            st.info(f"💡 {proactive_text}")
 
 # Inputs do usuário
 if 'file_uploader_key' not in st.session_state:
     st.session_state.file_uploader_key = 0
 
 files_uploaded = st.file_uploader(
-    "Envie imagens/áudio (png, jpg, mp3, etc)",
+    "Envie imagens/áudio/mapas (png, jpg, mp3, zip, kmz, kml, geojson, etc)",
     key=f"file_uploader_{st.session_state.file_uploader_key}",
-    type=["png", "jpg", "jpeg", "webp", "wav", "mp3", "mp4"],
+    type=[
+        "png", "jpg", "jpeg", "webp", "wav", "mp3", "mp4",
+        "zip", "rar", "kmz", "kml", "geojson", "json",
+    ],
     accept_multiple_files=True,
 )
 
@@ -237,6 +262,11 @@ if user_query:
     
     image_path = [Image(filepath=p) for p in all_file_paths if p.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
     audio_path = [Audio(filepath=p, ext=p[:-4]) for p in all_file_paths if p.lower().endswith(('.wav', '.mp3', '.ogg', '.mp4'))]
+    geo_files = [
+        File(content=f.getvalue(), name=f.name)
+        for f in (files_uploaded or [])
+        if f.name.lower().endswith(('.zip', '.rar', '.kmz', '.kml', '.geojson', '.json'))
+    ]
 
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
@@ -257,8 +287,9 @@ if user_query:
                 run_kwargs["images"] = image_path 
             if audio_path:
                 run_kwargs["audio"] = audio_path
+            if geo_files:
+                run_kwargs["files"] = geo_files
 
-            # TODO: Implementar files.
             with st.spinner("Analisando dados e gerando resposta..."):
                 response = pasto_legal_workflow.run(**run_kwargs)
             
@@ -299,6 +330,10 @@ if user_query:
                 for img in response.images:
                     if img.content is not None:
                         st.image(img.content, use_container_width=True)
+            if response and getattr(response, 'videos', None):
+                for vid in response.videos:
+                    if vid.content is not None:
+                        st.video(vid.content, format="video/mp4")
             audio_to_display = []
             if response and hasattr(response, 'audio') and response.audio:
                 audio_to_display.extend(response.audio)
@@ -316,8 +351,17 @@ if user_query:
                             mime=f.mime_type or "application/octet-stream",
                             key=f"dl_{st.session_state.session_id}_{len(st.session_state.messages)}_{file_idx}",
                         )
+            
             # Exibe a resposta final
-            message_placeholder.markdown(full_response)
+            import re
+            chunks = [c.strip() for c in re.split(r'\s*\[PAUS[EA]\]\s*', full_response, maxsplit=1, flags=re.IGNORECASE) if c.strip()]
+            
+            if chunks:
+                message_placeholder.markdown(chunks[0])
+                if len(chunks) > 1:
+                    st.info(f"💡 {chunks[1]}")
+            else:
+                message_placeholder.markdown(full_response)
 
         except Exception as e:
             import traceback
@@ -336,6 +380,10 @@ if user_query:
         if response:
             if response.images:
                 new_message["images"] = [img.content for img in response.images]
+            if getattr(response, 'videos', None):
+                new_message["videos"] = [
+                    vid.content for vid in response.videos if vid.content
+                ]
             if audio_to_display:
                 new_message["audio"] = [
                     str(aud.filepath) for aud in audio_to_display if getattr(aud, 'filepath', None)

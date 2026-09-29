@@ -64,8 +64,11 @@ def _format_state_value(key: str, value: Any) -> Any:
             return {k: truncate_string(v, 100) for k, v in value.items()}
         return truncate_string(value, 200)
 
-    # Properties — list of dicts, summarize each
+    # Properties — all_properties holds the serialized RegisteredFeatures
+    # ({"features": [...]}); candidate_properties is a plain list of records.
     if key in ("all_properties", "candidate_properties"):
+        if isinstance(value, dict):
+            value = value.get("features", [])
         if isinstance(value, list):
             return [
                 {k: truncate_string(v, 100) for k, v in prop.items()}

@@ -36,7 +36,7 @@ class UserPersona(BaseModel):
         description="Lista de preferências exclusivamente focadas em como o agente deve interagir e formatar as respostas."
     )
 
-def __str__(self) -> str:
+    def __str__(self) -> str:
         preferences_text = "".join(
             f"\n- {pref.key.title()}: {pref.description}" for pref in self.communication_preferences
         )
@@ -48,21 +48,40 @@ def __str__(self) -> str:
         """).strip()
 
 
+# UserPersona fields default to a sentinel string instead of None, so a
+# persona built from the schema alone looks "informed". Both the onboarding
+# gate and the welcoming agent must treat the sentinel as missing.
+UNKNOWN_PERSONA_VALUES = {
+    UserPersona.model_fields["name"].default,
+    UserPersona.model_fields["role"].default,
+}
+
+
+def is_persona_field_informed(value) -> bool:
+    """True when a persona field holds an actual value (not None/sentinel)."""
+    return bool(value) and value not in UNKNOWN_PERSONA_VALUES
+
+
+def is_persona_complete(persona) -> bool:
+    """True when both the name and the role are informed (not sentinel)."""
+    persona = persona or {}
+    return (
+        is_persona_field_informed(persona.get("name"))
+        and is_persona_field_informed(persona.get("role"))
+    )
+
+
 class PersonaUpdate(BaseModel):
     """Structured output do agente gerenciador de persona.
 
     Representa as mudanças que o agente deseja aplicar na persona do usuário.
     Apenas campos preenchidos serão atualizados.
-    """
 
-    name: Optional[str] = Field(
-        default=None,
-        description="Nome atualizado do usuário, ou None para manter o atual.",
-    )
-    role: Optional[str] = Field(
-        default=None,
-        description="Cargo ou papel atualizado ('Produtor' ou 'Técnico'), ou None para manter o atual.",
-    )
+    Nome e função NÃO aparecem aqui de propósito: são identidade declarada
+    pelo usuário no onboarding e só mudam a pedido explícito dele, pelas tools
+    `update_persona_name` e `update_persona_role`. Este agente roda sozinho a
+    cada resposta e trabalha por dedução — dedução não sobrescreve declaração.
+    """
     regionality: Optional[str] = Field(
         default=None,
         description="Cidade/estado/região atualizada, ou None para manter o atual.",
