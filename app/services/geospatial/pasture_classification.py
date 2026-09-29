@@ -12,6 +12,7 @@ import xarray as xr
 from agno.utils.log import log_error, log_info
 
 from app.services.geospatial.gee import _FEATURE_BUFFER, _IMAGE_DIMENSION, _draw_feature_boundaries, _get_base_image
+from app.services.geospatial.image import append_discrete_legend
 from app.services.geospatial.pasture_cache import cache_exists, load_cache, save_cache
 from app.services.geospatial.xee_grid import _native_crs, _utm_grid
 
@@ -34,7 +35,7 @@ _MASK_VALUE = -32768
 
 # Bump sempre que a lógica de amostragem/treino/classificação mudar — invalida
 # cache antigo em vez de servir resultado stale de uma versão anterior do algoritmo.
-_CACHE_VERSION = "v1"
+_CACHE_VERSION = "v2"
 
 
 def _embedding(roi: ee.Geometry, year: int) -> ee.Image:
@@ -136,9 +137,12 @@ def _render_classification_image(roi: ee.Geometry, classified: ee.Image, base_ye
         base_year (int): Year of the base satellite image.
 
     Returns:
-        PIL.Image.Image: PNG ready to be sent.
+        PIL.Image.Image: PNG com título e legenda, mesmo padrão visual das
+        outras camadas on-the-fly (idade, vigor, biomassa).
     """
-    overlay = classified.selfMask().visualize(palette=["00c800"])
+    _PASTURE_COLOR = "#00c800"
+
+    overlay = classified.selfMask().visualize(palette=[_PASTURE_COLOR.lstrip("#")])
     base = _get_base_image(roi=roi, year=base_year)
     boundary = _draw_feature_boundaries(roi=roi)
 
@@ -147,7 +151,11 @@ def _render_classification_image(roi: ee.Geometry, classified: ee.Image, base_ye
 
     response = requests.get(url, timeout=60)
     response.raise_for_status()
-    return PIL.Image.open(BytesIO(response.content))
+
+    img_pil = PIL.Image.open(BytesIO(response.content))
+    return append_discrete_legend(
+        img_pil, f"Classificação de Pastagem ({base_year})", {"Pastagem": _PASTURE_COLOR}
+    )
 
 
 def _classify(roi: ee.Geometry, train_year: int, pred_year: int) -> Tuple[ee.Image, ee.Image]:
