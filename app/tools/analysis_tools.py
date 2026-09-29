@@ -36,6 +36,7 @@ from app.services.geospatial.climate_outlook import estimate_monthly_precipitati
 from app.services.boletim_scripts import build_boletim_chat_summary, build_boletim_story, generate_boletim_diagnostic
 from app.services.pdf_scripts import render_document
 from app.schemas.property_stats import PastureStats, PropertyStats, TopographicStats
+from app.schemas.feature import Feature
 from app.utils.feature_utils import resolve_feature
 import ee
 
@@ -336,7 +337,7 @@ def generate_pasture_classification_image(run_context: RunContext, feature_id: s
             return ToolResult(content=get_tool_result_text("analysis_tools", "generate_pasture_classification_image", "feature_not_found", feature_id=feature_id))
 
         roi = ee.Geometry.MultiPolygon(selected_property.get_coords())
-        result = classify_pasture_on_the_fly(roi=roi, car_code=selected_property.id)
+        result = classify_pasture_on_the_fly(roi=roi, car_code=_cache_key_for(selected_property))
 
         buffer = BytesIO()
         result["imagem"].save(buffer, format="PNG")
@@ -461,6 +462,19 @@ def _pil_to_png_bytes(img) -> bytes:
     return buffer.getvalue()
 
 
+def _cache_key_for(selected_property: Feature) -> str:
+    """
+    Chave estável pros caches de `classify_pasture_on_the_fly`/`estimate_pasture_*`
+    (`app/services/geospatial/pasture_cache.py`) — usa o código CAR real
+    (imutável, único por propriedade) em vez de `selected_property.id`
+    (o NOME escolhido pelo usuário, mutável e nada único: duas propriedades
+    diferentes chamadas "Fazenda Jaraguá" colidem no mesmo arquivo de cache e
+    uma mostra silenciosamente o mapa/histórico da outra). Cai pro id só pra
+    feições sem CAR (ex.: buffer_area registrada por coordenada/URL).
+    """
+    return selected_property.get_metadata("car_code") or selected_property.id
+
+
 def _safe_fetch_image(label: str, fetch_fn):
     """Busca um mapa 'extra' do boletim sem derrubar o PDF inteiro se essa camada específica falhar."""
     try:
@@ -511,7 +525,7 @@ def generate_property_boletim(run_context: RunContext, feature_id: str) -> ToolR
         location_image = retrieve_feature_images(coords)[0]
 
         roi = ee.Geometry.MultiPolygon(coords)
-        pasture_result = classify_pasture_on_the_fly(roi=roi, car_code=selected_property.id)
+        pasture_result = classify_pasture_on_the_fly(roi=roi, car_code=_cache_key_for(selected_property))
         pasture_map_image = pasture_result["imagem"]
 
         def _fetch_biomass_image():
@@ -528,7 +542,7 @@ def generate_property_boletim(run_context: RunContext, feature_id: str) -> ToolR
         soil_stats = _safe_fetch_image("estatísticas de solo", lambda: get_soil_texture_stats(roi=roi))
         topographic_stats = _safe_fetch_image("dados topográficos", lambda: query_topographic_stats(coords=coords))
 
-        biomass_history = _safe_fetch_image("histórico de biomassa", lambda: estimate_pasture_biomass_history(roi=roi, car_code=selected_property.id))
+        biomass_history = _safe_fetch_image("histórico de biomassa", lambda: estimate_pasture_biomass_history(roi=roi, car_code=_cache_key_for(selected_property)))
         biomass_history_image_bytes = _pil_to_png_bytes(biomass_history["imagem"]) if biomass_history else None
         biomass_history_start_year = biomass_history["history_start_year"] if biomass_history else None
         biomass_history_end_year = biomass_history["history_end_year"] if biomass_history else None
@@ -606,7 +620,7 @@ def get_pasture_biomass_history(run_context: RunContext, feature_id: str) -> Too
             return ToolResult(content=get_tool_result_text("analysis_tools", "get_pasture_biomass_history", "feature_not_found", feature_id=feature_id))
 
         roi = ee.Geometry.MultiPolygon(selected_property.get_coords())
-        result = estimate_pasture_biomass_history(roi=roi, car_code=selected_property.id)
+        result = estimate_pasture_biomass_history(roi=roi, car_code=_cache_key_for(selected_property))
 
         lines = [
             f"- {year}: {value} t/ha" if not math.isnan(value) else f"- {year}: sem pastagem mapeada"
@@ -652,7 +666,7 @@ def get_pasture_age_on_the_fly(run_context: RunContext, feature_id: str) -> Tool
             return ToolResult(content=get_tool_result_text("analysis_tools", "get_pasture_age_on_the_fly", "feature_not_found", feature_id=feature_id))
 
         roi = ee.Geometry.MultiPolygon(selected_property.get_coords())
-        result = estimate_pasture_age_on_the_fly(roi=roi, car_code=selected_property.id)
+        result = estimate_pasture_age_on_the_fly(roi=roi, car_code=_cache_key_for(selected_property))
 
         lines = [f"- {age_range} anos: {area} ha" for age_range, area in sorted(result["area_by_age_class_ha"].items())]
         content = (
@@ -699,7 +713,7 @@ def get_pasture_vigor_on_the_fly(run_context: RunContext, feature_id: str) -> To
             return ToolResult(content=get_tool_result_text("analysis_tools", "get_pasture_vigor_on_the_fly", "feature_not_found", feature_id=feature_id))
 
         roi = ee.Geometry.MultiPolygon(selected_property.get_coords())
-        result = estimate_pasture_vigor_on_the_fly(roi=roi, car_code=selected_property.id)
+        result = estimate_pasture_vigor_on_the_fly(roi=roi, car_code=_cache_key_for(selected_property))
 
         lines = [f"- {vigor_label}: {area} ha" for vigor_label, area in result["area_by_vigor_class_ha"].items()]
         disclaimer = (
