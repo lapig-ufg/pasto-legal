@@ -656,6 +656,13 @@ property_tools:
       Confirms the property found when the search returns a single result.
 
       Use this tool when the 'query_car' tool finds only 1 property and the user confirms it is correct (e.g.: saying "Yes", "That's the one").
+
+      If the user already states the desired name IN THE SAME message as the
+      confirmation (e.g. "Yes, confirmed. Call it Fazenda Boa Vista"), pass
+      that name in the `name` parameter — registration completes immediately,
+      without waiting for another turn. Without this, the user loses access
+      to the analysis tools (bulletin, maps, etc.) until they reply again
+      with the name.
     results:
       no_pending_property: |
         There is no property pending confirmation. Perform a search first.

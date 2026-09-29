@@ -60,6 +60,7 @@ single_agent:
 
     # Diretrizes de Execução
     - Se o usuário confirmar que esta é a {feature_type} correta (ex: "sim", "essa mesma", "pode salvar"), acione imediatamente a ferramenta `confirm_car_selection`.
+    - Se, NA MESMA mensagem, o usuário já disser confirmação E o nome desejado (ex: "Sim, confirmo. Pode chamar de Fazenda Boa Vista"), acione `confirm_car_selection` passando esse nome no parâmetro `name` — isso conclui o cadastro de uma vez, sem precisar de outro turno. NUNCA responda como se o cadastro já tivesse sido concluído com um nome sem de fato chamar a ferramenta com esse nome.
     - Se o usuário rejeitar a {feature_type} (ex: "não é essa", "está errado"), acione a ferramenta `cancel_registration`.
     - Ignore assuntos paralelos. Se o usuário tentar mudar de assunto, traga-o de volta educadamente para a confirmação do cadastro.
   # "pending" state, multiple candidates (selection scenario). {options_text} is

@@ -573,20 +573,69 @@ def select_car_from_list(run_context: RunContext, selection: int):
         return ToolResult(content=get_tool_result_text("property_tools", "select_car_from_list", "error", error=e))
 
 
+def _persist_registration(run_context: RunContext, candidate_properties: list, name: str) -> ToolResult:
+    """
+    Lógica compartilhada de conclusão de cadastro (persiste a feição com o nome
+    escolhido, registra piquetes pendentes, zera o estado de registro). Usada
+    tanto por `complete_registration` (fluxo normal, nome pedido num turno
+    separado) quanto por `confirm_car_selection` quando o usuário já dá o nome
+    junto com a confirmação — sem isso, `registration_state` ficava travado em
+    "final" pra sempre nesse segundo caso, porque `complete_registration` só
+    fica disponível pro agente DEPOIS que esse estado já foi setado (ou seja,
+    nunca no mesmo turno da confirmação).
+    """
+    # The user-chosen name becomes the feature id.
+    registered_feature = Feature.model_validate(candidate_properties[0]).model_copy(
+        update={"feature_id": name}
+    )
+
+    registered_features = get_registered_features(run_context.session_state)
+    registered_features.features.append(registered_feature)
+
+    # Paddocks (from a geospatial file registration) are registered as
+    # "{name}_{n}", keeping the original paddock number.
+    pending_paddocks = run_context.session_state.get("pending_paddocks") or []
+    for paddock in pending_paddocks:
+        paddock_feature = Feature.model_validate(paddock)
+        paddock_number = str(paddock_feature.feature_id).rsplit("_", 1)[-1]
+        registered_features.features.append(
+            paddock_feature.model_copy(update={"feature_id": f"{name}_{paddock_number}"})
+        )
+
+    set_registered_features(run_context.session_state, registered_features)
+
+    run_context.session_state["registration_state"] = None
+    run_context.session_state['candidate_properties'] = None
+    run_context.session_state["pending_paddocks"] = None
+
+    registered_id = registered_feature.id
+    log_debug(f"_persist_registration: registro concluído ({registered_id}, {len(pending_paddocks)} piquetes)")
+    return ToolResult(
+        content=get_tool_result_text(
+            "property_tools", "complete_registration", "success_registration_complete",
+            name=name, feature_id=registered_id,
+        )
+    )
+
+
 @tool(description=get_tool_description("property_tools", "confirm_car_selection"))
-def confirm_car_selection(run_context: RunContext):
+def confirm_car_selection(run_context: RunContext, name: Optional[str] = None):
     """
     Confirma a propriedade encontrada quando a busca retorna apenas um resultado único.
-    
+
     Use esta ferramenta quando a ferramenta 'query_car' encontrar apenas 1 imóvel e o usuário confirmar que está correto (ex: dizendo "Sim", "É essa mesmo").
+    Se o usuário já disser o nome desejado NA MESMA mensagem da confirmação (ex: "Sim, confirmo. Pode chamar de Fazenda Boa Vista"), passe esse nome no parâmetro `name` — conclui o cadastro imediatamente, sem precisar de outro turno.
     """
-    log_debug("confirm_car_selection")
+    log_debug(f"confirm_car_selection: name={name}")
     try:
         candidate_properties = run_context.session_state.get('candidate_properties', None)
 
         if not candidate_properties:
             log_warning("confirm_car_selection chamado sem propriedade pendente")
             return ToolResult(content=get_tool_result_text("property_tools", "confirm_car_selection", "no_pending_property"))
+
+        if name:
+            return _persist_registration(run_context, candidate_properties, name)
 
         run_context.session_state["registration_state"] = "final"
 
@@ -616,39 +665,7 @@ def complete_registration(run_context: RunContext, name: str):
     log_debug(f"complete_registration: name={name}")
     try:
         candidate_properties = run_context.session_state.get('candidate_properties', None)
-
-        # The user-chosen name becomes the feature id.
-        registered_feature = Feature.model_validate(candidate_properties[0]).model_copy(
-            update={"feature_id": name}
-        )
-
-        registered_features = get_registered_features(run_context.session_state)
-        registered_features.features.append(registered_feature)
-
-        # Paddocks (from a geospatial file registration) are registered as
-        # "{name}_{n}", keeping the original paddock number.
-        pending_paddocks = run_context.session_state.get("pending_paddocks") or []
-        for paddock in pending_paddocks:
-            paddock_feature = Feature.model_validate(paddock)
-            paddock_number = str(paddock_feature.feature_id).rsplit("_", 1)[-1]
-            registered_features.features.append(
-                paddock_feature.model_copy(update={"feature_id": f"{name}_{paddock_number}"})
-            )
-
-        set_registered_features(run_context.session_state, registered_features)
-
-        run_context.session_state["registration_state"] = None
-        run_context.session_state['candidate_properties'] = None
-        run_context.session_state["pending_paddocks"] = None
-
-        registered_id = registered_feature.id
-        log_debug(f"complete_registration: registro concluído ({registered_id}, {len(pending_paddocks)} piquetes)")
-        return ToolResult(
-            content=get_tool_result_text(
-                "property_tools", "complete_registration", "success_registration_complete",
-                name=name, feature_id=registered_id,
-            )
-        )
+        return _persist_registration(run_context, candidate_properties, name)
     except Exception as e:
         log_error(f"complete_registration: {e}")
         return ToolResult(content=get_tool_result_text("property_tools", "complete_registration", "error", error=e))

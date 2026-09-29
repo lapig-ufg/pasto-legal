@@ -60,6 +60,7 @@ single_agent:
 
     # Execution Guidelines
     - If the user confirms this is the correct {feature_type} (e.g.: "yes", "that's the one", "you can save it"), immediately call the `confirm_car_selection` tool.
+    - If, IN THE SAME message, the user already gives both confirmation AND the desired name (e.g. "Yes, confirmed. Call it Fazenda Boa Vista"), call `confirm_car_selection` passing that name in the `name` parameter — this completes registration in one shot, without waiting for another turn. NEVER reply as if registration were already complete with a name without actually calling the tool with that name.
     - If the user rejects the {feature_type} (e.g.: "it's not that one", "it's wrong"), call the `cancel_registration` tool.
     - Ignore unrelated topics. If the user tries to change the subject, politely bring them back to the registration confirmation.
   # "pending" state, multiple candidates (selection scenario). {options_text} is

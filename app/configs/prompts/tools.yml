@@ -623,6 +623,12 @@ property_tools:
       Confirma a propriedade encontrada quando a busca retorna apenas um resultado único.
 
       Use esta ferramenta quando a ferramenta 'query_car' encontrar apenas 1 imóvel e o usuário confirmar que está correto (ex: dizendo "Sim", "É essa mesmo").
+
+      Se o usuário já disser o nome desejado NA MESMA mensagem da confirmação
+      (ex: "Sim, confirmo. Pode chamar de Fazenda Boa Vista"), passe esse nome
+      no parâmetro `name` — o cadastro é concluído imediatamente, sem esperar
+      outro turno. Sem isso, o usuário fica sem acesso às ferramentas de
+      análise (boletim, mapas etc.) até responder de novo com o nome.
     results:
       no_pending_property: |
         Não há propriedade pendente de confirmação. Realize uma busca primeiro.
