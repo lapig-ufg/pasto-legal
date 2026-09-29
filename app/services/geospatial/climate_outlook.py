@@ -27,6 +27,12 @@ openmeteo = openmeteo_requests.Client(session=retry_session)
 SEASONAL_URL = "https://seasonal-api.open-meteo.com/v1/seasonal"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 
+# `requests`/`openmeteo_requests` não aplicam nenhum timeout por padrão — uma
+# resposta que nunca chega (rede instável, servidor não responde) trava o
+# processo INDEFINIDAMENTE, não só por alguns segundos. Visto na prática: um
+# teste real travou 20+ minutos sem nenhum progresso até eu adicionar isto.
+_REQUEST_TIMEOUT_S = 30
+
 
 def estimate_monthly_precipitation_outlook(
     latitude: float, longitude: float, months: int = 3
@@ -43,7 +49,7 @@ def estimate_monthly_precipitation_outlook(
         "monthly": "precipitation_mean",
         "forecast_days": months * 31,
     }
-    responses = openmeteo.weather_api(SEASONAL_URL, params=params)
+    responses = openmeteo.weather_api(SEASONAL_URL, params=params, timeout=_REQUEST_TIMEOUT_S)
     response = responses[0]
 
     monthly = response.Monthly()
@@ -74,7 +80,7 @@ def estimate_temperature_outlook(latitude: float, longitude: float, days: int = 
         "daily": ["temperature_2m_max", "temperature_2m_min"],
         "forecast_days": days,
     }
-    responses = openmeteo.weather_api(FORECAST_URL, params=params)
+    responses = openmeteo.weather_api(FORECAST_URL, params=params, timeout=_REQUEST_TIMEOUT_S)
     response = responses[0]
 
     daily = response.Daily()
