@@ -14,13 +14,19 @@ import requests_cache
 from retry_requests import retry
 
 
-# Nome de cache DISTINTO do usado em `app/tools/weather_tools.py` (`.cache`) —
-# ambos os módulos são importados no mesmo processo (single_agent.py importa
-# weather_tools.py na raiz), e duas `CachedSession` de requests_cache abertas
-# ao mesmo tempo sobre o MESMO arquivo .sqlite podem travar o processo inteiro
-# esperando um lock do SQLite (visto na prática: teste real travou 20+ minutos
-# sem nenhum progresso, preso num fd apontando pro `.cache.sqlite` compartilhado).
-cache_session = requests_cache.CachedSession('tmp/.cache_climate_outlook', expire_after=3600)
+# Backend em memória, de propósito — não em SQLite. Duas travas reais e
+# distintas já apareceram aqui com backend em disco: (1) colisão com o
+# `.cache` de `app/tools/weather_tools.py`, que é importado no mesmo processo
+# (corrigido antes com um nome de arquivo isolado); (2) mesmo com nome
+# isolado, chamadas repetidas pela MESMA `CachedSession` dentro de um
+# processo longo (ex.: suíte de testes) voltaram a travar sem nenhum
+# progresso, mesmo com timeout de rede configurado — cada chamada isolada
+# funciona rápido, então o travamento é do SQLite (lock), não da rede. Cache
+# em memória evita essa classe inteira de problema: sem arquivo, sem lock,
+# sem risco de duas sessões (ou chamadas sucessivas da mesma sessão)
+# disputando o mesmo `.sqlite`. Custo aceito: o cache não sobrevive a um
+# restart do processo — previsão do tempo não precisa disso.
+cache_session = requests_cache.CachedSession('climate_outlook', backend="memory", expire_after=3600)
 retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
 openmeteo = openmeteo_requests.Client(session=retry_session)
 
