@@ -322,7 +322,7 @@ def _build_climate_blocks(
     rain_onset: Optional[str],
     dry_onset: Optional[str],
     temperature_outlook: Optional[dict],
-    precipitation_outlook: Optional[List[Tuple[datetime.date, float]]],
+    precipitation_outlook: Optional[List[Tuple[datetime.date, Optional[float]]]],
 ) -> List[Flowable]:
     summary_rows: List[Tuple[str, str]] = []
 
@@ -349,7 +349,10 @@ def _build_climate_blocks(
             blocks.append(pdf.spacer(2))
         blocks.append(pdf.data_table(
             ["Mês", "Precipitação média prevista"],
-            [[month.strftime("%m/%Y"), f"{mm:.1f} mm"] for month, mm in precipitation_outlook],
+            [
+                [month.strftime("%m/%Y"), f"{mm:.1f} mm" if mm is not None else "sem previsão"]
+                for month, mm in precipitation_outlook
+            ],
         ))
 
     if not blocks:
@@ -376,7 +379,7 @@ def build_boletim_story(
     rain_onset: Optional[str] = None,
     dry_onset: Optional[str] = None,
     temperature_outlook: Optional[dict] = None,
-    precipitation_outlook: Optional[List[Tuple[datetime.date, float]]] = None,
+    precipitation_outlook: Optional[List[Tuple[datetime.date, Optional[float]]]] = None,
     emission_date: Optional[date] = None,
 ) -> List[Flowable]:
     """

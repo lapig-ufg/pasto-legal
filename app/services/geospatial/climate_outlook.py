@@ -5,7 +5,7 @@ pelas tools de previsão em `app/tools/weather_tools.py` (que devolvem texto
 pronto pra LLM; aqui devolvemos dados brutos pra montar tabelas no PDF).
 """
 import datetime
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 import openmeteo_requests
@@ -36,12 +36,15 @@ _REQUEST_TIMEOUT_S = 30
 
 def estimate_monthly_precipitation_outlook(
     latitude: float, longitude: float, months: int = 3
-) -> List[Tuple[datetime.date, float]]:
+) -> List[Tuple[datetime.date, Optional[float]]]:
     """
     Previsão sazonal de precipitação média mensal (mm) para os próximos `months` meses.
 
     Returns:
-        List[Tuple[date, float]]: (primeiro dia do mês, precipitação média mm).
+        List[Tuple[date, Optional[float]]]: (primeiro dia do mês, precipitação média mm).
+        O valor vem None quando a API não tem previsão pro mês (NaN) — nunca
+        convertido silenciosamente pra 0.0, que pareceria "previsão de zero
+        chuva" em vez de "sem dado disponível".
     """
     params = {
         "latitude": latitude,
@@ -62,17 +65,23 @@ def estimate_monthly_precipitation_outlook(
     )
 
     return [
-        (date.date(), float(value) if value == value else 0.0)
+        (date.date(), float(value) if value == value else None)
         for date, value in zip(dates, precipitation_mean)
     ]
 
 
-def estimate_temperature_outlook(latitude: float, longitude: float, days: int = 7) -> dict:
+def _round_or_none(value: float) -> Optional[float]:
+    """`nan` (ex.: `np.nanmean` de um array 100% NaN) nunca vira número — vira None."""
+    return round(float(value), 1) if value == value else None
+
+
+def estimate_temperature_outlook(latitude: float, longitude: float, days: int = 7) -> Optional[dict]:
     """
     Resumo da previsão de temperatura (°C) para os próximos `days` dias.
 
     Returns:
-        dict: {"days", "avg_max_c", "avg_min_c", "max_c", "min_c"}.
+        Optional[dict]: {"days", "avg_max_c", "avg_min_c", "max_c", "min_c"},
+        ou None se a API não devolveu nenhum dia com dado válido — nunca "nan°C".
     """
     params = {
         "latitude": latitude,
@@ -87,10 +96,15 @@ def estimate_temperature_outlook(latitude: float, longitude: float, days: int = 
     temp_max = daily.Variables(0).ValuesAsNumpy()
     temp_min = daily.Variables(1).ValuesAsNumpy()
 
+    avg_max_c = _round_or_none(np.nanmean(temp_max)) if len(temp_max) else None
+    avg_min_c = _round_or_none(np.nanmean(temp_min)) if len(temp_min) else None
+    if avg_max_c is None or avg_min_c is None:
+        return None
+
     return {
         "days": days,
-        "avg_max_c": round(float(np.nanmean(temp_max)), 1),
-        "avg_min_c": round(float(np.nanmean(temp_min)), 1),
-        "max_c": round(float(np.nanmax(temp_max)), 1),
-        "min_c": round(float(np.nanmin(temp_min)), 1),
+        "avg_max_c": avg_max_c,
+        "avg_min_c": avg_min_c,
+        "max_c": _round_or_none(np.nanmax(temp_max)),
+        "min_c": _round_or_none(np.nanmin(temp_min)),
     }

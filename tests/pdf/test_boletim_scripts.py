@@ -269,6 +269,26 @@ def test_build_boletim_story_renders_climate_section():
     assert "120.7 mm" in text
 
 
+def test_build_boletim_story_shows_missing_forecast_instead_of_fake_zero():
+    """Regressão: mês sem previsão (None) nunca vira '0.0 mm' — isso pareceria
+    'previsão de zero chuva' quando é só 'sem dado disponível'."""
+    rural_property = _build_sample_property()
+    stats = build_placeholder_property_stats(rural_property.get_metadata("car_code"))
+
+    story = _build_full_story(
+        rural_property, stats,
+        precipitation_outlook=[(datetime.date(2026, 10, 1), 45.3), (datetime.date(2026, 11, 1), None)],
+    )
+    pdf_bytes = render_document(story)
+
+    reader = PdfReader(BytesIO(pdf_bytes))
+    text = "".join(page.extract_text() for page in reader.pages)
+
+    assert "45.3 mm" in text
+    assert "sem previsão" in text
+    assert "0.0 mm" not in text
+
+
 def test_rows_with_percentage_sums_to_total():
     rows = _rows_with_percentage([
         ("A", Value(value=10.0, unity="ha")),

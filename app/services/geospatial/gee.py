@@ -1525,8 +1525,20 @@ def query_topographic_stats(coords: List[List[List[List[float]]]]) -> Topographi
     )
 
     #Converter o valor de elevacao e declividade
-    res_elev = statsdem.getInfo().get('DEM', 0)
-    res_slope = statsslope.getInfo().get('slope', 0)
+    dem_info = statsdem.getInfo()
+    slope_info = statsslope.getInfo()
+    res_elev = dem_info.get('DEM')
+    res_slope = slope_info.get('slope')
+
+    # Nunca cair pra 0 quando o GEE não retorna a chave (ex.: propriedade sem
+    # cobertura no DEM) — 0m de altitude / 0° de declividade são valores
+    # plausíveis de verdade, então um fallback silencioso pareceria um dado
+    # real em vez de "sem dado disponível".
+    if res_elev is None or res_slope is None:
+        raise RuntimeError(
+            f"O Earth Engine não retornou altitude/declividade pra essa propriedade "
+            f"(DEM={res_elev}, slope={res_slope})."
+        )
 
     #Retornar os valores de elevação e declividade
     return TopographicStats(
