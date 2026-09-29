@@ -1,11 +1,11 @@
 
 from io import BytesIO
-from typing import List
+from typing import List, Optional
 
 from semente.context import Context as RunContext
 from semente import tool
 from semente import ToolResult
-from semente import Image
+from semente import File, Image
 from semente.logging import log_debug, log_warning, log_error
 
 from semente.configs.prompts import get_tool_description
@@ -18,8 +18,12 @@ from domain.services.geospatial.sicar import (
     clean_car_code
     )
 from domain.services.geospatial.image import create_vertical_mosaic
-from domain.services.geospatial.gee import retrieve_feature_images
+from domain.services.geospatial.gee import retrieve_feature_images, retrieve_property_overview_image
 from domain.services.geospatial.geometry import build_buffered_area
+from domain.services.geospatial.geojson_io import (
+    GeoFileError,
+    build_features_from_geojson,
+)
 from domain.schemas.feature import Feature, FeatureMetadata, RegisteredFeatures
 from domain.utils.feature_utils import get_registered_features, set_registered_features
 
@@ -32,6 +36,21 @@ _DEFAULT_RADIUS_METERS = 200
 # fallback registers an area instead (see _register_buffer_candidate).
 # Rendered from tools.yml (property_tools.*.results.sicar_miss_buffer_fallback).
 _SICAR_MISS_BUFFER_TOOL_KEY = "sicar_miss_buffer_fallback"
+
+
+def _first_geojson_bytes(files: Optional[List[File]]) -> Optional[bytes]:
+    """
+    Returns the content of the first GeoJSON file attached to the conversation
+    (``format == "geojson"``), or None when there is none.
+
+    The input step converts every supported geospatial document (shapefile
+    .zip/.rar, KMZ, KML, GeoJSON) to GeoJSON and attaches it as a .json file;
+    the framework injects those files into the ``files`` parameter.
+    """
+    for file in files or []:
+        if getattr(file, "format", None) == "geojson" and file.content:
+            return file.content
+    return None
 
 
 def _register_buffer_candidate(
@@ -171,6 +190,79 @@ def start_registration_by_coordinate(run_context: RunContext, latitude: float, l
     except Exception as e:
         log_error(f"start_registration_by_coordinate: {e}")
         return ToolResult(content=get_tool_result_text("property_tools", "start_registration_by_coordinate", "error", error=e))
+
+
+@tool(description=get_tool_description("property_tools", "start_registration_by_geojson"))
+def start_registration_by_geojson(
+    run_context: RunContext,
+    files: Optional[List[File]] = None,
+):
+    """
+    Inicia o registro de uma nova propriedade rural a partir de um arquivo
+    geoespacial enviado pelo usuário (shapefile zip/rar, KMZ, KML ou GeoJSON),
+    que foi convertido para GeoJSON e anexado à conversa como um arquivo .json.
+
+    Use esta ferramenta quando o usuário enviar um arquivo de mapa com os
+    limites da propriedade.
+
+    O conteúdo é lido diretamente do arquivo anexado à conversa, que o
+    framework injeta no parâmetro ``files``. O modelo não deve copiar nem
+    repassar coordenadas (argumentos muito longos são truncados/corrompidos).
+
+    Args:
+        files (List[File], optional): Arquivos anexados à conversa (injetados
+            automaticamente pelo framework).
+
+    Returns:
+        ToolResult: Resultado contendo imagem e instruções para o próximo passo.
+    """
+    log_debug("start_registration_by_geojson")
+
+    content = _first_geojson_bytes(files)
+    if content is None:
+        log_warning("start_registration_by_geojson chamado sem arquivo geoespacial anexado")
+        return ToolResult(
+            content=get_tool_result_text("property_tools", "start_registration_by_geojson", "missing_geojson")
+        )
+
+    try:
+        property_feature, paddocks = build_features_from_geojson(content)
+    except GeoFileError as e:
+        log_warning(f"start_registration_by_geojson: geojson inválido - {e}")
+        return ToolResult(
+            content=get_tool_result_text("property_tools", "start_registration_by_geojson", "invalid_geojson")
+        )
+    except Exception as e:
+        log_error(f"start_registration_by_geojson (parse): {e}")
+        return ToolResult(content=get_tool_result_text("property_tools", "start_registration_by_geojson", "error", error=e))
+
+    try:
+        paddock_labels = [(paddock.coords, paddock.feature_id) for paddock in paddocks]
+        img = retrieve_property_overview_image(property_feature.coords, paddocks=paddock_labels or None)
+
+        buffer = BytesIO()
+        img.save(buffer, format="PNG")
+
+        run_context.session_state["candidate_properties"] = [property_feature.model_dump()]
+        run_context.session_state["pending_paddocks"] = [paddock.model_dump() for paddock in paddocks]
+        run_context.session_state["registration_state"] = "pending"
+
+        result_text = f"> {property_feature.describe()}"
+        if paddocks:
+            paddocks_text = ", ".join(paddock.feature_id for paddock in paddocks)
+            result_text = f"{result_text}\nPiquetes identificados: {paddocks_text}"
+
+        log_debug(f"start_registration_by_geojson: propriedade gerada ({property_feature.id}, {len(paddocks)} piquetes)")
+        return ToolResult(
+            content=get_tool_result_text(
+                "property_tools", "start_registration_by_geojson",
+                "confirm_property", property_details=result_text,
+            ),
+            images=[Image(content=buffer.getvalue())],
+        )
+    except Exception as e:
+        log_error(f"start_registration_by_geojson: {e}")
+        return ToolResult(content=get_tool_result_text("property_tools", "start_registration_by_geojson", "error", error=e))
 
 
 @tool(description=get_tool_description("property_tools", "start_registration_by_car"))
@@ -530,13 +622,30 @@ def complete_registration(run_context: RunContext, name: str):
 
         registered_features = get_registered_features(run_context.session_state)
         registered_features.features.append(registered_feature)
+
+        # Paddocks (from a geospatial file registration) are registered with
+        # the paddock number kept on the stable id and the display name
+        # "{name}_{n}" stored as metadata.
+        pending_paddocks = run_context.session_state.get("pending_paddocks") or []
+        for paddock in pending_paddocks:
+            paddock_feature = Feature.model_validate(paddock)
+            paddock_number = str(paddock_feature.feature_id).rsplit("_", 1)[-1]
+            paddock_metadata = [
+                entry for entry in paddock_feature.metadata if entry.key != "name"
+            ]
+            paddock_metadata.append(FeatureMetadata(key="name", value=f"{name}_{paddock_number}"))
+            registered_features.features.append(
+                paddock_feature.model_copy(update={"metadata": paddock_metadata})
+            )
+
         set_registered_features(run_context.session_state, registered_features)
 
         run_context.session_state["registration_state"] = None
         run_context.session_state['candidate_properties'] = None
+        run_context.session_state["pending_paddocks"] = None
 
         registered_id = registered_feature.id
-        log_debug(f"complete_registration: registro concluído ({registered_id})")
+        log_debug(f"complete_registration: registro concluído ({registered_id}, {len(pending_paddocks)} piquetes)")
         return ToolResult(
             content=get_tool_result_text(
                 "property_tools", "complete_registration", "success_registration_complete",
@@ -559,6 +668,7 @@ def cancel_registration(run_context: RunContext):
     try:
         run_context.session_state["registration_state"] = None
         run_context.session_state['candidate_properties'] = None
+        run_context.session_state["pending_paddocks"] = None
 
         log_debug("cancel_registration: seleção cancelada")
         return ToolResult(content=get_tool_result_text("property_tools", "cancel_registration", "cancelled_apology"))
