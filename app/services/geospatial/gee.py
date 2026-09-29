@@ -596,15 +596,20 @@ def get_biomass(roi: ee.Geometry, year: int, month: int, day: int = 1) -> 'Bioma
 
         last_biomass = _annual_biomass_image(roi, year)
 
-        stats = last_biomass.reduceRegion(
+        # Densidade (t/ha) x área real do pixel (pixelArea(), não uma constante fixa de
+        # ha/pixel) -> total em toneladas. Área de pixel varia com latitude/projeção;
+        # uma constante fixa (ex.: 0,09 ha pro pixel "de 30m") erra sistematicamente
+        # quanto mais longe a propriedade estiver da latitude usada pra calibrá-la.
+        total_image = last_biomass.multiply(ee.Image.pixelArea().divide(10000)).rename('t_ha_year')
+
+        stats = total_image.reduceRegion(
             reducer=ee.Reducer.sum(),
             geometry=roi,
             scale=30,  # resolução nativa do GPW (ggpp-30m/ggc-30m)
             maxPixels=1e13
         )
 
-        # soma de t/ha por pixel de 30m (900m²) -> total em toneladas: x 0.09 ha/pixel
-        biomass_value = stats.getInfo().get('t_ha_year', 0) * 0.09
+        biomass_value = stats.getInfo().get('t_ha_year', 0)
 
         return BiomassStats(
             observation_year=year, period="anual",
@@ -613,14 +618,17 @@ def get_biomass(roi: ee.Geometry, year: int, month: int, day: int = 1) -> 'Bioma
     else:
         last_biomass, target_year, target_month = result
 
-        stats = last_biomass.reduceRegion(
+        # Mesmo motivo do ramo GPW acima: área real do pixel, não uma constante fixa.
+        total_image = last_biomass.multiply(ee.Image.pixelArea().divide(10000)).rename('tonC_hec')
+
+        stats = total_image.reduceRegion(
             reducer=ee.Reducer.sum(),
             geometry=roi,
             scale=10,
             maxPixels=1e13
         )
 
-        biomass_value = stats.getInfo().get(f'tonC_hec', 0) * 0.01
+        biomass_value = stats.getInfo().get('tonC_hec', 0)
 
         month_dict = { 1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho", 7: "Julho", 8: "Agosto", 9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro" }
 

@@ -101,11 +101,13 @@ def _render_history_chart(car_code: str, yearly_avg: Dict[int, float]) -> "PIL.I
     years = sorted(yearly_avg)
     values = [yearly_avg[year] for year in years]
 
-    fig, ax = plt.subplots(figsize=(8, 4), dpi=120)
-    ax.plot(years, values, marker="o", color="#2e7d32", linewidth=2)
+    fig, ax = plt.subplots(figsize=(8, 4), dpi=160)
+    ax.plot(years, values, marker="o", markersize=5, color="#2e7d32", linewidth=2.2)
     ax.set_title(f"Biomassa seca de pastagem — {car_code}")
     ax.set_xlabel("Ano")
-    ax.set_ylabel("t/ha (média da propriedade)")
+    # "t/ha" sozinho não diz que é produtividade ANUAL (fluxo) — pode ser lido como
+    # biomassa em pé (estoque), que é outra grandeza.
+    ax.set_ylabel("t MS/ha/ano (média da propriedade)")
     ax.grid(alpha=0.3)
     fig.tight_layout()
 
