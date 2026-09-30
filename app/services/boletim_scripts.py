@@ -212,16 +212,16 @@ def _build_age_blocks(pasture_stats: Optional[PastureStats]) -> List[Flowable]:
 
 
 def _build_vigor_blocks(
-    pasture_stats: Optional[PastureStats], location_image_bytes: bytes, vigor_map_image_bytes: Optional[bytes]
+    pasture_stats: Optional[PastureStats], vigor_map_image_bytes: Optional[bytes]
 ) -> List[Flowable]:
-    blocks: List[Flowable] = [pdf.subsection_title("Vigor da Pastagem")]
-
     if vigor_map_image_bytes:
-        blocks.append(pdf.side_by_side_images(
-            location_image_bytes, vigor_map_image_bytes,
-            left_caption="Imagem de satélite", right_caption="Mapa de vigor",
-        ))
+        blocks: List[Flowable] = [pdf.subsection_header(
+            "Vigor da Pastagem",
+            pdf.single_image(vigor_map_image_bytes, caption="Mapa de vigor", image_height_mm=90),
+        )]
         blocks.append(pdf.spacer(2))
+    else:
+        blocks = [pdf.subsection_title("Vigor da Pastagem")]
 
     if pasture_stats and pasture_stats.vigor_stats and pasture_stats.vigor_stats.data:
         blocks.append(pdf.placeholder_note(f"Ano de referência: {pasture_stats.vigor_stats.observation_year}."))
@@ -260,15 +260,12 @@ def _build_biomass_blocks(pasture_stats: Optional[PastureStats]) -> List[Flowabl
 
 
 def _build_soil_blocks(
-    soil_stats: Optional[SoilStats], location_image_bytes: bytes, soil_map_image_bytes: Optional[bytes]
+    soil_stats: Optional[SoilStats], soil_map_image_bytes: Optional[bytes]
 ) -> List[Flowable]:
     blocks: List[Flowable] = []
 
     if soil_map_image_bytes:
-        blocks.append(pdf.side_by_side_images(
-            location_image_bytes, soil_map_image_bytes,
-            left_caption="Imagem de satélite", right_caption="Textura do solo",
-        ))
+        blocks.append(pdf.single_image(soil_map_image_bytes, caption="Textura do solo", image_height_mm=90))
         blocks.append(pdf.spacer(2))
 
     if soil_stats and soil_stats.data:
@@ -383,11 +380,12 @@ def build_boletim_story(
     emission_date: Optional[date] = None,
 ) -> List[Flowable]:
     """
-    Monta a lista de flowables do boletim: diagnóstico executivo, pastagem
-    (idade/vigor/LULC), biomassa, tipos de solo, histórico de biomassa,
-    topografia e panorama climático — cada seção temática espacial mostra a
-    imagem de satélite "crua" ao lado do mapa temático, pra facilitar a
-    comparação visual, com os dados numéricos (com percentual) logo abaixo.
+    Monta a lista de flowables do boletim: diagnóstico executivo (com uma
+    visão geral da propriedade, uma única vez, logo abaixo das estrelas),
+    pastagem (idade/vigor/LULC), biomassa, tipos de solo, histórico de
+    biomassa, topografia e panorama climático — cada seção temática espacial
+    mostra o mapa temático sozinho, em largura cheia (a imagem de satélite
+    "crua" já apareceu na visão geral, não repete lado a lado em cada seção).
     """
     emission_date = emission_date or date.today()
     farm_name = rural_property.id or rural_property.get_metadata("car_code") or "Propriedade"
@@ -414,21 +412,21 @@ def build_boletim_story(
         story.append(pdf.section_header(
             "Diagnóstico do Pasto Legal",
             pdf.score_row(score.stars, f"Nota Geral da Propriedade: {score.stars} de 5"),
-            pdf.spacer(3),
-            pdf.body_text(diagnostic_text),
         ))
+        story.append(pdf.spacer(3))
+        if location_image_bytes:
+            story.append(pdf.single_image(location_image_bytes, caption="Visão geral da propriedade", image_height_mm=80))
+            story.append(pdf.spacer(3))
+        story.append(pdf.body_text(diagnostic_text))
         story.append(pdf.spacer(4))
 
     story.append(pdf.section_header(
         "1. Dados de Pastagem",
-        pdf.side_by_side_images(
-            location_image_bytes, pasture_map_image_bytes,
-            left_caption="Imagem de satélite", right_caption="Classificação de pastagem",
-        ),
+        pdf.single_image(pasture_map_image_bytes, caption="Classificação de pastagem", image_height_mm=90),
     ))
     story.append(pdf.spacer(3))
     story.extend(_build_age_blocks(latest_pasture_stats))
-    story.extend(_build_vigor_blocks(latest_pasture_stats, location_image_bytes, vigor_map_image_bytes))
+    story.extend(_build_vigor_blocks(latest_pasture_stats, vigor_map_image_bytes))
     story.extend(_build_lulc_blocks(latest_pasture_stats))
 
     story.append(pdf.spacer(4))
@@ -436,10 +434,7 @@ def build_boletim_story(
     if biomass_map_image_bytes:
         story.append(pdf.section_header(
             "2. Análise de Biomassa",
-            pdf.side_by_side_images(
-                location_image_bytes, biomass_map_image_bytes,
-                left_caption="Imagem de satélite", right_caption="Mapa de biomassa",
-            ),
+            pdf.single_image(biomass_map_image_bytes, caption="Mapa de biomassa", image_height_mm=90),
         ))
         story.append(pdf.spacer(3))
     else:
@@ -449,7 +444,7 @@ def build_boletim_story(
 
     if soil_map_image_bytes or soil_stats:
         story.append(pdf.spacer(4))
-        soil_blocks = _build_soil_blocks(soil_stats, location_image_bytes, soil_map_image_bytes)
+        soil_blocks = _build_soil_blocks(soil_stats, soil_map_image_bytes)
         story.append(pdf.section_header("3. Tipos de Solo", soil_blocks[0]))
         story.extend(soil_blocks[1:])
 

@@ -197,6 +197,13 @@ def subsection_title(text: str) -> Paragraph:
     return Paragraph(text, _styles["SubSectionTitle"])
 
 
+def subsection_header(title: str, *content: Flowable) -> KeepTogether:
+    """Mesma ideia de `section_header()`, mas pro título de subseção (ex.: "Vigor
+    da Pastagem") — evita o título ficar órfão no rodapé quando o conteúdo logo
+    abaixo é uma imagem grande o suficiente pra empurrar a quebra de página."""
+    return KeepTogether([subsection_title(title), *content])
+
+
 def body_text(text: str) -> Paragraph:
     return Paragraph(text.replace("\n", "<br/>"), _styles["Body"])
 
