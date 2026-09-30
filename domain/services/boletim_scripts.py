@@ -381,15 +381,16 @@ def build_boletim_story(
     emission_date: Optional[date] = None,
 ) -> List[Flowable]:
     """
-    Monta a lista de flowables do boletim: diagnóstico executivo (com uma
-    visão geral da propriedade, uma única vez, logo abaixo das estrelas),
-    pastagem (idade/vigor/LULC), biomassa, tipos de solo, histórico de
-    biomassa, topografia e panorama climático — cada seção temática espacial
-    mostra o mapa temático sozinho, em largura cheia (a imagem de satélite
-    "crua" já apareceu na visão geral, não repete lado a lado em cada seção).
+    Monta a lista de flowables do boletim: diagnóstico executivo (quando o
+    texto LLM está disponível), localização da propriedade (seção 1, imagem
+    de satélite), pastagem (idade/vigor/LULC), biomassa, tipos de solo,
+    histórico de biomassa, topografia e panorama climático — cada seção
+    temática espacial mostra o mapa temático sozinho, em largura cheia (a
+    imagem de satélite "crua" já tem seção própria no início, não repete
+    lado a lado em cada seção).
     """
     emission_date = emission_date or date.today()
-    farm_name = rural_property.id or rural_property.get_metadata("car_code") or "Propriedade"
+    farm_name = rural_property.name or rural_property.id or "Propriedade"
     municipio_uf = _municipio_uf(rural_property)
     pasture_stats_list = property_stats.list_pasture_stats or []
     latest_pasture_stats = pasture_stats_list[-1] if pasture_stats_list else None
@@ -408,6 +409,10 @@ def build_boletim_story(
         pdf.spacer(4),
     ]
 
+    # Diagnóstico do Pasto Legal (texto do LLM + nota em estrelas) — a visão
+    # geral da propriedade NÃO vive aqui: tem seção numerada própria (a 1.),
+    # então a imagem de localização nunca conflita com o diagnóstico vazio
+    # (o agente LLM está desabilitado temporariamente).
     if diagnostic_text:
         score = compute_property_score(latest_pasture_stats, soil_stats)
         story.append(pdf.section_header(
@@ -415,14 +420,18 @@ def build_boletim_story(
             pdf.score_row(score.stars, f"Nota Geral da Propriedade: {score.stars} de 5"),
         ))
         story.append(pdf.spacer(3))
-        if location_image_bytes:
-            story.append(pdf.single_image(location_image_bytes, caption="Visão geral da propriedade", image_height_mm=80))
-            story.append(pdf.spacer(3))
         story.append(pdf.body_text(diagnostic_text))
         story.append(pdf.spacer(4))
 
+    if location_image_bytes:
+        story.append(pdf.section_header(
+            "1. Localização da Propriedade",
+            pdf.single_image(location_image_bytes, caption="Imagem de satélite com o limite do CAR", image_height_mm=90),
+        ))
+        story.append(pdf.spacer(4))
+
     story.append(pdf.section_header(
-        "1. Dados de Pastagem",
+        "2. Dados de Pastagem",
         pdf.single_image(pasture_map_image_bytes, caption="Classificação de pastagem", image_height_mm=90),
     ))
     story.append(pdf.spacer(3))
@@ -434,36 +443,36 @@ def build_boletim_story(
 
     if biomass_map_image_bytes:
         story.append(pdf.section_header(
-            "2. Análise de Biomassa",
+            "3. Análise de Biomassa",
             pdf.single_image(biomass_map_image_bytes, caption="Mapa de biomassa", image_height_mm=90),
         ))
         story.append(pdf.spacer(3))
     else:
-        story.append(pdf.section_header("2. Análise de Biomassa"))
+        story.append(pdf.section_header("3. Análise de Biomassa"))
         story.append(pdf.spacer(3))
     story.extend(_build_biomass_blocks(latest_pasture_stats))
 
     if soil_map_image_bytes or soil_stats:
         story.append(pdf.spacer(4))
         soil_blocks = _build_soil_blocks(soil_stats, soil_map_image_bytes)
-        story.append(pdf.section_header("3. Tipos de Solo", soil_blocks[0]))
+        story.append(pdf.section_header("4. Tipos de Solo", soil_blocks[0]))
         story.extend(soil_blocks[1:])
 
     story.append(pdf.spacer(4))
     history_blocks = _build_biomass_history_blocks(
         biomass_history_image_bytes, biomass_history_start_year, biomass_history_end_year, biomass_history_latest_avg_t_ha,
     )
-    story.append(pdf.section_header("4. Histórico de Biomassa", history_blocks[0]))
+    story.append(pdf.section_header("5. Histórico de Biomassa", history_blocks[0]))
     story.extend(history_blocks[1:])
 
     story.append(pdf.spacer(4))
     topo_blocks = _build_topographic_blocks(topographic_stats)
-    story.append(pdf.section_header("5. Dados Topográficos", topo_blocks[0]))
+    story.append(pdf.section_header("6. Dados Topográficos", topo_blocks[0]))
     story.extend(topo_blocks[1:])
 
     story.append(pdf.spacer(4))
     climate_blocks = _build_climate_blocks(rain_onset, dry_onset, temperature_outlook, precipitation_outlook)
-    story.append(pdf.section_header("6. Panorama Climático", climate_blocks[0]))
+    story.append(pdf.section_header("7. Panorama Climático", climate_blocks[0]))
     story.extend(climate_blocks[1:])
 
     return story
@@ -474,7 +483,7 @@ def build_boletim_chat_summary(rural_property: Feature, pasture_stats: PastureSt
     compor um resumo criativo) — reduz o boletim a uma única chamada de tool cujo resultado
     a LLM só precisa repassar ao usuário.
     """
-    farm_name = rural_property.id or rural_property.get_metadata("car_code") or "Propriedade"
+    farm_name = rural_property.name or rural_property.id or "Propriedade"
 
     reference_year = None
     pasture_area_ha = None

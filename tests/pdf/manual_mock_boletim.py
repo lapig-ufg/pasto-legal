@@ -44,6 +44,11 @@ def main() -> None:
         vigor_map_image_bytes=_mock_image_bytes((215, 25, 28)),
         biomass_map_image_bytes=_mock_image_bytes((150, 70, 130)),
         soil_map_image_bytes=_mock_image_bytes((168, 56, 0)),
+        diagnostic_text=(
+            "Esta propriedade apresenta bom vigor geral, com a maior parte da área "
+            "de pastagem em níveis médios e altos. A idade predominante da pastagem "
+            "favorece a produtividade, e a textura do solo é adequada ao manejo."
+        ),
     )
     pdf_bytes = render_document(story)
 

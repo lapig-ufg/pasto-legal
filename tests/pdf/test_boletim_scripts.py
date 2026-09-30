@@ -90,8 +90,11 @@ def test_build_boletim_story_renders_valid_pdf_with_expected_content():
     # O código CAR aparece no cabeçalho (ID) e pode quebrar em linhas no layout.
     assert "GO-5205703-5B18B6DF441C4B7FA9444DDC127CF" in text
     assert "6C0" in text
-    assert "Localização da Propriedade" in text
-    assert "Dados de Pastagem" in text
+    # A imagem de satélite vive na seção numerada 1 ("Localização da
+    # Propriedade"), independente do diagnóstico LLM estar vazio.
+    assert "1. Localização da Propriedade" in text
+    assert "Imagem de satélite com o limite do CAR" in text
+    assert "2. Dados de Pastagem" in text
     assert "Análise de Biomassa" in text
     assert "Idade da Pastagem" in text
     assert "Vigor da Pastagem" in text
@@ -127,3 +130,43 @@ def test_build_boletim_story_falls_back_to_id_without_name():
     assert "Fazenda Blue" not in text
     assert "GO-5205703-5B18B6DF441C4B7FA9444DDC127CF" in text
     assert "6C0" in text
+
+
+def test_build_boletim_story_shows_location_image_without_diagnostic_text():
+    """Regressão: a imagem de localização tem seção numerada própria (a 1.),
+    então precisa renderizar mesmo com o texto do diagnóstico LLM ausente —
+    sem isso, ela sumia do boletim enquanto o agente está desabilitado."""
+    rural_property = _build_sample_property()
+    stats = build_placeholder_property_stats(rural_property.get_metadata("car_code"))
+
+    story = _build_full_story(rural_property, stats, diagnostic_text=None)
+    pdf_bytes = render_document(story)
+
+    reader = PdfReader(BytesIO(pdf_bytes))
+    text = "".join(page.extract_text() for page in reader.pages)
+
+    assert "1. Localização da Propriedade" in text
+    assert "Imagem de satélite com o limite do CAR" in text
+    assert len(reader.pages[0].images) >= 1
+    assert "2. Dados de Pastagem" in text
+    # Diagnóstico ausente: a seção (e as estrelas) some inteira.
+    assert "Diagnóstico do Pasto Legal" not in text
+
+
+def test_build_boletim_story_includes_diagnostic_section_when_provided():
+    rural_property = _build_sample_property()
+    stats = build_placeholder_property_stats(rural_property.get_metadata("car_code"))
+
+    story = _build_full_story(
+        rural_property, stats, diagnostic_text="Esta propriedade apresenta bom vigor geral.",
+    )
+    pdf_bytes = render_document(story)
+
+    reader = PdfReader(BytesIO(pdf_bytes))
+    text = "".join(page.extract_text() for page in reader.pages)
+
+    assert "Diagnóstico do Pasto Legal" in text
+    assert "Esta propriedade apresenta bom vigor geral." in text
+    assert "Nota Geral da Propriedade" in text
+    # A localização continua na seção 1 mesmo com o diagnóstico presente.
+    assert "1. Localização da Propriedade" in text
