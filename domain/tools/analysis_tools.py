@@ -12,23 +12,31 @@ from semente.logging import log_debug, log_warning, log_error
 
 from semente.configs.prompts import get_tool_description, get_tool_result_text
 from semente.hooks.tool_hooks import validate_selected_property_hook
+
 from domain.services.video import gif_bytes_to_mp4_bytes
 from domain.services.geospatial.image import append_continuous_colorbar, draw_corner_label
 from domain.services.geospatial.gee import (
     BIOMASS_VIDEO_PALETTE,
     retrieve_feature_images,
-    retrieve_mapbiomas_biomass_image,
+    retrieve_gpw_biomass_image,
     retrieve_t2g_biomass_image,
     retrieve_t2g_biomass_video,
     retrieve_pasture_vigor_image,
     retrieve_feature_soil_texture_image,
+    get_soil_texture_stats,
     query_pasture_statistics,
     query_topographic_stats,
     )
 from domain.services.geospatial.pasture_classification import classify_pasture_on_the_fly
-from domain.services.boletim_scripts import build_boletim_chat_summary, build_boletim_story
+from domain.services.geospatial.pasture_biomass import estimate_pasture_biomass_history
+from domain.services.geospatial.pasture_age import estimate_pasture_age_on_the_fly
+from domain.services.geospatial.pasture_vigor import estimate_pasture_vigor_on_the_fly
+from domain.services.geospatial.season_forecast import get_rain_onset, get_dry_season_onset
+from domain.services.geospatial.climate_outlook import estimate_monthly_precipitation_outlook, estimate_temperature_outlook
+from domain.services.boletim_scripts import build_boletim_chat_summary, build_boletim_story, generate_boletim_diagnostic
 from domain.services.pdf_scripts import render_document
 from domain.schemas.property_stats import PastureStats, PropertyStats, TopographicStats
+from domain.schemas.feature import Feature
 from domain.utils.feature_utils import resolve_feature
 import ee
 
@@ -107,7 +115,7 @@ def generate_biomass_image(run_context: RunContext, feature_id: str) -> ToolResu
                 images=[Image(content=buffer.getvalue())]
             )
 
-        img = retrieve_mapbiomas_biomass_image(selected_property.get_coords(), year=2024)
+        img = retrieve_gpw_biomass_image(selected_property.get_coords())
 
         buffer = BytesIO()
         img.save(buffer, format="PNG")
@@ -454,6 +462,19 @@ def _pil_to_png_bytes(img) -> bytes:
     return buffer.getvalue()
 
 
+def _cache_key_for(selected_property: Feature) -> str:
+    """
+    Chave estável pros caches de `classify_pasture_on_the_fly`/`estimate_pasture_*`
+    (`app/services/geospatial/pasture_cache.py`) — usa o código CAR real
+    (imutável, único por propriedade) em vez de `selected_property.id`
+    (o NOME escolhido pelo usuário, mutável e nada único: duas propriedades
+    diferentes chamadas "Fazenda Jaraguá" colidem no mesmo arquivo de cache e
+    uma mostra silenciosamente o mapa/histórico da outra). Cai pro id só pra
+    feições sem CAR (ex.: buffer_area registrada por coordenada/URL).
+    """
+    return selected_property.get_metadata("car_code") or selected_property.id
+
+
 def _safe_fetch_image(label: str, fetch_fn):
     """Busca um mapa 'extra' do boletim sem derrubar o PDF inteiro se essa camada específica falhar."""
     try:
@@ -500,7 +521,7 @@ def generate_property_boletim(run_context: RunContext, feature_id: str) -> ToolR
         location_image = retrieve_feature_images(coords)[0]
 
         roi = ee.Geometry.MultiPolygon(coords)
-        pasture_result = classify_pasture_on_the_fly(roi=roi, feature_id=selected_property.id)
+        pasture_result = classify_pasture_on_the_fly(roi=roi, car_code=_cache_key_for(selected_property))
         pasture_map_image = pasture_result["imagem"]
 
         def _fetch_biomass_image():
@@ -508,11 +529,30 @@ def generate_property_boletim(run_context: RunContext, feature_id: str) -> ToolR
             if result is not None:
                 biomass_img, _target_year, _target_month = result
                 return biomass_img
-            return retrieve_mapbiomas_biomass_image(coords, year=2024)
+            return retrieve_gpw_biomass_image(coords)
 
         biomass_map_image = _safe_fetch_image("mapa de biomassa", _fetch_biomass_image)
         vigor_map_image = _safe_fetch_image("mapa de vigor", lambda: retrieve_pasture_vigor_image(coords))
         soil_map_image = _safe_fetch_image("mapa de textura do solo", lambda: retrieve_feature_soil_texture_image(coords))
+
+        soil_stats = _safe_fetch_image("estatísticas de solo", lambda: get_soil_texture_stats(roi=roi))
+        topographic_stats = _safe_fetch_image("dados topográficos", lambda: query_topographic_stats(coords=coords))
+
+        biomass_history = _safe_fetch_image("histórico de biomassa", lambda: estimate_pasture_biomass_history(roi=roi, car_code=_cache_key_for(selected_property)))
+        biomass_history_image_bytes = _pil_to_png_bytes(biomass_history["imagem"]) if biomass_history else None
+        biomass_history_start_year = biomass_history["history_start_year"] if biomass_history else None
+        biomass_history_end_year = biomass_history["history_end_year"] if biomass_history else None
+        biomass_history_latest_avg_t_ha = (
+            biomass_history["yearly_avg_t_ha"].get(biomass_history_end_year) if biomass_history else None
+        )
+
+        latitude, longitude = selected_property.get_centroid()
+        rain_onset = _safe_fetch_image("início da estação chuvosa", lambda: get_rain_onset(latitude, longitude, today))
+        dry_onset = _safe_fetch_image("início da estação seca", lambda: get_dry_season_onset(latitude, longitude, today))
+        temperature_outlook = _safe_fetch_image("previsão de temperatura", lambda: estimate_temperature_outlook(latitude, longitude))
+        precipitation_outlook = _safe_fetch_image("previsão de precipitação", lambda: estimate_monthly_precipitation_outlook(latitude, longitude))
+
+        diagnostic_text = generate_boletim_diagnostic(pasture_stats, soil_stats)
 
         story = build_boletim_story(
             selected_property,
@@ -522,6 +562,17 @@ def generate_property_boletim(run_context: RunContext, feature_id: str) -> ToolR
             vigor_map_image_bytes=_pil_to_png_bytes(vigor_map_image) if vigor_map_image else None,
             biomass_map_image_bytes=_pil_to_png_bytes(biomass_map_image) if biomass_map_image else None,
             soil_map_image_bytes=_pil_to_png_bytes(soil_map_image) if soil_map_image else None,
+            soil_stats=soil_stats,
+            diagnostic_text=diagnostic_text,
+            biomass_history_image_bytes=biomass_history_image_bytes,
+            biomass_history_start_year=biomass_history_start_year,
+            biomass_history_end_year=biomass_history_end_year,
+            biomass_history_latest_avg_t_ha=biomass_history_latest_avg_t_ha,
+            topographic_stats=topographic_stats,
+            rain_onset=rain_onset,
+            dry_onset=dry_onset,
+            temperature_outlook=temperature_outlook,
+            precipitation_outlook=precipitation_outlook,
         )
         pdf_bytes = render_document(story)
 

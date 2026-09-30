@@ -157,22 +157,95 @@ analysis_tools:
   generate_property_boletim:
     description: |
       Gera um boletim em PDF consolidando as análises da propriedade rural — localização,
-      classificação de pastagem, biomassa, vigor e tipos de solo — com os mapas
-      correspondentes, pronto para compartilhar com agrônomos ou parceiros.
+      classificação de pastagem, biomassa, vigor, tipos de solo, histórico de biomassa
+      (série 2000-atual), topografia e panorama climático (chuva/temperatura previstos) —
+      com os mapas e gráficos correspondentes, pronto para compartilhar com agrônomos ou
+      parceiros.
 
       IMPORTANTE: a biomassa é calculada para o mês/ano atual; idade, vigor e uso do
       solo (LULC) refletem o ano mais recente disponível no MapBiomas (2024). Avise o
       usuário sobre essa defasagem ao entregar o boletim.
 
       Use apenas quando o usuário pedir explicitamente um boletim, relatório ou PDF
-      para compartilhar ou baixar. A geração consulta o satélite e gera vários mapas em
-      tempo real, podendo levar dezenas de segundos.
+      para compartilhar ou baixar. A geração consulta o satélite, o histórico de biomassa
+      (exportação pixel a pixel) e serviços de previsão do tempo, podendo levar alguns
+      minutos na primeira vez (chamadas seguintes para a mesma propriedade são mais
+      rápidas graças ao cache do histórico de biomassa).
 
       params:
           feature_id (str): Identificador (id) da feição registrada.
 
       Return:
           ToolResult: Arquivo PDF do boletim com dados e mapas reais da propriedade.
+    results:
+      feature_not_found: |
+        Feição não encontrada: {feature_id}.
+      error: |
+        Erro inesperado: {error}.
+  get_pasture_biomass_history:
+    description: |
+      Recupera a série histórica (2000 até o ano mais recente disponível) de biomassa seca
+      de pastagem da propriedade, estimada a partir do Global Pasture Watch (GPW), com um
+      gráfico de tendência.
+
+      Use quando o usuário perguntar sobre a evolução/tendência da biomassa da pastagem ao
+      longo dos anos, não apenas o valor mais recente. Resolução nativa da fonte (GPW) é
+      30m, reamostrada pra grade de 10m — não inventa precisão espacial por talhão maior
+      que a da fonte.
+
+      params:
+          feature_id (str): Identificador (id) da feição registrada.
+
+      Return:
+          ToolResult: Tabela ano -> biomassa média (t/ha) e um gráfico de tendência em PNG.
+    results:
+      feature_not_found: |
+        Feição não encontrada: {feature_id}.
+      error: |
+        Erro inesperado: {error}.
+
+  get_pasture_age_on_the_fly:
+    description: |
+      Estima a idade da pastagem (em anos) on-the-fly para o ano mais recente possível,
+      combinando a idade do MapBiomas no último ano disponível com a classificação de
+      pastagem on-the-fly do ano seguinte (áreas que continuam pastagem ganham +1 ano;
+      pastagem nova começa em 1 ano). Gera um mapa colorido por faixa de idade — inclui
+      uma classe "≥40 (idade real indeterminada)" pra pixels cujo dado de origem é
+      censurado (pastagem já madura antes do início da série, idade real desconhecida).
+
+      Use quando o usuário perguntar pela idade da pastagem e quiser o dado mais atual
+      possível, não travado no último ano do MapBiomas. Resolução nativa do asset de
+      idade é 30m, reamostrada pra grade de 10m — não inventa precisão espacial por
+      talhão maior que a da fonte.
+
+      params:
+          feature_id (str): Identificador (id) da feição registrada.
+
+      Return:
+          ToolResult: Área (ha) por faixa de idade e um mapa PNG da propriedade.
+    results:
+      feature_not_found: |
+        Feição não encontrada: {feature_id}.
+      error: |
+        Erro inesperado: {error}.
+
+  get_pasture_vigor_on_the_fly:
+    description: |
+      Estima o vigor da pastagem (Baixo/Médio/Alto) on-the-fly para o ano mais recente
+      possível, usando regressão harmônica sobre NDVI (Sentinel-2 + Cloud Score+)
+      calibrada, dentro da própria propriedade, contra o asset estático de vigor do
+      MapBiomas no último ano disponível. É uma estimativa heurística própria, não a
+      metodologia oficial do MapBiomas — avise o usuário disso ao entregar o resultado,
+      especialmente se a calibração cair no modo de limiar fixo (fallback).
+
+      Use quando o usuário perguntar pelo vigor da pastagem e quiser o dado mais atual
+      possível, não travado no último ano do MapBiomas.
+
+      params:
+          feature_id (str): Identificador (id) da feição registrada.
+
+      Return:
+          ToolResult: Área (ha) por classe de vigor e um mapa PNG da propriedade.
     results:
       feature_not_found: |
         Feição não encontrada: {feature_id}.
@@ -550,6 +623,12 @@ property_tools:
       Confirma a propriedade encontrada quando a busca retorna apenas um resultado único.
 
       Use esta ferramenta quando a ferramenta 'query_car' encontrar apenas 1 imóvel e o usuário confirmar que está correto (ex: dizendo "Sim", "É essa mesmo").
+
+      Se o usuário já disser o nome desejado NA MESMA mensagem da confirmação
+      (ex: "Sim, confirmo. Pode chamar de Fazenda Boa Vista"), passe esse nome
+      no parâmetro `name` — o cadastro é concluído imediatamente, sem esperar
+      outro turno. Sem isso, o usuário fica sem acesso às ferramentas de
+      análise (boletim, mapas etc.) até responder de novo com o nome.
     results:
       no_pending_property: |
         Não há propriedade pendente de confirmação. Realize uma busca primeiro.

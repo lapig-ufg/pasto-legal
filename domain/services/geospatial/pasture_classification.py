@@ -4,16 +4,17 @@ import traceback
 from io import BytesIO
 from typing import Dict, Tuple
 
-import affine
 import ee
 import PIL
 import requests
 import xarray as xr
 
-from semente.logging import log_error, log_info
+from agno.utils.log import log_error, log_info
 
 from domain.services.geospatial.gee import _FEATURE_BUFFER, _IMAGE_DIMENSION, _draw_feature_boundaries, _get_base_image
+from domain.services.geospatial.image import append_discrete_legend
 from domain.services.geospatial.pasture_cache import cache_exists, load_cache, save_cache
+from domain.services.geospatial.xee_grid import _native_crs, _utm_grid
 
 
 _EMBEDDING_ASSET = "GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL"
@@ -32,43 +33,9 @@ _SCALE = 10
 
 _MASK_VALUE = -32768
 
-
-def _utm_grid(roi: ee.Geometry, crs: str, scale: int) -> Tuple[affine.Affine, int, int]:
-    """
-    Compute the pixel grid for the property's bounding box projected onto the target CRS.
-
-    The Xee API (0.1.1) requires the explicit grid (crs_transform + shape_2d)
-    instead of scale/geometry, so we derive the affine transform and dimensions.
-
-    Args:
-        roi (ee.Geometry): Property geometry.
-        crs (str): Target metric CRS (e.g. "EPSG:32722").
-        scale (int): Pixel size in meters.
-
-    Returns:
-        Tuple[affine.Affine, int, int]: transform, width (x) and height (y) in pixels.
-    """
-    projection = ee.Projection(crs)
-    ring = ee.List(roi.bounds(1).transform(projection, 1).coordinates().get(0)).getInfo()
-
-    xs = [point[0] for point in ring]
-    ys = [point[1] for point in ring]
-
-    x_min = (min(xs) // scale) * scale
-    x_max = -(-max(xs) // scale) * scale
-    y_min = (min(ys) // scale) * scale
-    y_max = -(-max(ys) // scale) * scale
-
-    width = round((x_max - x_min) / scale)
-    height = round((y_max - y_min) / scale)
-    transform = affine.Affine(scale, 0, x_min, 0, -scale, y_max)
-
-    return transform, width, height
-
-
-def _native_crs(collection: ee.ImageCollection) -> str:
-    """Return the native (metric) CRS of the first image in the collection."""
-    return collection.select(0).projection().getInfo()["crs"]
+# Bump sempre que a lógica de amostragem/treino/classificação mudar — invalida
+# cache antigo em vez de servir resultado stale de uma versão anterior do algoritmo.
+_CACHE_VERSION = "v2"
 
 
 def _embedding(roi: ee.Geometry, year: int) -> ee.Image:
@@ -170,9 +137,12 @@ def _render_classification_image(roi: ee.Geometry, classified: ee.Image, base_ye
         base_year (int): Year of the base satellite image.
 
     Returns:
-        PIL.Image.Image: PNG ready to be sent.
+        PIL.Image.Image: PNG com título e legenda, mesmo padrão visual das
+        outras camadas on-the-fly (idade, vigor, biomassa).
     """
-    overlay = classified.selfMask().visualize(palette=["00c800"])
+    _PASTURE_COLOR = "#00c800"
+
+    overlay = classified.selfMask().visualize(palette=[_PASTURE_COLOR.lstrip("#")])
     base = _get_base_image(roi=roi, year=base_year)
     boundary = _draw_feature_boundaries(roi=roi)
 
@@ -181,10 +151,38 @@ def _render_classification_image(roi: ee.Geometry, classified: ee.Image, base_ye
 
     response = requests.get(url, timeout=60)
     response.raise_for_status()
-    return PIL.Image.open(BytesIO(response.content))
+
+    img_pil = PIL.Image.open(BytesIO(response.content))
+    return append_discrete_legend(
+        img_pil, f"Classificação de Pastagem ({base_year})", {"Pastagem": _PASTURE_COLOR}
+    )
 
 
-def classify_pasture_on_the_fly(roi: ee.Geometry, feature_id: str, pred_year: int = None, train_year: int = None) -> Dict:
+def _classify(roi: ee.Geometry, train_year: int, pred_year: int) -> Tuple[ee.Image, ee.Image]:
+    """
+    Train the RandomForest on `train_year` samples and classify `pred_year`'s embedding.
+
+    Args:
+        roi (ee.Geometry): Property geometry.
+        train_year (int): Training year (MapBiomas samples + embedding).
+        pred_year (int): Target year for classification.
+
+    Returns:
+        Tuple[ee.Image, ee.Image]: (classified binary "pasto" image, the pred_year
+        embedding image used for it — reused elsewhere as the CRS/grid reference).
+    """
+    embedding_check = _embedding(roi=roi, year=pred_year)
+    if embedding_check.getInfo() is None:
+        raise ValueError(f"Satellite Embedding {pred_year} not yet available for this property.")
+
+    fc, bandnames = _samples(roi=roi, train_year=train_year)
+    classifier = ee.Classifier.smileRandomForest(_RF_TREES).train(fc, "pasto", bandnames)
+    classified = embedding_check.classify(classifier).rename("pasto").clip(roi)
+
+    return classified, embedding_check
+
+
+def classify_pasture_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int = None, train_year: int = None) -> Dict:
     """
     Classify pasture/not-pasture for the most recent available year and map the property.
 
@@ -198,7 +196,7 @@ def classify_pasture_on_the_fly(roi: ee.Geometry, feature_id: str, pred_year: in
 
     Args:
         roi (ee.Geometry): Property geometry (MultiPolygon).
-        feature_id (str): Feature id — used as the cache key.
+        car_code (str): CAR code(s) of the property — used as the cache key.
         pred_year (int, optional): Target year for classification. Defaults to train_year + 1.
         train_year (int, optional): Training year (MapBiomas samples + embedding). Defaults to the most recent year available in MapBiomas.
 
@@ -209,12 +207,13 @@ def classify_pasture_on_the_fly(roi: ee.Geometry, feature_id: str, pred_year: in
     try:
         train_year = train_year or _latest_mapbiomas_year()
         pred_year = pred_year or (train_year + 1)
+        cache_key = f"{pred_year}_{_CACHE_VERSION}"
 
-        if cache_exists(feature_id, pred_year):
-            dataset, image = load_cache(feature_id, pred_year)
+        if cache_exists(car_code, cache_key):
+            dataset, image = load_cache(car_code, cache_key)
             pasto = dataset["pasto"].isel(time=0)
             area_ha = _area_ha_from_pasto(pasto)
-            log_info(f"[{feature_id}] pasture cache hit ({pred_year}): {area_ha} ha")
+            log_info(f"[{car_code}] pasture cache hit ({pred_year}): {area_ha} ha")
             return {
                 "imagem": image,
                 "area_pasto_ha": round(area_ha, 4),
@@ -225,13 +224,7 @@ def classify_pasture_on_the_fly(roi: ee.Geometry, feature_id: str, pred_year: in
 
         start = time.perf_counter()
 
-        embedding_check = _embedding(roi=roi, year=pred_year)
-        if embedding_check.getInfo() is None:
-            raise ValueError(f"Satellite Embedding {pred_year} not yet available for this property.")
-
-        fc, bandnames = _samples(roi=roi, train_year=train_year)
-        classifier = ee.Classifier.smileRandomForest(_RF_TREES).train(fc, "pasto", bandnames)
-        classified = (embedding_check.classify(classifier).rename("pasto").clip(roi))
+        classified, embedding_check = _classify(roi=roi, train_year=train_year, pred_year=pred_year)
 
         ts = ee.Date(f"{pred_year}-01-01").millis()
         collection = ee.ImageCollection([classified.set("system:time_start", ts)])
@@ -247,9 +240,9 @@ def classify_pasture_on_the_fly(roi: ee.Geometry, feature_id: str, pred_year: in
         area_ha = _area_ha_from_pasto(pasto)
 
         image = _render_classification_image(roi=roi, classified=classified, base_year=pred_year)
-        save_cache(feature_id, pred_year, dataset, image)
+        save_cache(car_code, cache_key, dataset, image)
 
-        log_info(f"[{feature_id}] classify_pasture_on_the_fly {pred_year}: {area_ha} ha em {time.perf_counter() - start:.2f}s")
+        log_info(f"[{car_code}] classify_pasture_on_the_fly {pred_year}: {area_ha} ha em {time.perf_counter() - start:.2f}s")
 
         return {
             "imagem": image,
@@ -261,10 +254,10 @@ def classify_pasture_on_the_fly(roi: ee.Geometry, feature_id: str, pred_year: in
 
     except ValueError as error:
         log_error(traceback.format_exc())
-        raise RuntimeError(f"[{feature_id}] {error}")
+        raise RuntimeError(f"[{car_code}] {error}")
     except ee.EEException as error:
         log_error(traceback.format_exc())
-        raise RuntimeError(f"[{feature_id}] Earth Engine failed while classifying pasture: {error}")
+        raise RuntimeError(f"[{car_code}] Earth Engine failed while classifying pasture: {error}")
     except Exception as error:
         log_error(traceback.format_exc())
-        raise RuntimeError(f"[{feature_id}] Unexpected error while classifying pasture: {error}")
+        raise RuntimeError(f"[{car_code}] Unexpected error while classifying pasture: {error}")

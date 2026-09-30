@@ -1,3 +1,4 @@
+import math
 from io import BytesIO
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -7,7 +8,10 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import Flowable, Image as RLImage, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.graphics.shapes import Drawing, Polygon
+from reportlab.platypus import (
+    Flowable, Image as RLImage, KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+)
 from svglib.svglib import svg2rlg
 
 
@@ -105,6 +109,60 @@ def _logo_drawing(height_mm: float = 14):
     return drawing
 
 
+def _star_points(cx: float, cy: float, outer_r: float, inner_r: float) -> List[float]:
+    """Vértices (x0,y0,x1,y1,...) de uma estrela de 5 pontas, alternando raio externo/interno."""
+    points: List[float] = []
+    for i in range(10):
+        radius = outer_r if i % 2 == 0 else inner_r
+        angle = math.pi / 2 + i * (math.pi / 5)
+        points.append(cx + radius * math.cos(angle))
+        points.append(cy + radius * math.sin(angle))
+    return points
+
+
+def star_rating(filled: int, total: int = 5, star_size_mm: float = 6) -> Drawing:
+    """
+    Desenha `total` estrelas lado a lado (as primeiras `filled` preenchidas em
+    dourado, o resto só contornadas) — evita depender de glifos Unicode de
+    estrela (★/☆), que não têm cobertura garantida nas fontes base do
+    ReportLab e podem renderizar errado dependendo do visualizador de PDF.
+    """
+    star_size = star_size_mm * mm
+    gap = star_size * 0.2
+    width = total * star_size + (total - 1) * gap
+    drawing = Drawing(width, star_size)
+
+    for i in range(total):
+        cx = star_size / 2 + i * (star_size + gap)
+        cy = star_size / 2
+        points = _star_points(cx, cy, star_size / 2 * 0.95, star_size / 2 * 0.95 * 0.38)
+        is_filled = i < filled
+        drawing.add(Polygon(
+            points,
+            fillColor=_COLOR_GOLD if is_filled else colors.white,
+            strokeColor=_COLOR_GOLD,
+            strokeWidth=1,
+        ))
+
+    return drawing
+
+
+def score_row(stars: int, label: str, total: int = 5) -> Table:
+    """Estrelas + um rótulo textual ao lado (ex.: nota geral da propriedade)."""
+    stars_drawing = star_rating(stars, total)
+    gap = 4 * mm
+    table = Table(
+        [[stars_drawing, Paragraph(label, _styles["Body"])]],
+        colWidths=[stars_drawing.width + gap, None],
+    )
+    table.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    return table
+
+
 def masthead(title: str, subtitle: str) -> Table:
     """Cabeçalho em faixa verde-escura com a logo oficial — abre o boletim."""
     text_cell = [Paragraph(title, _styles["MastheadTitle"]), Paragraph(subtitle, _styles["MastheadSubtitle"])]
@@ -137,6 +195,13 @@ def section_title(text: str) -> Table:
 
 def subsection_title(text: str) -> Paragraph:
     return Paragraph(text, _styles["SubSectionTitle"])
+
+
+def subsection_header(title: str, *content: Flowable) -> KeepTogether:
+    """Mesma ideia de `section_header()`, mas pro título de subseção (ex.: "Vigor
+    da Pastagem") — evita o título ficar órfão no rodapé quando o conteúdo logo
+    abaixo é uma imagem grande o suficiente pra empurrar a quebra de página."""
+    return KeepTogether([subsection_title(title), *content])
 
 
 def body_text(text: str) -> Paragraph:
@@ -251,6 +316,16 @@ def single_image(image_bytes: bytes, caption: str = "", image_height_mm: float =
         ("TOPPADDING", (0, 0), (-1, -1), 0),
     ]))
     return table
+
+
+def section_header(title: str, *content: Flowable) -> KeepTogether:
+    """
+    Título de seção + espaçamento + o(s) primeiro(s) flowable(s) que vêm logo
+    abaixo, presos num só bloco — sem isso, o `SimpleDocTemplate` pode quebrar
+    a página bem depois do título, deixando ele sozinho no rodapé da página
+    anterior e o conteúdo começando "do nada" na página seguinte.
+    """
+    return KeepTogether([section_title(title), spacer(3), *content])
 
 
 def page_break() -> PageBreak:

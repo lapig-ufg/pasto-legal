@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -12,11 +12,22 @@ class Value(BaseModel):
 
 class BiomassStats(BaseModel):
     observation_year: int = Field(..., description="Ano de referência.")
+    period: Literal["mensal", "anual"] = Field(
+        ...,
+        description=(
+            "Se `amount` é a biomassa acumulada em 1 mês (fonte T2G) ou no ano inteiro (fallback GPW). "
+            "Campo estrutural — não deduzir isso só pelo texto de `amount.unity`. Nunca use um valor "
+            "'mensal' diretamente em fórmulas que esperam total anual (ex.: capacidade de suporte "
+            "animal) sem antes converter."
+        ),
+    )
     amount: Value = Field(..., description="Estimativa da massa biológica total acumulada na vegetação da área analisada.")
 
     def __str__(self) -> str:
+        aviso = " (⚠️ mensal — multiplique por 12 antes de usar em fórmulas anuais)" if self.period == "mensal" else " (já é o total do ano)"
         return (
             f"- Ano de Referência: {self.observation_year}\n"
+            f"- Período de acumulação: {self.period}{aviso}\n"
             f"- Estimativa de Massa Biológica Acumulada na Vegetação: {self.amount}"
         )
 
@@ -81,6 +92,26 @@ class LULCStats(BaseModel):
         )
 
 
+class SoilData(BaseModel):
+    soil_class: str = Field(..., description="Classe textural do solo (0-30cm).")
+    amount: Value = Field(..., description="Área territorial ocupada pela classe textural.")
+
+    def __str__(self) -> str:
+        return f"  * Classe textural '{self.soil_class}': {self.amount} ocupados."
+
+
+class SoilStats(BaseModel):
+    observation_year: int = Field(..., description="Ano de referência do mapeamento.")
+    data: List[SoilData] = Field(..., description="Classes de textura de solo presentes na propriedade.")
+
+    def __str__(self) -> str:
+        linhas_dados = "\n".join(str(item) for item in self.data)
+        return (
+            f"- Ano de Referência: {self.observation_year}\n"
+            f"- Mapeamento de textura do solo (0-30cm):\n{linhas_dados}"
+        )
+
+
 class PastureStats(BaseModel):
     biomass_stats: Optional[BiomassStats] = Field(None, description="Dados de produtividade primária (biomassa).")
     age_stats: Optional[AgeStats] = Field(None, description="Distribuição histórica da pastagem.")
@@ -137,7 +168,7 @@ class PropertyStats(BaseModel):
         description="Indicadores biofísicos e geográficos da área de pastagem.",
         default_factory=list
     )
-    list_soil_texture_stats: Optional[List[TopographicStats]] = Field(
+    list_soil_texture_stats: Optional[List[SoilStats]] = Field(
         description="Mapeamento de textura de solo.",
         default_factory=list
     )
