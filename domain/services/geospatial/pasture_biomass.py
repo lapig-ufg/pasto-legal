@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import PIL.Image
 import xarray as xr
 
-from agno.utils.log import log_error, log_info
+from semente.logging import log_error, log_info
 
 from domain.services.geospatial.pasture_cache import cache_exists, load_cache, save_cache
 from domain.services.geospatial.xee_grid import _utm_grid

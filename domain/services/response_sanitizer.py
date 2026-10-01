@@ -1,7 +1,7 @@
 import re
 from typing import Optional
 
-from agno.utils.log import log_error
+from semente.logging import log_error
 
 
 _LEAK_START_PATTERNS = [

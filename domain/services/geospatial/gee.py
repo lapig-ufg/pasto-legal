@@ -10,7 +10,7 @@ from typing import List, Optional, Tuple
 from PIL import ImageDraw, ImageFont
 from shapely.geometry import shape as shapely_shape
 
-from agno.utils.log import log_error, log_warning
+from semente.logging import log_error, log_warning
 
 from semente.configs.config import config
 

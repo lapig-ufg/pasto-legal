@@ -2,7 +2,7 @@ import datetime
 from datetime import date
 from typing import List, NamedTuple, Optional, Tuple
 
-from agno.utils.log import log_warning
+from semente.logging import log_warning
 from reportlab.platypus import Flowable
 
 from domain.schemas.feature import Feature
@@ -170,10 +170,6 @@ def generate_boletim_diagnostic(pasture_stats: Optional[PastureStats], soil_stat
     if pasture_stats is None:
         return None
 
-    # Import local para evitar ciclo: app.agents/__init__.py importa single_agent,
-    # que importa analysis_tools, que importa este módulo.
-    #from domain.agents.boletim_diagnostic_agent import boletim_diagnostic_agent
-
     score = compute_property_score(pasture_stats, soil_stats)
 
     summary_parts = [str(pasture_stats)]
@@ -189,11 +185,16 @@ def generate_boletim_diagnostic(pasture_stats: Optional[PastureStats], soil_stat
     from domain.services.response_sanitizer import strip_leaked_reasoning
 
     try:
-        # response = boletim_diagnostic_agent.run(summary)
-        #content = response.content if response else None
-        #content = strip_leaked_reasoning(content) if isinstance(content, str) else content
-        #return content.strip() if isinstance(content, str) and content.strip() else None
-        return ""
+        # Imports locais para evitar ciclo: domain.agent importa analysis_tools,
+        # que importa este módulo.
+        from semente.backends.base import AgentInput
+
+        from domain.agents.boletim_diagnostic_agent import boletim_diagnostic_agent
+
+        turn = boletim_diagnostic_agent.run(AgentInput(text=summary))
+        content = turn.content if turn else None
+        content = strip_leaked_reasoning(content) if isinstance(content, str) else content
+        return content.strip() if isinstance(content, str) and content.strip() else None
     except Exception as exc:
         log_warning(f"generate_boletim_diagnostic: falha ao gerar diagnóstico: {exc}")
         return None

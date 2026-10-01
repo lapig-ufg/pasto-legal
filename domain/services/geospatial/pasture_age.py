@@ -10,7 +10,7 @@ import PIL.Image
 import requests
 import xarray as xr
 
-from agno.utils.log import log_error, log_info
+from semente.logging import log_error, log_info
 
 from domain.services.geospatial.gee import _FEATURE_BUFFER, _IMAGE_DIMENSION, _draw_feature_boundaries, _get_base_image
 from domain.services.geospatial.image import append_discrete_legend
