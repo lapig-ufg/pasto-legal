@@ -15,7 +15,7 @@ def mock_property():
 
                 print(f"⚠️  [MOCK] Ignorando execução de: {func.__name__}", flush=True)
                 
-                dir_path = Path("app/utils/mocks/property_mock.json").resolve()
+                dir_path = Path(__file__).resolve().parent / "mocks" / "property_mock.json"
                 
                 try:
                     with open(dir_path, "r", encoding="utf-8") as file:

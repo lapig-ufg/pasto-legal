@@ -78,3 +78,5 @@ def save_cache(car_code: str, key: Union[str, int], dataset: xr.Dataset, image: 
         return
 
     Path(zarr_path).parent.mkdir(parents=True, exist_ok=True)
+    dataset.to_zarr(zarr_path, mode="w")
+    image.save(png_path)

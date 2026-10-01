@@ -202,7 +202,7 @@ def test_overlay_colorbar_rejects_mismatched_dates():
 def _load_first_mock_coords():
     import json
 
-    mock_path = Path(__file__).resolve().parents[2] / "app/utils/mocks/new_property_mock.json"
+    mock_path = Path(__file__).resolve().parents[2] / "domain/utils/mocks/new_property_mock.json"
     features = json.loads(mock_path.read_text())["features"]
     geom = features[0]["geometry"]
     return geom["coordinates"] if geom["type"] == "MultiPolygon" else [geom["coordinates"]]

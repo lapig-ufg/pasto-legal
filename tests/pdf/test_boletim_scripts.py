@@ -10,6 +10,8 @@ o layout lado a lado.
 import os
 from io import BytesIO
 
+import datetime
+
 from semente.configs.prompts import set_prompts_dir
 
 # The domain package eagerly imports the GEE-bound agent; mock Earth Engine and
@@ -25,7 +27,24 @@ from PIL import Image as PILImage  # noqa: E402
 from pypdf import PdfReader  # noqa: E402
 
 from domain.schemas.feature import Feature, FeatureMetadata  # noqa: E402
-from domain.services.boletim_scripts import build_boletim_story, build_placeholder_property_stats  # noqa: E402
+from domain.schemas.property_stats import (  # noqa: E402
+    AgeData,
+    AgeStats,
+    PastureStats,
+    SoilData,
+    SoilStats,
+    TopographicStats,
+    Value,
+    VigorData,
+    VigorStats,
+)
+from domain.services.boletim_scripts import (  # noqa: E402
+    _format_season_onset,
+    _rows_with_percentage,
+    build_boletim_story,
+    build_placeholder_property_stats,
+    compute_property_score,
+)
 from domain.services.pdf_scripts import render_document  # noqa: E402
 
 
@@ -170,3 +189,239 @@ def test_build_boletim_story_includes_diagnostic_section_when_provided():
     assert "Nota Geral da Propriedade" in text
     # A localização continua na seção 1 mesmo com o diagnóstico presente.
     assert "1. Localização da Propriedade" in text
+
+
+def test_build_boletim_story_omits_municipio_uf_when_region_is_missing():
+    rural_property = _build_sample_property()
+    rural_property.region = None
+    stats = build_placeholder_property_stats(rural_property.get_metadata("car_code"))
+
+    story = _build_full_story(rural_property, stats)
+    pdf_bytes = render_document(story)
+
+    reader = PdfReader(BytesIO(pdf_bytes))
+    text = reader.pages[0].extract_text()
+
+    assert "/GO" not in text
+
+
+def test_build_boletim_story_renders_soil_table_with_percentage():
+    rural_property = _build_sample_property()
+    stats = build_placeholder_property_stats(rural_property.get_metadata("car_code"))
+    soil_stats = SoilStats(
+        observation_year=2026,
+        data=[
+            SoilData(soil_class="Argila", amount=Value(value=15.0, unity="hectares")),
+            SoilData(soil_class="Arenoso", amount=Value(value=5.0, unity="hectares")),
+        ],
+    )
+
+    story = _build_full_story(rural_property, stats, soil_stats=soil_stats)
+    pdf_bytes = render_document(story)
+
+    reader = PdfReader(BytesIO(pdf_bytes))
+    text = "".join(page.extract_text() for page in reader.pages)
+
+    assert "Argila" in text
+    assert "75%" in text  # 15 / (15 + 5)
+    assert "25%" in text  # 5 / (15 + 5)
+
+
+def test_build_boletim_story_includes_new_sections_with_placeholders_when_absent():
+    rural_property = _build_sample_property()
+    stats = build_placeholder_property_stats(rural_property.get_metadata("car_code"))
+
+    story = _build_full_story(rural_property, stats)
+    pdf_bytes = render_document(story)
+
+    reader = PdfReader(BytesIO(pdf_bytes))
+    text = "".join(page.extract_text() for page in reader.pages)
+
+    assert "5. Histórico de Biomassa" in text
+    assert "Histórico de biomassa indisponível" in text
+    assert "6. Dados Topográficos" in text
+    assert "Dados topográficos indisponíveis" in text
+    assert "7. Panorama Climático" in text
+    assert "Panorama climático indisponível" in text
+
+
+def test_build_boletim_story_renders_biomass_history_section():
+    rural_property = _build_sample_property()
+    stats = build_placeholder_property_stats(rural_property.get_metadata("car_code"))
+
+    story = _build_full_story(
+        rural_property, stats,
+        biomass_history_image_bytes=_sample_image_bytes((30, 90, 30)),
+        biomass_history_start_year=2000,
+        biomass_history_end_year=2024,
+        biomass_history_latest_avg_t_ha=3.456,
+    )
+    pdf_bytes = render_document(story)
+
+    reader = PdfReader(BytesIO(pdf_bytes))
+    text = "".join(page.extract_text() for page in reader.pages)
+
+    assert "2000-2024" in text
+    assert "3.46 t MS/ha/ano" in text
+
+
+def test_build_boletim_story_renders_topographic_section():
+    rural_property = _build_sample_property()
+    stats = build_placeholder_property_stats(rural_property.get_metadata("car_code"))
+    topographic_stats = TopographicStats(
+        elevation=Value(value=540.2, unity="metros"),
+        slope=Value(value=5.3, unity="graus"),
+    )
+
+    story = _build_full_story(rural_property, stats, topographic_stats=topographic_stats)
+    pdf_bytes = render_document(story)
+
+    reader = PdfReader(BytesIO(pdf_bytes))
+    text = "".join(page.extract_text() for page in reader.pages)
+
+    assert "540.2 metros" in text
+    assert "5.3 graus" in text
+
+
+def test_build_boletim_story_renders_climate_section():
+    rural_property = _build_sample_property()
+    stats = build_placeholder_property_stats(rural_property.get_metadata("car_code"))
+
+    story = _build_full_story(
+        rural_property, stats,
+        rain_onset="2026-10-15",
+        dry_onset="The dry season is currently underway.",
+        temperature_outlook={"days": 7, "avg_max_c": 31.2, "avg_min_c": 19.8, "max_c": 34.0, "min_c": 17.5},
+        precipitation_outlook=[(datetime.date(2026, 10, 1), 45.3), (datetime.date(2026, 11, 1), 120.7)],
+    )
+    pdf_bytes = render_document(story)
+
+    reader = PdfReader(BytesIO(pdf_bytes))
+    text = "".join(page.extract_text() for page in reader.pages)
+
+    assert "15/10/2026" in text
+    assert "A estação seca já está em curso." in text
+    assert "19.8" in text and "31.2" in text
+    assert "45.3 mm" in text
+    assert "120.7 mm" in text
+
+
+def test_build_boletim_story_shows_missing_forecast_instead_of_fake_zero():
+    """Regressão: mês sem previsão (None) nunca vira '0.0 mm' — isso pareceria
+    'previsão de zero chuva' quando é só 'sem dado disponível'."""
+    rural_property = _build_sample_property()
+    stats = build_placeholder_property_stats(rural_property.get_metadata("car_code"))
+
+    story = _build_full_story(
+        rural_property, stats,
+        precipitation_outlook=[(datetime.date(2026, 10, 1), 45.3), (datetime.date(2026, 11, 1), None)],
+    )
+    pdf_bytes = render_document(story)
+
+    reader = PdfReader(BytesIO(pdf_bytes))
+    text = "".join(page.extract_text() for page in reader.pages)
+
+    assert "45.3 mm" in text
+    assert "sem previsão" in text
+    assert "0.0 mm" not in text
+
+
+def test_rows_with_percentage_sums_to_total():
+    rows = _rows_with_percentage([
+        ("A", Value(value=10.0, unity="ha")),
+        ("B", Value(value=30.0, unity="ha")),
+    ])
+
+    assert rows[0] == ["A", "10.0 ha", "25%"]
+    assert rows[1] == ["B", "30.0 ha", "75%"]
+
+
+def test_rows_with_percentage_handles_zero_total():
+    rows = _rows_with_percentage([("A", Value(value=0.0, unity="ha"))])
+
+    assert rows[0] == ["A", "0.0 ha", "0%"]
+
+
+def test_format_season_onset_formats_iso_date():
+    assert _format_season_onset("2026-10-15") == "15/10/2026"
+
+
+def test_format_season_onset_translates_known_messages():
+    assert _format_season_onset("The rainy season has already begun for this location.") == \
+        "A estação chuvosa já começou nesta localização."
+    assert _format_season_onset("The dry season is currently underway.") == \
+        "A estação seca já está em curso."
+
+
+def test_format_season_onset_passes_through_none():
+    assert _format_season_onset(None) is None
+
+
+def _vigor_stats(alto_ha=0.0, medio_ha=0.0, baixo_ha=0.0) -> VigorStats:
+    data = []
+    if alto_ha:
+        data.append(VigorData(vigor="Alto: pastagens com alto vigor vegetativo.", amount=Value(value=alto_ha, unity="ha")))
+    if medio_ha:
+        data.append(VigorData(vigor="Médio: pastagens com médio vigor vegativo.", amount=Value(value=medio_ha, unity="ha")))
+    if baixo_ha:
+        data.append(VigorData(vigor="Baixo: pastagens com baixo vigor vegetativo.", amount=Value(value=baixo_ha, unity="ha")))
+    return VigorStats(observation_year=2024, data=data)
+
+
+def _age_stats(**by_range) -> AgeStats:
+    return AgeStats(observation_year=2024, data=[
+        AgeData(age=age_range, amount=Value(value=ha, unity="ha")) for age_range, ha in by_range.items()
+    ])
+
+
+def _soil_stats(**by_class) -> SoilStats:
+    return SoilStats(observation_year=2026, data=[
+        SoilData(soil_class=soil_class, amount=Value(value=ha, unity="hectares")) for soil_class, ha in by_class.items()
+    ])
+
+
+def test_compute_property_score_defaults_to_floor_without_any_data():
+    score = compute_property_score(None, None)
+
+    assert score.stars == 3
+    assert "insuficientes" in score.rationale
+
+
+def test_compute_property_score_never_goes_below_3_even_in_worst_case():
+    pasture_stats = PastureStats(vigor_stats=_vigor_stats(baixo_ha=20.0), age_stats=_age_stats(**{"≥40 (idade real indeterminada)": 20.0}))
+    soil_stats = _soil_stats(Arenoso=20.0)
+
+    score = compute_property_score(pasture_stats, soil_stats)
+
+    assert score.stars == 3
+
+
+def test_compute_property_score_rewards_high_vigor():
+    pasture_stats = PastureStats(vigor_stats=_vigor_stats(alto_ha=20.0))
+
+    score = compute_property_score(pasture_stats, None)
+
+    assert score.stars == 5
+    assert "100%" in score.rationale
+
+
+def test_compute_property_score_caps_at_5_in_best_case():
+    pasture_stats = PastureStats(vigor_stats=_vigor_stats(alto_ha=20.0), age_stats=_age_stats(**{"1-10": 20.0}))
+    soil_stats = _soil_stats(Argila=20.0)
+
+    score = compute_property_score(pasture_stats, soil_stats)
+
+    assert score.stars == 5
+
+
+def test_build_boletim_story_renders_score_alongside_diagnostic():
+    rural_property = _build_sample_property()
+    stats = build_placeholder_property_stats(rural_property.get_metadata("car_code"))
+
+    story = _build_full_story(rural_property, stats, diagnostic_text="Esta propriedade apresenta bom vigor geral.")
+    pdf_bytes = render_document(story)
+
+    reader = PdfReader(BytesIO(pdf_bytes))
+    text = reader.pages[0].extract_text()
+
+    assert "Nota Geral da Propriedade" in text
