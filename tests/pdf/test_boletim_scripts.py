@@ -109,11 +109,8 @@ def test_build_boletim_story_renders_valid_pdf_with_expected_content():
     # O código CAR aparece no cabeçalho (ID) e pode quebrar em linhas no layout.
     assert "GO-5205703-5B18B6DF441C4B7FA9444DDC127CF" in text
     assert "6C0" in text
-    # A imagem de satélite vive na seção numerada 1 ("Localização da
-    # Propriedade"), independente do diagnóstico LLM estar vazio.
-    assert "1. Localização da Propriedade" in text
-    assert "Imagem de satélite com o limite do CAR" in text
-    assert "2. Dados de Pastagem" in text
+    assert "Localização da Propriedade" not in text, "Seção própria de localização foi removida (issue #126)"
+    assert "1. Dados de Pastagem" in text
     assert "Análise de Biomassa" in text
     assert "Idade da Pastagem" in text
     assert "Vigor da Pastagem" in text
@@ -151,10 +148,10 @@ def test_build_boletim_story_falls_back_to_id_without_name():
     assert "6C0" in text
 
 
-def test_build_boletim_story_shows_location_image_without_diagnostic_text():
-    """Regressão: a imagem de localização tem seção numerada própria (a 1.),
-    então precisa renderizar mesmo com o texto do diagnóstico LLM ausente —
-    sem isso, ela sumia do boletim enquanto o agente está desabilitado."""
+def test_build_boletim_story_omits_location_image_without_diagnostic_text():
+    """Regressão: a visão geral da propriedade vive dentro do bloco de
+    diagnóstico (issue #126), então sem texto de diagnóstico LLM ela não tem
+    onde aparecer — não existe mais uma seção numerada própria só pra ela."""
     rural_property = _build_sample_property()
     stats = build_placeholder_property_stats(rural_property.get_metadata("car_code"))
 
@@ -164,10 +161,8 @@ def test_build_boletim_story_shows_location_image_without_diagnostic_text():
     reader = PdfReader(BytesIO(pdf_bytes))
     text = "".join(page.extract_text() for page in reader.pages)
 
-    assert "1. Localização da Propriedade" in text
-    assert "Imagem de satélite com o limite do CAR" in text
-    assert len(reader.pages[0].images) >= 1
-    assert "2. Dados de Pastagem" in text
+    assert "Visão geral da propriedade" not in text
+    assert "1. Dados de Pastagem" in text
     # Diagnóstico ausente: a seção (e as estrelas) some inteira.
     assert "Diagnóstico do Pasto Legal" not in text
 
@@ -187,8 +182,9 @@ def test_build_boletim_story_includes_diagnostic_section_when_provided():
     assert "Diagnóstico do Pasto Legal" in text
     assert "Esta propriedade apresenta bom vigor geral." in text
     assert "Nota Geral da Propriedade" in text
-    # A localização continua na seção 1 mesmo com o diagnóstico presente.
-    assert "1. Localização da Propriedade" in text
+    # A visão geral da propriedade aparece uma única vez, dentro do diagnóstico.
+    assert "Visão geral da propriedade" in text
+    assert "Localização da Propriedade" not in text
 
 
 def test_build_boletim_story_omits_municipio_uf_when_region_is_missing():
@@ -237,11 +233,11 @@ def test_build_boletim_story_includes_new_sections_with_placeholders_when_absent
     reader = PdfReader(BytesIO(pdf_bytes))
     text = "".join(page.extract_text() for page in reader.pages)
 
-    assert "5. Histórico de Biomassa" in text
+    assert "4. Histórico de Biomassa" in text
     assert "Histórico de biomassa indisponível" in text
-    assert "6. Dados Topográficos" in text
+    assert "5. Dados Topográficos" in text
     assert "Dados topográficos indisponíveis" in text
-    assert "7. Panorama Climático" in text
+    assert "6. Panorama Climático" in text
     assert "Panorama climático indisponível" in text
 
 
