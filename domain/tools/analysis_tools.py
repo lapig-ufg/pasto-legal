@@ -613,7 +613,7 @@ def get_pasture_biomass_history(run_context: RunContext, feature_id: str) -> Too
             return ToolResult(content=get_tool_result_text("analysis_tools", "get_pasture_biomass_history", "feature_not_found", feature_id=feature_id))
 
         roi = ee.Geometry.MultiPolygon(selected_property.get_coords())
-        result = estimate_pasture_biomass_history(roi=roi, car_code=selected_property.id)
+        result = estimate_pasture_biomass_history(roi=roi, car_code=_cache_key_for(selected_property))
 
         lines = [
             f"- {year}: {value} t/ha" if not math.isnan(value) else f"- {year}: sem pastagem mapeada"
@@ -659,7 +659,7 @@ def get_pasture_age_on_the_fly(run_context: RunContext, feature_id: str) -> Tool
             return ToolResult(content=get_tool_result_text("analysis_tools", "get_pasture_age_on_the_fly", "feature_not_found", feature_id=feature_id))
 
         roi = ee.Geometry.MultiPolygon(selected_property.get_coords())
-        result = estimate_pasture_age_on_the_fly(roi=roi, car_code=selected_property.id)
+        result = estimate_pasture_age_on_the_fly(roi=roi, car_code=_cache_key_for(selected_property))
 
         lines = [f"- {age_range} anos: {area} ha" for age_range, area in sorted(result["area_by_age_class_ha"].items())]
         content = (
@@ -706,7 +706,7 @@ def get_pasture_vigor_on_the_fly(run_context: RunContext, feature_id: str) -> To
             return ToolResult(content=get_tool_result_text("analysis_tools", "get_pasture_vigor_on_the_fly", "feature_not_found", feature_id=feature_id))
 
         roi = ee.Geometry.MultiPolygon(selected_property.get_coords())
-        result = estimate_pasture_vigor_on_the_fly(roi=roi, car_code=selected_property.id)
+        result = estimate_pasture_vigor_on_the_fly(roi=roi, car_code=_cache_key_for(selected_property))
 
         lines = [f"- {vigor_label}: {area} ha" for vigor_label, area in result["area_by_vigor_class_ha"].items()]
         disclaimer = (
