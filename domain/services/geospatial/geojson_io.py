@@ -166,6 +166,19 @@ def _extract_geometry(geojson: Union[bytes, str, dict]):
     return MultiPolygon(polygons), labels
 
 
+def _unique_labels(labels: List[Optional[str]]) -> List[Optional[str]]:
+    """Numbers repeated labels ("Pasto", "Pasto (2)") so every name is unique."""
+    seen: dict = {}
+    unique: List[Optional[str]] = []
+    for label in labels:
+        if label is None:
+            unique.append(None)
+            continue
+        seen[label] = seen.get(label, 0) + 1
+        unique.append(label if seen[label] == 1 else f"{label} ({seen[label]})")
+    return unique
+
+
 def build_features_from_geojson(
     geojson: Union[bytes, str, dict],
 ) -> tuple[Feature, List[Feature]]:
@@ -201,6 +214,7 @@ def build_features_from_geojson(
         return property_feature, []
 
     parts = list(geometry.geoms)
+    labels = _unique_labels(labels)
     paddocks = [
         Feature(
             feature_id=f"Paddock_{index}",
