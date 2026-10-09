@@ -615,7 +615,7 @@ property_tools:
       selection_out_of_range: |
         Seleção inválida. Escolha um número válido entre 1 e {max_selection}.
       success_registered_prompt_name: |
-        A propriedade de identificador {feature_id} foi registrada com sucesso.Seja proativo, pergunte ao usuário se ele gostaria de atribuir um nome para a propriedade.
+        A área de identificador {feature_id} foi confirmada, mas o cadastro só termina quando ela receber um nome. Ainda NÃO diga que foi cadastrada. Peça o nome com uma pergunta aberta, nunca de sim ou não (ex: "Como você quer chamar essa área? Pode ser algo como Fazenda Boa Vista.").
       error: |
         Erro inesperado: {error}.
   confirm_car_selection:
@@ -633,7 +633,7 @@ property_tools:
       no_pending_property: |
         Não há propriedade pendente de confirmação. Realize uma busca primeiro.
       success_registered_prompt_name: |
-        A propriedade de identificador {feature_id} foi registrada com sucesso.Seja proativo, pergunte ao usuário se ele gostaria de atribuir um nome para a propriedade.
+        A área de identificador {feature_id} foi confirmada, mas o cadastro só termina quando ela receber um nome. Ainda NÃO diga que foi cadastrada. Peça o nome com uma pergunta aberta, nunca de sim ou não (ex: "Como você quer chamar essa área? Pode ser algo como Fazenda Boa Vista.").
       error: |
         Erro inesperado: {error}.
   complete_registration:
