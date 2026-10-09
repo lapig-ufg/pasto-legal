@@ -13,7 +13,7 @@ External interface:
 """
 
 import json
-from typing import List, Union
+from typing import List, Optional, Union
 
 import geopandas as gpd
 import shapely
@@ -22,7 +22,7 @@ from shapely.ops import unary_union
 
 from semente.logging import log_warning
 
-from domain.schemas.feature import Feature
+from domain.schemas.feature import Feature, FeatureMetadata
 
 _HECTARES_PER_SQUARE_METER = 1.0 / 10_000.0
 _WGS84_EPSG = 4326
@@ -98,8 +98,23 @@ def _area_hectares(geometry) -> float:
     return round(float(projected.area.iloc[0]) * _HECTARES_PER_SQUARE_METER, 2)
 
 
+def _feature_labels(feature: dict, parts_count: int) -> List[Optional[str]]:
+    """Returns one label per polygon part of ``feature``.
+
+    The framework's input step stores the source names in the
+    ``polygon_labels`` property, aligned with the polygon order. When the
+    property is missing or does not match the number of parts, every part is
+    left unnamed.
+    """
+    properties = feature.get("properties") or {}
+    labels = properties.get("polygon_labels")
+    if not isinstance(labels, list) or len(labels) != parts_count:
+        return [None] * parts_count
+    return [str(label).strip() or None if label is not None else None for label in labels]
+
+
 def _extract_geometry(geojson: Union[bytes, str, dict]):
-    """Extracts a shapely (Multi)Polygon from a GeoJSON payload."""
+    """Extracts a shapely (Multi)Polygon and its part labels from a GeoJSON payload."""
     if isinstance(geojson, (bytes, bytearray)):
         try:
             geojson = geojson.decode("utf-8")
@@ -118,23 +133,27 @@ def _extract_geometry(geojson: Union[bytes, str, dict]):
     if not isinstance(geojson, dict):
         raise GeoFileError("O conteúdo GeoJSON recebido é inválido.")
 
-    geometries = []
+    geojson_features: List[dict] = []
     if geojson.get("type") == "FeatureCollection":
-        geojson_features = geojson.get("features") or []
-        geometries = [f.get("geometry") for f in geojson_features if isinstance(f, dict)]
+        geojson_features = [f for f in geojson.get("features") or [] if isinstance(f, dict)]
     elif geojson.get("type") == "Feature":
-        geometries = [geojson.get("geometry")]
+        geojson_features = [geojson]
     elif geojson.get("type") in ("Polygon", "MultiPolygon"):
-        geometries = [geojson]
+        geojson_features = [{"geometry": geojson}]
 
     polygons: List[Polygon] = []
-    for geometry in geometries:
+    labels: List[Optional[str]] = []
+    for feature in geojson_features:
+        geometry = feature.get("geometry")
         if not geometry:
             continue
         try:
-            polygons.extend(_safe_polygons(shapely.geometry.shape(geometry)))
+            parts = _safe_polygons(shapely.geometry.shape(geometry))
         except Exception as error:
             log_warning(f"geojson_io: invalid GeoJSON geometry skipped ({error})")
+            continue
+        polygons.extend(parts)
+        labels.extend(_feature_labels(feature, len(parts)))
 
     if not polygons:
         raise GeoFileError(
@@ -143,8 +162,8 @@ def _extract_geometry(geojson: Union[bytes, str, dict]):
         )
 
     if len(polygons) == 1:
-        return polygons[0]
-    return MultiPolygon(polygons)
+        return polygons[0], labels
+    return MultiPolygon(polygons), labels
 
 
 def build_features_from_geojson(
@@ -154,8 +173,9 @@ def build_features_from_geojson(
 
     A single polygon becomes one ``rural_property``. Several polygons become one
     ``paddock`` per polygon (ids ``Paddock_1..N``) plus one ``rural_property``
-    that is the dissolve of all of them. Paddocks and property start with
-    independent ids; the property id is a generated base id.
+    that is the dissolve of all of them. A paddock whose polygon is named in
+    the source file keeps that name as its ``name`` metadata. Paddocks and
+    property start with independent ids; the property id is a generated base id.
 
     Args:
         geojson: GeoJSON bytes, string or parsed mapping.
@@ -167,7 +187,7 @@ def build_features_from_geojson(
     Raises:
         GeoFileError: When no polygon is present.
     """
-    geometry = _extract_geometry(geojson)
+    geometry, labels = _extract_geometry(geojson)
 
     if geometry.geom_type == "Polygon":
         property_feature = Feature(
@@ -185,12 +205,12 @@ def build_features_from_geojson(
         Feature(
             feature_id=f"Paddock_{index}",
             coords=_geometry_to_coords(part),
-            metadata=[],
+            metadata=[FeatureMetadata(key="name", value=label)] if label else [],
             total_area=_area_hectares(part),
             region=None,
             feature_type="paddock",
         )
-        for index, part in enumerate(parts, start=1)
+        for index, (part, label) in enumerate(zip(parts, labels), start=1)
     ]
 
     dissolved = unary_union(parts)
