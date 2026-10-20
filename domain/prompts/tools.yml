@@ -315,10 +315,36 @@ weather_tools:
           months (int): Number of months to forecast, between 1 and 7. Defaults to 7.
 
       Return:
-          ToolResult: Text with the monthly precipitation forecast (date + mean mm).
+          ToolResult: Text with the monthly precipitation forecast (date + total mm).
     results:
       error: |
         Erro inesperado: {error}
+
+  get_first_month_above_precipitation_threshold:
+    description: |
+      Finds the first upcoming month whose expected rainfall reaches a
+      threshold set by the user.
+
+      Use this when the user asks WHEN a given amount of rain will come
+      (e.g. "quando vai dar 100mm?", "qual o primeiro mês com 150mm de
+      chuva?"), not when they ask for the forecast of a month they already
+      named — that is `get_monthly_precipitation_forecast`.
+
+      For the current month only the rain still to come is counted, since
+      what has already fallen cannot be planned around.
+
+      params:
+          feature_id (str): Identifier (id) of the registered feature.
+          threshold_mm (float): Minimum monthly rainfall the user is waiting
+              for, in millimetres.
+
+      Return:
+          ToolResult: The first month reaching the threshold, or the wettest
+          month in the next 7 when none of them does.
+    results:
+      error: |
+        Erro inesperado: {error}
+
   get_daily_precipitation_forecast:
     description: |
       Retrieves the precipitation forecast (mm) for a specific target day of the rural property.
