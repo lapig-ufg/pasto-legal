@@ -6,9 +6,11 @@ dynamic tool/instruction callables (``domain.agent``).
 """
 
 from semente.domain import DomainSpec
+from semente.guardrails import CardGuardrail, EmailGuardrail
 from semente.skills import load_skills
 
 from domain.agent import get_instructions, get_tools
+from domain.guardrails.brazil_pii import CnpjGuardrail, CpfGuardrail, RgGuardrail
 from domain.knowledge.pasto_legal_kb import pasto_legal_kb
 
 skills = load_skills("domain/skills/property_analyst_agent")
@@ -18,5 +20,12 @@ domain_spec = DomainSpec(
     tools=get_tools,
     knowledge=pasto_legal_kb,
     skills=skills,
+    guardrails=[
+        CpfGuardrail(),  # CPF shape + 'cpf … <number>' intent — blocks the turn
+        CnpjGuardrail(),  # CNPJ shape + intent — blocks the turn
+        RgGuardrail(),  # punctuated RG + intent — blocks the turn
+        EmailGuardrail(),
+        CardGuardrail(),
+    ],
     instructions=get_instructions,
 )

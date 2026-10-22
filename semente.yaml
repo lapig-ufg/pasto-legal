@@ -8,7 +8,7 @@ features:
   tts: true
   feedback_workflow: true
   summarization: true
-  pii_guardrail: true
+  guardrails: true
 models:
   primary: { provider: google, id: gemini-3.5-flash-lite }
   fallback: { provider: ollama, id: gemma4:31b-cloud }
