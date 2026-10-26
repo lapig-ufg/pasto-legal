@@ -6,9 +6,13 @@ prompts_dir: domain/prompts
 channels: [whatsapp, streamlit]
 features:
   tts: true
-  feedback_workflow: true
+  interaction-assessment: true
   summarization: true
   guardrails: true
+  terms-acceptance:
+    enable: true
+    file: docs/knowledge/termos_de_uso.md
+    url: https://pasto.legal/termos-de-uso
 models:
   primary: { provider: google, id: gemini-3.5-flash-lite }
   fallback: { provider: ollama, id: gemma4:31b-cloud }

@@ -3342,7 +3342,7 @@ requires-dist = [
     { name = "retry-requests", specifier = ">=1.0.0" },
     { name = "rich", specifier = "==14.0.0" },
     { name = "s3fs", specifier = ">=2026.6.0" },
-    { name = "semente-agents", extras = ["gee", "geo", "weather", "knowledge"], git = "https://github.com/lapig-ufg/semente.git?rev=develop" },
+    { name = "semente-agents", extras = ["gee", "geo", "weather", "knowledge"], git = "https://github.com/lapig-ufg/semente.git?rev=main" },
     { name = "sqlalchemy", specifier = "==2.0.41" },
     { name = "streamlit", specifier = ">=1.52.2" },
     { name = "svglib", specifier = ">=2.0.2" },
@@ -4879,7 +4879,7 @@ wheels = [
 [[package]]
 name = "semente-agents"
 version = "0.4.0"
-source = { git = "https://github.com/lapig-ufg/semente.git?rev=develop#4d3651bf7ed7628c8e51acb2df9f4526ab1b4529" }
+source = { git = "https://github.com/lapig-ufg/semente.git?rev=main#5230996e29d987cf5f4f43e296aecf208f36ed97" }
 dependencies = [
     { name = "agno" },
     { name = "fastapi" },

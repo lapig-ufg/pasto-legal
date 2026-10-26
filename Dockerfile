@@ -11,9 +11,8 @@ WORKDIR /app
 
 ENV PATH="/app/.venv/bin:$PATH"
 
-# uv.lock pins semente-agents to the lapig-ufg/semente git branch matching this
-# branch (develop here; main uses the framework's main): uv sync fetches it
-# from the repository. git (below) is required for that fetch.
+# uv.lock pins semente-agents to the lapig-ufg/semente main branch: uv sync
+# fetches it from the repository. git (below) is required for that fetch.
 COPY pyproject.toml uv.lock ./
 
 RUN uv sync --frozen --no-cache

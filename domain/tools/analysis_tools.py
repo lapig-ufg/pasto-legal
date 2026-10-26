@@ -12,7 +12,7 @@ from semente import File, Image, Video
 from semente.logging import log_debug, log_warning, log_error
 
 from semente.configs.prompts import get_tool_description, get_tool_result_text
-from semente.hooks.tool_hooks import validate_selected_property_hook
+from semente.hooks.tool_hooks import validate_state_hook
 
 from domain.services.video import gif_bytes_to_mp4_bytes
 from domain.services.geospatial.image import append_continuous_colorbar, draw_corner_label
@@ -42,7 +42,12 @@ from domain.utils.feature_utils import resolve_feature
 import ee
 
 
-@tool(tool_hooks=[validate_selected_property_hook], description=get_tool_description("analysis_tools", "generate_property_image"))
+# Property-scoped tools are only available once at least one feature is
+# registered in the session (``all_properties``).
+_require_registered_property = validate_state_hook("all_properties")
+
+
+@tool(tool_hooks=[_require_registered_property], description=get_tool_description("analysis_tools", "generate_property_image"))
 def generate_property_image(run_context: RunContext, feature_id: str) -> ToolResult:
     """
     Gera uma imagem de satélite em alta resolução (RGB) da propriedade rural,
@@ -79,7 +84,7 @@ def generate_property_image(run_context: RunContext, feature_id: str) -> ToolRes
         return ToolResult(content=get_tool_result_text("analysis_tools", "generate_property_image", "error", error=e))
 
 
-@tool(tool_hooks=[validate_selected_property_hook], description=get_tool_description("analysis_tools", "generate_biomass_image"))
+@tool(tool_hooks=[_require_registered_property], description=get_tool_description("analysis_tools", "generate_biomass_image"))
 def generate_biomass_image(run_context: RunContext, feature_id: str) -> ToolResult:
     """
     Gera um mapa temático da biomassa (matéria seca) sobre os limites da propriedade rural.
@@ -217,7 +222,7 @@ def _overlay_fixed_colorbar(
         raise RuntimeError(f"Falha ao adicionar a barra de cores ao vídeo. Detalhes: {str(e)}")
 
 
-@tool(tool_hooks=[validate_selected_property_hook], description=get_tool_description("analysis_tools", "generate_biomass_video"))
+@tool(tool_hooks=[_require_registered_property], description=get_tool_description("analysis_tools", "generate_biomass_video"))
 def generate_biomass_video(
     run_context: RunContext,
     feature_id: str,
@@ -313,7 +318,7 @@ def generate_biomass_video(
         return ToolResult(content=get_tool_result_text("analysis_tools", "generate_biomass_video", "error", error=e))
 
 
-@tool(tool_hooks=[validate_selected_property_hook])
+@tool(tool_hooks=[_require_registered_property])
 def generate_pasture_classification_image(run_context: RunContext, feature_id: str) -> ToolResult:
     """
     Gera o mapa de classificação de pastagem (pasto x não-pasto) da propriedade rural,
@@ -357,7 +362,7 @@ def generate_pasture_classification_image(run_context: RunContext, feature_id: s
         return ToolResult(content=get_tool_result_text("analysis_tools", "generate_pasture_classification_image", "error", error=e))
 
 
-@tool(tool_hooks=[validate_selected_property_hook], description=get_tool_description("analysis_tools", "generate_soil_texture_image"))
+@tool(tool_hooks=[_require_registered_property], description=get_tool_description("analysis_tools", "generate_soil_texture_image"))
 def generate_soil_texture_image(run_context: RunContext, feature_id: str) -> ToolResult:
     """
     Gera um mapa temático da textura do solo sobre os limites da propriedade rural na profundidade de 0 a 30cm.
@@ -391,7 +396,7 @@ def generate_soil_texture_image(run_context: RunContext, feature_id: str) -> Too
         return ToolResult(content=get_tool_result_text("analysis_tools", "generate_soil_texture_image", "error", error=e))
 
 
-@tool(tool_hooks=[validate_selected_property_hook], description=get_tool_description("analysis_tools", "get_pasture_stats"))
+@tool(tool_hooks=[_require_registered_property], description=get_tool_description("analysis_tools", "get_pasture_stats"))
 def get_pasture_stats(run_context: RunContext, feature_id: str):
     """
     Recupera estatísticas de bimoassa, vigor vegetativo, idade da pastagem e classificação de uso do solo mais recentes.
@@ -430,7 +435,7 @@ def get_pasture_stats(run_context: RunContext, feature_id: str):
         return ToolResult(content=get_tool_result_text("analysis_tools", "get_pasture_stats", "error", error=e))
 
 
-@tool(tool_hooks=[validate_selected_property_hook], description=get_tool_description("analysis_tools", "get_topographic_stats"))
+@tool(tool_hooks=[_require_registered_property], description=get_tool_description("analysis_tools", "get_topographic_stats"))
 def get_topographic_stats(run_context: RunContext, feature_id: str):
     """
     Recupera estatísticas de topografia da propriedade (altimetria e declividade).
@@ -485,7 +490,7 @@ def _safe_fetch_image(label: str, fetch_fn):
         return None
 
 
-@tool(tool_hooks=[validate_selected_property_hook], description=get_tool_description("analysis_tools", "generate_property_boletim"))
+@tool(tool_hooks=[_require_registered_property], description=get_tool_description("analysis_tools", "generate_property_boletim"))
 def generate_property_boletim(run_context: RunContext, feature_id: str) -> ToolResult:
     """
     Gera um boletim em PDF consolidando as análises da propriedade rural — localização,
@@ -589,7 +594,7 @@ def generate_property_boletim(run_context: RunContext, feature_id: str) -> ToolR
         return ToolResult(content=get_tool_result_text("analysis_tools", "generate_property_boletim", "error", error=e))
 
 
-@tool(tool_hooks=[validate_selected_property_hook], description=get_tool_description("analysis_tools", "get_pasture_biomass_history"))
+@tool(tool_hooks=[_require_registered_property], description=get_tool_description("analysis_tools", "get_pasture_biomass_history"))
 def get_pasture_biomass_history(run_context: RunContext, feature_id: str) -> ToolResult:
     """
     Recupera a série histórica (2000 até o ano mais recente disponível) de biomassa seca
@@ -636,7 +641,7 @@ def get_pasture_biomass_history(run_context: RunContext, feature_id: str) -> Too
         return ToolResult(content=get_tool_result_text("analysis_tools", "get_pasture_biomass_history", "error", error=e))
 
 
-@tool(tool_hooks=[validate_selected_property_hook], description=get_tool_description("analysis_tools", "get_pasture_age_on_the_fly"))
+@tool(tool_hooks=[_require_registered_property], description=get_tool_description("analysis_tools", "get_pasture_age_on_the_fly"))
 def get_pasture_age_on_the_fly(run_context: RunContext, feature_id: str) -> ToolResult:
     """
     Estima a idade da pastagem (anos) on-the-fly para o ano mais recente possível,
@@ -679,7 +684,7 @@ def get_pasture_age_on_the_fly(run_context: RunContext, feature_id: str) -> Tool
         return ToolResult(content=get_tool_result_text("analysis_tools", "get_pasture_age_on_the_fly", "error", error=e))
 
 
-@tool(tool_hooks=[validate_selected_property_hook], description=get_tool_description("analysis_tools", "get_pasture_vigor_on_the_fly"))
+@tool(tool_hooks=[_require_registered_property], description=get_tool_description("analysis_tools", "get_pasture_vigor_on_the_fly"))
 def get_pasture_vigor_on_the_fly(run_context: RunContext, feature_id: str) -> ToolResult:
     """
     Estima o vigor da pastagem (Baixo/Médio/Alto) on-the-fly para o ano mais recente

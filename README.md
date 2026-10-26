@@ -29,7 +29,7 @@ Pasto Legal is a **[Semente](https://github.com/lapig-ufg/semente) app** — the
 
 [Semente](https://github.com/lapig-ufg/semente) ("seed" in Portuguese) is the multi-agent AI chat framework **extracted from Pasto Legal** (LAPIG/UFG). It keeps everything domain-neutral — the workflow orchestration, WhatsApp + Streamlit channels, persona/feedback loop, PII guardrails, i18n prompts, TTS — and lets any land-use assistant be grown by supplying a **domain**: tools, knowledge base, skills, and prompts.
 
-**📖 Semente documentation:** [`docs/`](https://github.com/lapig-ufg/semente/tree/develop/docs) in the framework repository (see the [Domain API](https://github.com/lapig-ufg/semente/blob/develop/docs/guide/domain-api.md) guide for the surface this app consumes)
+**📖 Semente documentation:** [`docs/`](https://github.com/lapig-ufg/semente/tree/main/docs) in the framework repository (see the [Domain API](https://github.com/lapig-ufg/semente/blob/main/docs/guide/domain-api.md) guide for the surface this app consumes)
 
 **The split:**
 
@@ -44,7 +44,7 @@ Pasto Legal is a **[Semente](https://github.com/lapig-ufg/semente) app** — the
 
 In practice: this repository contains a `domain/` package plus a `semente.yaml` manifest. Semente assembles the entire application from them — including the engine (Agno by default), configurable via `engine:` in the manifest or the `SEMENTE_ENGINE` environment variable.
 
-> *Pasto Legal was the first seed.* If you want to build a similar assistant for a different domain (crops, forestry, water, climate), start from [Semente](https://github.com/lapig-ufg/semente) — its [Echo domain](https://github.com/lapig-ufg/semente/tree/main/examples/echo_domain) example boots in minutes.
+> *Pasto Legal was the first seed.* If you want to build a similar assistant for a different domain (crops, forestry, water, climate), start from [Semente](https://github.com/lapig-ufg/semente) — its [minimal chat example](https://github.com/lapig-ufg/semente/tree/main/examples/minimal-chat) boots in minutes.
 
 ---
 
@@ -123,7 +123,7 @@ graph TD
 
 | Layer | Technology |
 |---|---|
-| **Application framework** | [Semente](https://github.com/lapig-ufg/semente) 0.3 — multi-agent chat framework for land use (engine-free domain API) |
+| **Application framework** | [Semente](https://github.com/lapig-ufg/semente) 0.4 — multi-agent chat framework for land use (engine-free domain API) |
 | **Agent engine** | [Agno](https://github.com/agno-agi/agno) 2.6 (default; swappable via `SEMENTE_ENGINE` — ADK and bare backends also available) |
 | **Language** | Python 3.12+ |
 | **LLM** | Google Gemini (`gemini-3.5-flash-lite` by default) — configurable to Ollama for local models |
@@ -156,7 +156,7 @@ Semente is not yet on PyPI — `pyproject.toml` declares it as a git dependency 
 uv sync
 ```
 
-**Branch policy:** this repository's `develop` branch tracks the framework's `develop` branch, and `main` tracks the framework's `main` branch (pinned in `pyproject.toml` under `[tool.uv.sources]` and recorded in `uv.lock`). The framework bump procedure is:
+**Branch policy:** this repository tracks the framework's `main` branch (pinned in `pyproject.toml` under `[tool.uv.sources]` and recorded in `uv.lock`). The framework bump procedure is:
 
 ```bash
 uv lock --upgrade-package semente-agents
@@ -200,7 +200,7 @@ Still in the pasto-legal root, with the environment installed via `uv sync`:
 **Streamlit (development UI — recommended first):**
 
 ```bash
-uv run semente streamlit
+uv run semente launch streamlit
 ```
 
 Open **http://localhost:8501**. Register a property (CAR code, GPS pin, Google Maps link, or draw a buffer), then ask for a diagnosis.

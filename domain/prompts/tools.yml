@@ -374,20 +374,6 @@ weather_tools:
         Erro inesperado: {error}
 
 feedback_tools:
-  record_frustration_feedback:
-    description: |
-      Registra uma correção do usuário quando o assistente fornece uma resposta incorreta.
-      Use esta função estritamente quando a seguinte sequência de eventos ocorrer:
-      1. O usuário faz uma pergunta.
-      2. O assistente responde.
-      3. O usuário reclama da resposta.
-      4. O assistente pede para o usuário explicar como seria a resposta correta.
-      5. O usuário fornece a resposta.
-    results:
-      success: |
-        Feedback registrado com sucesso no sistema. Muito obrigado por ajudar a melhorar o Pasto Legal!
-      error: |
-        Erro ao registrar feedback: {error}.
   record_analisys_feedback:
     description: |
       Registra uma sugestão de nova funcionalidade ou análise de dados.
@@ -415,13 +401,12 @@ persona_tools:
         Erro ao atualizar nome da persona: {error}
   update_persona_role:
     description: |
-      Atualiza organicamente o papel profissional da persona do usuário no estado da sessão.
+      Atualiza organicamente o papel profissional ou a ocupação da persona do usuário no estado da sessão.
 
-      Use esta ferramenta quando identificar claramente se o usuário é um produtor rural
-      ou um assistente técnico/agrônomo.
+      Use esta ferramenta quando o usuário se identificar claramente.
 
       Args:
-          role (Literal["Produtor", "Técnico"]): O papel profissional identificado.
+          role (str): O papel ou ocupação do usuário (ex: "Produtor", "Técnico", "Agrônomo").
     results:
       success: |
         Papel profissional atualizado com sucesso para: {role}
