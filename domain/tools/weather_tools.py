@@ -30,6 +30,8 @@ ENSEMBLE_URL = "https://ensemble-api.open-meteo.com/v1/ensemble"
 SEASONAL_URL = "https://seasonal-api.open-meteo.com/v1/seasonal"
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 
+_THRESHOLD_HORIZON_MONTHS = 7
+
 
 def _daily_dates(daily) -> list[datetime.date]:
     """Generates the list of dates (UTC) covered by the daily response."""
@@ -52,6 +54,75 @@ def _resolve_property(run_context: RunContext, feature_id: str) -> Feature:
         )
     return selected_property
 
+def _monthly_precipitation(latitude: float, longitude: float, months: int) -> pd.DataFrame:
+    """Monthly precipitation totals (mm) from the seasonal model.
+
+    Despite the API's ``precipitation_mean`` name, the values are the month's
+    total in millimetres — checked against the Goiás climatology (October to
+    March between 177 and 278 mm, April dropping to 76 mm).
+
+    Shared by the forecast listing and the threshold search so both read
+    exactly the same numbers.
+
+    Returns:
+        DataFrame with ``date`` (first day of the month) and
+        ``precipitation`` (mm).
+    """
+    params = {
+        "latitude": latitude,
+        "longitude": longitude,
+        "monthly": "precipitation_mean",
+        "forecast_days": months * 31,
+    }
+    response = openmeteo.weather_api(SEASONAL_URL, params=params)[0]
+    monthly = response.Monthly()
+
+    return pd.DataFrame({
+        "date": pd.date_range(
+            start=f"{monthly.Year()}-{monthly.Month()}-01",
+            periods=monthly.Count(),
+            freq="MS",
+            inclusive="left",
+        ),
+        "precipitation": monthly.Variables(0).ValuesAsNumpy(),
+    })
+
+def _precipitation_so_far(
+    latitude: float, longitude: float, today: datetime.date
+) -> float | None:
+    """Rain already recorded this month, from day 1 to yesterday (mm).
+
+    The seasonal model reports the whole-month total, including days already
+    past. For the current month that overstates what the producer can still
+    expect, so the threshold search subtracts what has already fallen.
+
+    This is measured rather than estimated on purpose: rain is not spread
+    evenly across the month. In October (start of the rainy season in Goiás)
+    19 of 31 days had elapsed — 61% of the days — but only 46% of the rain.
+
+    Returns None when the figure is unavailable (the archive lags a few days,
+    and on the first day of the month there is nothing to add up), so the
+    caller can fall back to the full monthly total.
+    """
+    if today.day <= 1:
+        return None
+
+    params = {
+        "latitude": latitude,
+        "longitude": longitude,
+        "start_date": today.replace(day=1).isoformat(),
+        "end_date": (today - datetime.timedelta(days=1)).isoformat(),
+        "daily": "precipitation_sum",
+    }
+
+    try:
+        response = openmeteo.weather_api(ARCHIVE_URL, params=params)[0]
+        values = response.Daily().Variables(0).ValuesAsNumpy()
+    except Exception as e:
+        log_warning(f"_precipitation_so_far: archive unavailable ({e})")
+        return None
+
+    return float(np.nansum(values))
 
 @tool(description=get_tool_description("weather_tools", "get_monthly_precipitation_forecast"))
 def get_monthly_precipitation_forecast(
@@ -65,7 +136,7 @@ def get_monthly_precipitation_forecast(
         months (int): Number of months to forecast, between 1 and 7. Defaults to 7.
 
     Return:
-        ToolResult: Text with the monthly precipitation forecast (date + mean mm).
+        ToolResult: Text with the monthly precipitation forecast (date + total mm).
     """
     try:
         log_debug(f"get_monthly_precipitation_forecast: feature_id={feature_id}, months={months}")
@@ -78,38 +149,15 @@ def get_monthly_precipitation_forecast(
         property_obj = _resolve_property(run_context, feature_id)
         latitude, longitude = property_obj.get_centroid()
 
-        forecast_days = months * 31
-
-        params = {
-            "latitude": latitude,
-            "longitude": longitude,
-            "monthly": "precipitation_mean",
-            "forecast_days": forecast_days,
-        }
-        responses = openmeteo.weather_api(SEASONAL_URL, params=params)
-        response = responses[0]
-
-        monthly = response.Monthly()
-        monthly_precipitation_mean = monthly.Variables(0).ValuesAsNumpy()
-
-        monthly_data = {
-            "date": pd.date_range(
-                start=f"{monthly.Year()}-{monthly.Month()}-01",
-                periods=monthly.Count(),
-                freq="MS",
-                inclusive="left",
-            ),
-            "precipitation_mean": monthly_precipitation_mean,
-        }
-        monthly_dataframe = pd.DataFrame(data=monthly_data)
+        monthly_dataframe = _monthly_precipitation(latitude, longitude, months)
 
         lines = []
         for _, row in monthly_dataframe.iterrows():
-            mean_val = float(row["precipitation_mean"])
-            if mean_val != mean_val:
-                mean_val = 0.0
+            total_val = float(row["precipitation"])
+            if total_val != total_val:
+                total_val = 0.0
             lines.append(
-                f"{row['date'].strftime('%Y-%m-%d')}: mean {mean_val:.1f} mm"
+                f"{row['date'].strftime('%Y-%m-%d')}: total {total_val:.1f} mm"
             )
 
         content = (
@@ -124,6 +172,93 @@ def get_monthly_precipitation_forecast(
     except Exception as e:
         log_error(f"get_monthly_precipitation_forecast: {e}")
         return ToolResult(content=get_tool_result_text("weather_tools", "get_monthly_precipitation_forecast", "error", error=e))
+
+
+@tool(description=get_tool_description("weather_tools", "get_first_month_above_precipitation_threshold"))
+def get_first_month_above_precipitation_threshold(
+    run_context: RunContext, feature_id: str, threshold_mm: float
+) -> ToolResult:
+    """Finds the first upcoming month expected to reach a rainfall threshold.
+
+    Walks the seasonal forecast from the current month on and returns the
+    first month whose expected rainfall reaches ``threshold_mm``. For the
+    current month the comparison uses only the rain still to come, since what
+    has already fallen cannot be planned around.
+
+    params:
+        feature_id (str): Identifier (id) of the registered feature.
+        threshold_mm (float): Minimum monthly rainfall the user is waiting
+            for, in millimetres.
+
+    Return:
+        ToolResult: The first month that reaches the threshold, or the
+        wettest month in the horizon when none of them does.
+    """
+    try:
+        log_debug(
+            f"get_first_month_above_precipitation_threshold: "
+            f"feature_id={feature_id}, threshold_mm={threshold_mm}"
+        )
+
+        if threshold_mm <= 0:
+            raise ValueError(
+                f"threshold_mm must be greater than zero (received: {threshold_mm})."
+            )
+
+        property_obj = _resolve_property(run_context, feature_id)
+        latitude, longitude = property_obj.get_centroid()
+
+        forecast = _monthly_precipitation(
+            latitude, longitude, _THRESHOLD_HORIZON_MONTHS
+        )
+        today = datetime.date.today()
+        already_fallen = _precipitation_so_far(latitude, longitude, today)
+
+        candidates = []
+        for _, row in forecast.iterrows():
+            expected = float(row["precipitation"])
+            if expected != expected:  # NaN: month without data
+                continue
+
+            month = row["date"].date()
+            available, note = expected, ""
+
+            is_current = (month.year, month.month) == (today.year, today.month)
+            if is_current and already_fallen is not None:
+                available = max(expected - already_fallen, 0.0)
+                note = (
+                    f" ({expected:.0f} mm expected for the whole month, "
+                    f"{already_fallen:.0f} mm already fallen)"
+                )
+
+            candidates.append((month, available, note))
+
+        if not candidates:
+            return ToolResult(
+                content="No monthly precipitation forecast available for this property."
+            )
+
+        for month, available, note in candidates:
+            if available >= threshold_mm:
+                log_debug(f"get_first_month_above_precipitation_threshold: {month:%Y-%m}")
+                return ToolResult(content=(
+                    f"First month reaching {threshold_mm:.0f} mm for property "
+                    f"{property_obj.id}: {month:%Y-%m}, with {available:.0f} mm{note}."
+                ))
+
+        wettest = max(candidates, key=lambda candidate: candidate[1])
+        log_debug("get_first_month_above_precipitation_threshold: no month reaches the threshold")
+        return ToolResult(content=(
+            f"None of the next {len(candidates)} months reaches {threshold_mm:.0f} mm "
+            f"for property {property_obj.id}. The wettest is {wettest[0]:%Y-%m}, "
+            f"with {wettest[1]:.0f} mm{wettest[2]}."
+        ))
+
+    except Exception as e:
+        log_error(f"get_first_month_above_precipitation_threshold: {e}")
+        return ToolResult(content=get_tool_result_text(
+            "weather_tools", "get_first_month_above_precipitation_threshold", "error", error=e
+        ))
 
 
 @tool(description=get_tool_description("weather_tools", "get_daily_precipitation_forecast"))
