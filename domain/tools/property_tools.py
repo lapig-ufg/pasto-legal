@@ -37,6 +37,32 @@ _DEFAULT_RADIUS_METERS = 200
 # Rendered from tools.yml (property_tools.*.results.sicar_miss_buffer_fallback).
 _SICAR_MISS_BUFFER_TOOL_KEY = "sicar_miss_buffer_fallback"
 
+# Above this number of paddocks the confirmation message shows only the total
+# (a long list would not fit a WhatsApp image caption).
+_MAX_LISTED_PADDOCKS = 10
+
+
+def _describe_paddocks(paddocks: List[Feature]) -> str:
+    """
+    Builds the paddock summary shown to the user on a geo-file registration.
+
+    Up to ``_MAX_LISTED_PADDOCKS`` paddocks are listed as "number = name" (the
+    number is the label drawn on the image; the name comes from the source
+    file, when present). Larger files show only the total.
+    """
+    total = len(paddocks)
+    if total > _MAX_LISTED_PADDOCKS:
+        summary = f"Piquetes identificados: {total}."
+        if any(paddock.name for paddock in paddocks):
+            summary = f"{summary} Os nomes que vieram no arquivo foram mantidos."
+        return summary
+
+    items = []
+    for paddock in paddocks:
+        number = str(paddock.feature_id).rsplit("_", 1)[-1]
+        items.append(f"{number} = {paddock.name}" if paddock.name else number)
+    return f"Piquetes identificados: {', '.join(items)}"
+
 
 def _first_geojson_bytes(files: Optional[List[File]]) -> Optional[bytes]:
     """
@@ -249,8 +275,7 @@ def start_registration_by_geojson(
 
         result_text = f"> {property_feature.describe()}"
         if paddocks:
-            paddocks_text = ", ".join(paddock.feature_id for paddock in paddocks)
-            result_text = f"{result_text}\nPiquetes identificados: {paddocks_text}"
+            result_text = f"{result_text}\n{_describe_paddocks(paddocks)}"
 
         log_debug(f"start_registration_by_geojson: propriedade gerada ({property_feature.id}, {len(paddocks)} piquetes)")
         return ToolResult(
@@ -591,8 +616,9 @@ def _persist_registration(run_context: RunContext, candidate_properties: list, n
     registered_features.features.append(registered_feature)
 
     # Paddocks (from a geospatial file registration) are registered with
-    # the paddock number kept on the stable id and the display name
-    # "{name}_{n}" stored as metadata.
+    # the paddock number kept on the stable id. The display name stored as
+    # metadata is "{name} - {source name}" when the source file names the
+    # paddock, or "{name}_{n}" when it does not.
     pending_paddocks = run_context.session_state.get("pending_paddocks") or []
     for paddock in pending_paddocks:
         paddock_feature = Feature.model_validate(paddock)
@@ -600,7 +626,9 @@ def _persist_registration(run_context: RunContext, candidate_properties: list, n
         paddock_metadata = [
             entry for entry in paddock_feature.metadata if entry.key != "name"
         ]
-        paddock_metadata.append(FeatureMetadata(key="name", value=f"{name}_{paddock_number}"))
+        source_name = paddock_feature.name
+        paddock_name = f"{name} - {source_name}" if source_name else f"{name}_{paddock_number}"
+        paddock_metadata.append(FeatureMetadata(key="name", value=paddock_name))
         registered_features.features.append(
             paddock_feature.model_copy(update={"metadata": paddock_metadata})
         )

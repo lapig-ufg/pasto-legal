@@ -502,11 +502,20 @@ property_tools:
   start_registration_by_geojson:
     description: |
       Inicia o registro de uma nova propriedade rural a partir de um arquivo
-      geoespacial enviado pelo usuário (shapefile .zip/.rar, KMZ, KML ou GeoJSON),
+      geoespacial enviado pelo usuário (KML, KMZ, GeoJSON ou Shapefile compactado em ZIP ou RAR),
       que foi convertido para GeoJSON e anexado à conversa como um arquivo .json.
 
       Use esta ferramenta quando o usuário enviar um arquivo de mapa com os
       limites da propriedade (ou dos piquetes).
+
+      Chame esta ferramenta IMEDIATAMENTE, na mesma mensagem em que o arquivo
+      chegar. NÃO pergunte antes se o usuário quer cadastrar: o arquivo só fica
+      disponível nessa mensagem, e a confirmação acontece depois, com a imagem.
+
+      Ao falar com o usuário, diga apenas "arquivo do mapa da propriedade".
+      Só liste os formatos aceitos se ele perguntar quais são, e nesse caso escreva
+      exatamente: KML, KMZ, GeoJSON ou Shapefile compactado (ZIP ou RAR).
+      Use texto simples, sem formatação de código.
 
       IMPORTANTE: NÃO copie nem passe o conteúdo do arquivo .json. O sistema lê
       o arquivo anexado automaticamente. Apenas chame a ferramenta sem argumentos.
@@ -518,12 +527,13 @@ property_tools:
         Pergunte ao usuário se a propriedade delimitada na imagem é a correta:
         {property_details}
         Se houver piquetes, explique que cada piquete foi identificado com um rótulo na imagem.
+        A propriedade AINDA NÃO está cadastrada: não diga que já cadastrou, apenas peça a confirmação.
       missing_geojson: |
         Peça desculpas e informe que não encontrou nenhum arquivo geoespacial anexado.
-        Peça ao usuário que envie o arquivo novamente (shapefile .zip/.rar, KMZ, KML ou GeoJSON).
+        Peça ao usuário que envie novamente o arquivo do mapa da propriedade, em linguagem simples e sem listar extensões de arquivo.
       invalid_geojson: |
         Peça desculpas e informe que não foi possível interpretar o arquivo geoespacial enviado.
-        Peça ao usuário que confira o arquivo e envie novamente (shapefile .zip/.rar, KMZ, KML ou GeoJSON).
+        Peça ao usuário que confira o arquivo do mapa e envie novamente, em linguagem simples e sem listar extensões de arquivo.
       error: |
         Erro inesperado: {error}.
   start_registration_by_car:

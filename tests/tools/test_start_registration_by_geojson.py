@@ -196,3 +196,113 @@ def test_paddock_centroid_supports_polygons_with_holes():
 
     assert 0 <= lat <= 10
     assert 0 <= lon <= 10
+
+
+# ---------------------------------------------------------------------------
+# Paddock names coming from the source file (polygon_labels)
+# ---------------------------------------------------------------------------
+
+def _labeled_geojson(labels: list, parts: int = None) -> str:
+    """One MultiPolygon with one square per part, as the input step builds it."""
+    parts = len(labels) if parts is None else parts
+    squares = [
+        [[[3 * i, 0], [3 * i, 1], [3 * i + 1, 1], [3 * i + 1, 0], [3 * i, 0]]]
+        for i in range(parts)
+    ]
+    return json.dumps(
+        {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "properties": {"polygon_labels": labels},
+                    "geometry": {"type": "MultiPolygon", "coordinates": squares},
+                }
+            ],
+        }
+    )
+
+
+def _registered_names(run_context) -> list:
+    return [
+        next((e["value"] for e in feature["metadata"] if e["key"] == "name"), None)
+        for feature in run_context.session_state["all_properties"]["features"]
+    ]
+
+
+def test_paddocks_list_number_and_source_name(fake_overview_image):
+    run_context = _context()
+
+    result = property_tools.start_registration_by_geojson(
+        run_context=run_context,
+        files=[_geojson_file(_labeled_geojson(["Piquete A", "Piquete B"]))],
+    )
+
+    assert "1 = Piquete A, 2 = Piquete B" in result.content
+    # The ids stay stable; the image keeps drawing the numbers.
+    paddocks = run_context.session_state["pending_paddocks"]
+    assert [p["feature_id"] for p in paddocks] == ["Paddock_1", "Paddock_2"]
+
+
+def test_complete_registration_prefixes_the_farm_name(fake_overview_image):
+    run_context = _context()
+    property_tools.start_registration_by_geojson(
+        run_context=run_context,
+        files=[_geojson_file(_labeled_geojson(["Piquete A", None]))],
+    )
+
+    property_tools.complete_registration(run_context=run_context, name="Fazenda Um")
+
+    assert _registered_names(run_context) == [
+        "Fazenda Um",
+        "Fazenda Um - Piquete A",
+        "Fazenda Um_2",
+    ]
+
+
+def test_same_file_on_two_farms_keeps_names_unique(fake_overview_image):
+    run_context = _context()
+    for farm in ("Fazenda Um", "Fazenda Dois"):
+        property_tools.start_registration_by_geojson(
+            run_context=run_context,
+            files=[_geojson_file(_labeled_geojson(["Piquete A"] * 2))],
+        )
+        property_tools.complete_registration(run_context=run_context, name=farm)
+
+    names = _registered_names(run_context)
+    assert len(names) == len(set(names))
+    assert "Fazenda Dois - Piquete A (2)" in names
+
+
+def test_repeated_names_in_one_file_are_numbered(fake_overview_image):
+    run_context = _context()
+
+    result = property_tools.start_registration_by_geojson(
+        run_context=run_context,
+        files=[_geojson_file(_labeled_geojson(["Pasto", "Pasto", "Sede"]))],
+    )
+
+    assert "1 = Pasto, 2 = Pasto (2), 3 = Sede" in result.content
+
+
+def test_many_paddocks_show_only_the_total(fake_overview_image):
+    run_context = _context()
+    labels = [f"P{i}" for i in range(1, 13)]
+
+    result = property_tools.start_registration_by_geojson(
+        run_context=run_context, files=[_geojson_file(_labeled_geojson(labels))]
+    )
+
+    assert "Piquetes identificados: 12." in result.content
+    assert "1 = P1" not in result.content
+
+
+def test_labels_that_do_not_match_the_parts_are_ignored(fake_overview_image):
+    run_context = _context()
+
+    result = property_tools.start_registration_by_geojson(
+        run_context=run_context,
+        files=[_geojson_file(_labeled_geojson(["A", "B", "C"], parts=2))],
+    )
+
+    assert "Piquetes identificados: 1, 2" in result.content

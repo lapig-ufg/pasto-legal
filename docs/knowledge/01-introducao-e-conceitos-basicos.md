@@ -31,14 +31,20 @@ O sistema possui visão computacional para ajudar na identificação de problema
 
 ## 2. Gerenciamento de Propriedades
 
-Para que o Pasto Legal possa gerar mapas e dados precisos, o coração do sistema é a identificação da sua propriedade rural. **Importante:** Para ser cadastrada e analisada, a propriedade precisa obrigatoriamente possuir um registro no Cadastro Ambiental Rural (CAR) no sistema do SICAR.
+Para que o Pasto Legal possa gerar mapas e dados precisos, o coração do sistema é a identificação da sua propriedade rural. Você pode cadastrar a propriedade pelo número do CAR, pela localização ou enviando o arquivo do mapa da sua área. Assim, até áreas que não estão no CAR podem ser analisadas.
 
 ### 2.1. Cadastrando uma Propriedade
 O fluxo de cadastro é interativo e guiado pelo Agente SICAR.
-* **Fluxo:** Você envia a localização (via GPS do WhatsApp) ou o número do CAR. O sistema localiza o imóvel, envia uma imagem de satélite do contorno para você verificar e pede sua confirmação.
+* **Fluxo:** Você envia a localização (via GPS do WhatsApp), o número do CAR ou o arquivo do mapa da propriedade. O sistema localiza o imóvel, envia uma imagem de satélite do contorno para você verificar e pede sua confirmação.
 * **Exemplos de Prompts:**
     * *(Enviando o alfinete de localização do WhatsApp)* *"Essa é a minha fazenda."*
     * *"Quero cadastrar minha propriedade. O número do meu CAR é [INSERIR NÚMERO]."*
+    * *(Enviando o arquivo do mapa)* *"Quero cadastrar minha área com este arquivo."*
+
+### 2.1.1. Cadastrando pelo Arquivo do Mapa
+Se você tem o desenho da sua área feito no Google Earth ou em outro programa, pode enviar o arquivo direto aqui na conversa.
+* **Formatos aceitos:** KML, KMZ, GeoJSON ou Shapefile compactado (ZIP ou RAR).
+* **Piquetes:** se o arquivo tiver vários polígonos, cada um é cadastrado como um piquete. Se os piquetes já tiverem nome no arquivo, o nome é mantido.
 
 ### 2.2. Dando Nomes às Propriedades
 Para facilitar o dia a dia, você pode (e deve) apelidar os seus registros com os nomes reais das fazendas.
