@@ -4879,7 +4879,7 @@ wheels = [
 [[package]]
 name = "semente-agents"
 version = "0.4.1"
-source = { git = "https://github.com/lapig-ufg/semente.git?rev=main#5230996e29d987cf5f4f43e296aecf208f36ed97" }
+source = { git = "https://github.com/lapig-ufg/semente.git?rev=main#206ae2d0d88b2f9bfcebe35085ca03e44560aef6" }
 dependencies = [
     { name = "agno" },
     { name = "fastapi" },
