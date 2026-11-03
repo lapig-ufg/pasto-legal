@@ -124,6 +124,39 @@ def _precipitation_so_far(
 
     return float(np.nansum(values))
 
+def _available_rain(
+    month: datetime.date,
+    expected: float,
+    today: datetime.date,
+    already_fallen: float | None,
+) -> tuple[float, str]:
+    """How much of a month's rain can still be planned around (mm), plus a note.
+
+    A future month still has its whole forecast ahead. The current month does
+    not: rain already in the ground cannot be planned around, so only what is
+    still to come counts towards the user's threshold.
+
+    ``already_fallen`` is None when the measurement is unavailable (the
+    archive lags a few days). The full monthly total is then used — less
+    precise, but it keeps the tool answering.
+
+    Returns:
+        (available_mm, note) where note is empty for every month except the
+        current one, for which it states both figures so the answer can
+        explain itself.
+    """
+    is_current = (month.year, month.month) == (today.year, today.month)
+    if not is_current or already_fallen is None:
+        return expected, ""
+
+    available = max(expected - already_fallen, 0.0)
+    note = (
+        f" ({expected:.0f} mm expected for the whole month, "
+        f"{already_fallen:.0f} mm already fallen)"
+    )
+    return available, note
+
+
 @tool(description=get_tool_description("weather_tools", "get_monthly_precipitation_forecast"))
 def get_monthly_precipitation_forecast(
     run_context: RunContext, feature_id: str, months: int = 7
@@ -221,16 +254,7 @@ def get_first_month_above_precipitation_threshold(
                 continue
 
             month = row["date"].date()
-            available, note = expected, ""
-
-            is_current = (month.year, month.month) == (today.year, today.month)
-            if is_current and already_fallen is not None:
-                available = max(expected - already_fallen, 0.0)
-                note = (
-                    f" ({expected:.0f} mm expected for the whole month, "
-                    f"{already_fallen:.0f} mm already fallen)"
-                )
-
+            available, note = _available_rain(month, expected, today, already_fallen)
             candidates.append((month, available, note))
 
         if not candidates:
