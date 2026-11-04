@@ -12,7 +12,7 @@ from pathlib import Path
 import ee
 import pytest
 
-from domain.services.geospatial.gee import get_biomass, retrieve_t2g_biomass_image
+from domain.services.geospatial.gee import get_biomass, retrieve_gpw_biomass_image, retrieve_t2g_biomass_image
 from domain.services.geospatial.pasture_classification import get_on_the_fly_pasture_mask
 
 _MOCK_PATH = Path(__file__).resolve().parents[2] / "domain/utils/mocks/new_property_mock.json"
@@ -61,3 +61,7 @@ def test_biomass_map_accepts_the_on_the_fly_mask():
     assert result is not None
     image, year, month = result
     assert image.size[0] > 0 and (year, month) == (2026, 8)
+
+
+def test_gpw_biomass_map_renders_with_its_colorbar():
+    assert retrieve_gpw_biomass_image(_first_property_coords()).size[0] > 0

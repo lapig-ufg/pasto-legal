@@ -741,6 +741,7 @@ def retrieve_gpw_biomass_image(coords: List[List[List[List[float]]]], year: int 
         title=f"Biomassa\n({str(year)}) - GPW",
         vmin=round(min_bio_val),
         vmax=round(max_bio_val),
+        unit="ton/ha/ano",
         palette=palette
     )
 
