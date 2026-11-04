@@ -28,7 +28,7 @@ from domain.services.geospatial.gee import (
     query_pasture_statistics,
     query_topographic_stats,
     )
-from domain.services.geospatial.pasture_classification import classify_pasture_on_the_fly
+from domain.services.geospatial.pasture_classification import classify_pasture_on_the_fly, get_on_the_fly_pasture_mask
 from domain.services.geospatial.pasture_biomass import estimate_pasture_biomass_history
 from domain.services.geospatial.pasture_age import estimate_pasture_age_on_the_fly
 from domain.services.geospatial.pasture_vigor import estimate_pasture_vigor_on_the_fly
@@ -104,7 +104,10 @@ def generate_biomass_image(run_context: RunContext, feature_id: str) -> ToolResu
 
         today = datetime.date.today()
 
-        result = retrieve_t2g_biomass_image(selected_property.get_coords(), today.month, today.year)
+        result = retrieve_t2g_biomass_image(
+            selected_property.get_coords(), today.month, today.year,
+            pasture_mask=_biomass_pasture_mask(selected_property),
+        )
 
         if result is not None:
             biomass_img, _target_year, _target_month = result
@@ -274,6 +277,7 @@ def generate_biomass_video(
             start_month=start_month,
             end_year=end_year,
             end_month=end_month,
+            pasture_mask=_biomass_pasture_mask(selected_property),
         )
 
         if result is None:
@@ -425,7 +429,8 @@ def get_pasture_stats(run_context: RunContext, feature_id: str):
         new_pasture_stats: PastureStats = query_pasture_statistics(
             coords=selected_property.get_coords(),
             month=today.month,
-            year=today.year
+            year=today.year,
+            pasture_mask=_biomass_pasture_mask(selected_property),
         )
 
         log_debug(f"get_pasture_stats: stats recuperadas ({selected_property.id})")
@@ -481,6 +486,11 @@ def _cache_key_for(selected_property: Feature) -> str:
     return selected_property.get_metadata("car_code") or selected_property.id
 
 
+def _biomass_pasture_mask(selected_property: Feature):
+    """Máscara on-the-fly da biomassa Time2Graze; None cai pro mapa GPW."""
+    return get_on_the_fly_pasture_mask(ee.Geometry.MultiPolygon(selected_property.get_coords()))
+
+
 def _safe_fetch_image(label: str, fetch_fn):
     """Busca um mapa 'extra' do boletim sem derrubar o PDF inteiro se essa camada específica falhar."""
     try:
@@ -517,7 +527,8 @@ def generate_property_boletim(run_context: RunContext, feature_id: str) -> ToolR
         coords = selected_property.get_coords()
         today = datetime.date.today()
 
-        pasture_stats = query_pasture_statistics(coords=coords, month=today.month, year=today.year)
+        biomass_pasture_mask = _biomass_pasture_mask(selected_property)
+        pasture_stats = query_pasture_statistics(coords=coords, month=today.month, year=today.year, pasture_mask=biomass_pasture_mask)
         stats = PropertyStats(car_code=selected_property.id or selected_property.get_metadata("car_code") or "", list_pasture_stats=[pasture_stats])
 
         location_image = retrieve_feature_images(coords)[0]
@@ -527,7 +538,7 @@ def generate_property_boletim(run_context: RunContext, feature_id: str) -> ToolR
         pasture_map_image = pasture_result["imagem"]
 
         def _fetch_biomass_image():
-            result = retrieve_t2g_biomass_image(coords, today.month, today.year)
+            result = retrieve_t2g_biomass_image(coords, today.month, today.year, pasture_mask=biomass_pasture_mask)
             if result is not None:
                 biomass_img, _target_year, _target_month = result
                 return biomass_img

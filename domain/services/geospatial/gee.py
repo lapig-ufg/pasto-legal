@@ -502,13 +502,15 @@ def _get_t2g_biomass_image(
     end_year: int,
     end_month: int,
     end_day: int,
+    pasture_mask: Optional[ee.Image] = None,
 ):
     """
     Computes the accumulated dry biomass image (ton/ha) from UGPP productivity.
 
     Uses the Time2Graze collection (10m UGPP) accumulated over the given period,
     multiplied by the scale factor, LUEmax, the IPCC factor (C -> dry biomass) and
-    the ton/ha conversion factor, masked by Global Pasture Watch grassland areas.
+    the ton/ha conversion factor, masked by `pasture_mask` or, by default, by Global
+    Pasture Watch grassland areas.
 
     Args:
         roi (ee.Geometry): Region of interest (farm polygon).
@@ -518,6 +520,7 @@ def _get_t2g_biomass_image(
         end_year (int): End year (exclusive) of the accumulation period.
         end_month (int): End month (exclusive) of the accumulation period.
         end_day (int): End day (exclusive) of the accumulation period.
+        pasture_mask (ee.Image, optional): Pasture mask; defaults to the GPW grassland map.
 
     Returns:
         tuple[ee.Image, int, int]: (biomass image 'tonC_hec', start year, start month),
@@ -538,9 +541,12 @@ def _get_t2g_biomass_image(
 
     # Máscara de pastagem no mesmo ano do período de biomassa pedido (não mais fixa em 2024) —
     # limitada ao último ano publicado pelo GPW, já que o asset não cobre anos futuros.
-    mask_year = min(start_year, _latest_gpw_year())
-    grassland_asset = ee.ImageCollection("projects/global-pasture-watch/assets/ggc-30m/v1-1/grassland_c")
-    grassland_mask = grassland_asset.filterBounds(roi).filterDate(f'{mask_year}-01-01', f'{mask_year + 1}-01-01').first().gte(1)
+    if pasture_mask is not None:
+        grassland_mask = pasture_mask.gte(1)
+    else:
+        mask_year = min(start_year, _latest_gpw_year())
+        grassland_asset = ee.ImageCollection("projects/global-pasture-watch/assets/ggc-30m/v1-1/grassland_c")
+        grassland_mask = grassland_asset.filterBounds(roi).filterDate(f'{mask_year}-01-01', f'{mask_year + 1}-01-01').first().gte(1)
 
     if ugpp_col.size().eq(0).getInfo():
         log_error(
@@ -556,7 +562,9 @@ def _get_t2g_biomass_image(
     return grassland_image, start_year, start_month
     
 
-def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int, year: int) -> tuple[PIL.Image.Image, int, int] | None:
+def retrieve_t2g_biomass_image(
+    coords: List[List[List[List[float]]]], month: int, year: int, pasture_mask: Optional[ee.Image] = None
+) -> tuple[PIL.Image.Image, int, int] | None:
     """
     Generates a satellite image with the T2G (Time2Graze) biomass layer overlaid,
     relative to the reference month (the month before the one given), with a colorbar.
@@ -565,6 +573,7 @@ def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int
         coords: List of coordinates representing the farm MultiPolygon.
         month (int): Reference month (the accumulation uses the previous month).
         year (int): Reference year.
+        pasture_mask (ee.Image, optional): Pasture mask; defaults to the GPW grassland map.
 
     Returns:
         tuple[PIL.Image.Image, int, int]: (final image with satellite, biomass,
@@ -584,7 +593,8 @@ def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int
         result = _get_t2g_biomass_image(
             roi,
             start_date.year, start_date.month, start_date.day,
-            end_date.year, end_date.month, end_date.day
+            end_date.year, end_date.month, end_date.day,
+            pasture_mask=pasture_mask,
         )
 
         if result is None:
@@ -597,7 +607,8 @@ def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int
             result = _get_t2g_biomass_image(
                 roi,
                 start_date.year, start_date.month, start_date.day,
-                end_date.year, end_date.month, end_date.day
+                end_date.year, end_date.month, end_date.day,
+                pasture_mask=pasture_mask,
             )
 
             if result is None:
@@ -817,6 +828,7 @@ def retrieve_t2g_biomass_video(
     start_month: int,
     end_year: int,
     end_month: int,
+    pasture_mask: Optional[ee.Image] = None,
 ) -> tuple[bytes, tuple[int, int], tuple[int, int]] | None:
     """
     Gera um GIF animado da biomassa acumulada (ton/ha) mês a mês, usando a
@@ -835,6 +847,7 @@ def retrieve_t2g_biomass_video(
         start_month (int): Mês do primeiro mês de referência (1-12).
         end_year (int): Ano do último mês de referência (limitado ao mês atual).
         end_month (int): Mês do último mês de referência (1-12, limitado ao mês atual).
+        pasture_mask (ee.Image, optional): Máscara de pastagem; padrão: mapa GPW.
 
     Returns:
         tuple[bytes, tuple, tuple, list, float, float] | None: (GIF em bytes,
@@ -864,7 +877,8 @@ def retrieve_t2g_biomass_video(
             result = _get_t2g_biomass_image(
                 roi,
                 start_date.year, start_date.month, start_date.day,
-                end_date.year, end_date.month, end_date.day
+                end_date.year, end_date.month, end_date.day,
+                pasture_mask=pasture_mask,
             )
 
             if result is None:
@@ -1118,7 +1132,7 @@ def retrieve_pasture_vigor_image(coords: List[List[List[List[float]]]], year: in
         )
 
 
-def get_biomass(roi: ee.Geometry, month: int, year: int) -> BiomassStats:
+def get_biomass(roi: ee.Geometry, month: int, year: int, pasture_mask: Optional[ee.Image] = None) -> BiomassStats:
     """
     Computes pasture dry biomass accumulated in the reference month (the month
     before the one given), using the Time2Graze collection (10m UGPP).
@@ -1130,6 +1144,8 @@ def get_biomass(roi: ee.Geometry, month: int, year: int) -> BiomassStats:
         roi (ee.Geometry): Region of interest (farm polygon).
         month (int): Reference month (the accumulation uses the previous month).
         year (int): Reference year.
+        pasture_mask (ee.Image, optional): Pasture mask for the Time2Graze biomass; defaults
+            to the GPW grassland map (the GPW fallback always uses GPW's own mask).
 
     Returns:
         BiomassStats: Observation year and accumulated value with unit
@@ -1139,7 +1155,8 @@ def get_biomass(roi: ee.Geometry, month: int, year: int) -> BiomassStats:
     result = _get_t2g_biomass_image(
         roi,
         start_date.year, start_date.month, start_date.day,
-        end_date.year, end_date.month, end_date.day
+        end_date.year, end_date.month, end_date.day,
+        pasture_mask=pasture_mask,
     )
 
     # Fallback pro Global Pasture Watch (cobertura nacional/global) se o T2G não cobrir a propriedade
@@ -1415,7 +1432,9 @@ def get_soil_texture_stats(roi: ee.Geometry) -> SoilStats:
     return SoilStats(observation_year=datetime.date.today().year, data=soil_data_list)
 
 
-def query_pasture_statistics(coords: List[List[List[List[float]]]], month: int, year: int) -> PropertyStats:
+def query_pasture_statistics(
+    coords: List[List[List[List[float]]]], month: int, year: int, pasture_mask: Optional[ee.Image] = None
+) -> PropertyStats:
     """
     Extracts pasture statistics (biomass, age, vigor and land use/land cover).
 
@@ -1423,6 +1442,7 @@ def query_pasture_statistics(coords: List[List[List[List[float]]]], month: int, 
         coords: List of coordinates representing the farm MultiPolygon.
         month (int): Reference month (biomass accumulates the previous month).
         year (int): Reference year.
+        pasture_mask (ee.Image, optional): Pasture mask for the Time2Graze biomass; defaults to the GPW map.
 
     Returns:
         PropertyStats: PastureStats object combining BiomassStats, AgeStats,
@@ -1435,7 +1455,7 @@ def query_pasture_statistics(coords: List[List[List[List[float]]]], month: int, 
     try:
         roi = ee.Geometry.MultiPolygon(coords)
 
-        biomass_stats = get_biomass(roi, month, year)
+        biomass_stats = get_biomass(roi, month, year, pasture_mask=pasture_mask)
         # cada função clampa sozinha pro último ano publicado no respectivo asset MapBiomas
         # (não trava mais em 2024 — avança automaticamente quando a MapBiomas atualizar)
         age_stats = get_pasture_age(roi, year, month)
