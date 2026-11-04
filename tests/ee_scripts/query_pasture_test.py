@@ -1,65 +1,41 @@
 import pytest
 from pydantic import ValidationError
 
-# Substitua 'app.tools.pasture' pelo caminho real de importação no seu projeto
-from domain.services.geospatial.gee import (
-    Value, 
-    BiomassStats, 
-    AgeStats, 
-    VigorStats, 
-    LULCStats, 
-    PropertyStats
-)
+from domain.schemas.property_stats import AgeData, AgeStats, LULCData, LULCStats, VigorData, VigorStats
+from domain.services.geospatial.gee import BiomassStats, PastureStats, PropertyStats, Value
+
 
 def test_value_model_creation():
-    """Testa se o modelo Value base é criado corretamente com tipos válidos."""
     val = Value(value=150.5, unity="hectares")
     assert val.value == 150.5
     assert val.unity == "hectares"
 
+
 def test_value_model_validation_error():
-    """Testa se o Pydantic levanta erro ao passar um tipo de dado incorreto (ex: string no lugar de float)."""
     with pytest.raises(ValidationError):
-        # Passando um texto em vez de um número (float)
         Value(value="cento e cinquenta", unity="hectares")
 
+
 def test_biomass_data_model():
-    """Testa o modelo de Biomassa (que contém um Value aninhado)."""
-    biomass = BiomassStats(amount=Value(value=2000.0, unity="toneladas"))
+    biomass = BiomassStats(observation_year=2025, period="mensal", amount=Value(value=2000.0, unity="toneladas"))
     assert biomass.amount.value == 2000.0
-    assert biomass.amount.unity == "toneladas"
+    assert biomass.period == "mensal"
+
+
+def test_biomass_period_must_be_monthly_or_annual():
+    with pytest.raises(ValidationError):
+        BiomassStats(observation_year=2025, period="semanal", amount=Value(value=1.0, unity="toneladas"))
+
 
 def test_pasture_stats_result_composition():
-    """Testa se o modelo principal compila todos os dados e listas corretamente."""
-    
-    # Mockando os dados que viriam do Earth Engine / refatoração
-    biomass = BiomassStats(amount=Value(value=550.2, unity="toneladas"))
-    
-    age_list = [
-        AgeStats(age="1 a 10 anos", amount=Value(value=100.0, unity="hectares")),
-        AgeStats(age="10 a 20 anos", amount=Value(value=50.0, unity="hectares"))
-    ]
-    
-    vigor_list = [
-        VigorStats(vigor="Alto", amount=Value(value=120.0, unity="hectares")),
-        VigorStats(vigor="Baixo", amount=Value(value=30.0, unity="hectares"))
-    ]
-    
-    lulc_list = [
-        LULCStats(lulc_class="Pastagem", amount=Value(value=150.0, unity="hectares"))
-    ]
-
-    # Instanciando o modelo consolidado
-    result = PropertyStats(
-        biomass=biomass,
-        age=age_list,
-        vigor=vigor_list,
-        lulc_class=lulc_list
+    pasture = PastureStats(
+        biomass_stats=BiomassStats(observation_year=2025, period="anual", amount=Value(value=550.2, unity="toneladas")),
+        age_stats=AgeStats(observation_year=2024, data=[AgeData(age="1 a 10 anos", amount=Value(value=100.0, unity="hectares"))]),
+        vigor_stats=VigorStats(observation_year=2024, data=[VigorData(vigor="Alto", amount=Value(value=120.0, unity="hectares"))]),
+        lulc_stats=LULCStats(observation_year=2024, data=[LULCData(lulc_class="Pastagem", amount=Value(value=150.0, unity="hectares"))]),
     )
+    result = PropertyStats(car_code="GO-1", list_pasture_stats=[pasture])
 
-    # Asserções para garantir que a estrutura final está intacta
-    assert result.biomass.amount.value == 550.2
-    assert len(result.age) == 2
-    assert result.age[0].age == "1 a 10 anos"
-    assert result.vigor[1].vigor == "Baixo"
-    assert result.lulc_class[0].amount.unity == "hectares"
+    assert result.list_pasture_stats[0].biomass_stats.amount.value == 550.2
+    assert result.list_pasture_stats[0].age_stats.data[0].age == "1 a 10 anos"
+    assert "Pastagem" in str(pasture)

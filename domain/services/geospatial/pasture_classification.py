@@ -2,7 +2,7 @@ import time
 import traceback
 
 from io import BytesIO
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 import ee
 import PIL
@@ -261,3 +261,20 @@ def classify_pasture_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int 
     except Exception as error:
         log_error(traceback.format_exc())
         raise RuntimeError(f"[{car_code}] Unexpected error while classifying pasture: {error}")
+
+def get_on_the_fly_pasture_mask(roi: ee.Geometry, pred_year: int = None, train_year: int = None) -> Optional[ee.Image]:
+    """
+    Classificação de pastagem on-the-fly (mesmos anos padrão do mapa) como máscara binária
+    lazy, sem download nem cache, para aplicar em outras camadas (ex.: biomassa Time2Graze).
+
+    Returns:
+        Optional[ee.Image]: Máscara (1 = pastagem), ou None se a classificação estiver
+        indisponível — o chamador deve cair pro mapa de pastagem estático do GPW.
+    """
+    try:
+        train_year = train_year or _latest_mapbiomas_year()
+        classified, _ = _classify(roi=roi, train_year=train_year, pred_year=pred_year or (train_year + 1))
+        return classified.gte(1)
+    except Exception as error:
+        log_error(f"get_on_the_fly_pasture_mask: classificação indisponível, usando o mapa GPW ({error})")
+        return None
