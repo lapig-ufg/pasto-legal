@@ -195,10 +195,11 @@ def _overlay_fixed_colorbar(
                 append_continuous_colorbar(
                     frame,
                     title=title,
-                    vmin=round(vmin),
-                    vmax=round(vmax),
+                    vmin=round(vmin, 1),
+                    vmax=round(vmax, 1),
                     unit="ton/ha",
                     palette=BIOMASS_VIDEO_PALETTE,
+                    ndigits=1,
                 )
             )
             frame_index += 1
@@ -311,8 +312,8 @@ def generate_biomass_video(
                 "analysis_tools", "generate_biomass_video", "success",
                 start=f"{effective_start[1]}/{effective_start[0]}",
                 end=f"{effective_end[1]}/{effective_end[0]}",
-                min=round(global_min),
-                max=round(global_max),
+                min=round(global_min, 1),
+                max=round(global_max, 1),
             ),
             videos=[Video(content=mp4_bytes, mime_type="video/mp4", format="mp4")],
         )

@@ -942,7 +942,7 @@ def retrieve_t2g_biomass_video(
         url = video_collection.getVideoThumbURL({
             "dimensions": _IMAGE_DIMENSION,
             "region": frame_region,
-            "framesPerSecond": 2,
+            "framesPerSecond": 1,
             "format": "gif",
         })
 
