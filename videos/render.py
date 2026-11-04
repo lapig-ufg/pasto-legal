@@ -1,44 +1,41 @@
 """
-Gera os vídeos institucionais e tutoriais do Pasto Legal.
+Gera os vídeos institucionais e tutoriais do Pasto Legal em `assets/videos/`.
 
 Uso:
     uv run python -m videos.render                 # todos os vídeos
-    uv run python -m videos.render cadastro        # um vídeo (propaganda | primeiras_interacoes | cadastro)
+    uv run python -m videos.render cadastro        # um ou mais (propaganda | primeiras_interacoes | cadastro)
 """
 
-import sys
-from pathlib import Path
+import argparse
 
-from videos.engine import GREEN, INK, Chat, FeatureList, TextCard, render
+from videos.engine import GREEN, INK, MUTED, ROOT, Chat, FeatureList, TextCard, render
 
-OUTPUT_DIR = Path(__file__).resolve().parent / "output"
-
-MUTED = (90, 105, 90)
+OUTPUT_DIR = ROOT / "assets" / "videos"
 
 VIDEOS = {
     "propaganda": lambda: [
         TextCard([("Seu pasto, na palma da mão", 56, GREEN), ("direto no WhatsApp", 36, MUTED)], 4.0),
         TextCard(
-            [("Saber como está o pasto custa tempo e dinheiro", 48, INK), ("Rodar a fazenda inteira a cavalo não precisa ser o único jeito", 30, MUTED)],
-            5.0, show_logo=False,
+            [("Percorrer a fazenda inteira custa tempo e dinheiro", 46, INK), ("Acompanhe o pasto pelo celular", 30, MUTED)],
+            show_logo=False,
         ),
         Chat([
             ("user", "Como está o pasto da minha fazenda?"),
-            ("bot", "Analisei as imagens de satélite. O vigor está bom e a biomassa aumentou desde o mês passado."),
+            ("bot", "Seu pasto está com bom vigor e 2,1 t/ha de matéria seca."),
             ("user", "Vai chover essa semana?"),
-            ("bot", "Sim. A previsão indica chuva nos próximos dias. Quer ver o mapa da biomassa?"),
+            ("bot", "Vai sim. Há chuva prevista para os próximos dias."),
         ]),
         FeatureList("O que o Pasto Legal faz por você", [
-            ("Mapas de satélite", "A sua propriedade vista de cima, com o contorno do CAR."),
-            ("Biomassa e vigor", "Quanto pasto você tem e como ele está."),
-            ("Previsão de chuva", "Planeje a lotação e o manejo com antecedência."),
-            ("Boletim em PDF", "Um resumo completo da fazenda, pronto para guardar."),
-        ], 7.5),
-        TextCard([("Cadastre com o número do CAR", 48, GREEN), ("ou com a localização do WhatsApp", 34, MUTED)], 4.5, show_logo=False),
-        TextCard([("Pasto Legal", 64, GREEN), ("Tecnologia de satélite para o produtor rural", 30, INK), ("pasto.legal", 34, MUTED), ("Uma iniciativa do LAPIG/UFG", 26, MUTED)], 5.5),
+            ("Mapas de satélite", "Sua propriedade vista de cima."),
+            ("Biomassa e vigor", "Quanto pasto você tem."),
+            ("Previsão de chuva", "Planeje a lotação com antecedência."),
+            ("Boletim em PDF", "Resumo completo da fazenda."),
+        ]),
+        TextCard([("Cadastre com o número do CAR", 48, GREEN), ("ou com a localização do WhatsApp", 34, MUTED)], show_logo=False),
+        TextCard([("Pasto Legal", 64, GREEN), ("Tecnologia de satélite para o produtor rural", 30, INK), ("pasto.legal", 34, MUTED), ("Uma iniciativa do LAPIG/UFG", 26, MUTED)], 6.0),
     ],
     "primeiras_interacoes": lambda: [
-        TextCard([("Primeiras conversas", 56, GREEN), ("Veja como é fácil começar", 34, MUTED)], 3.5),
+        TextCard([("Primeiras conversas", 56, GREEN), ("Veja como é fácil começar", 34, MUTED)], 4.0),
         Chat([
             ("user", "Oi! O que você consegue fazer?"),
             ("bot", "Oi! Eu sou o Pasto Legal. Uso imagens de satélite e inteligência artificial para acompanhar o seu pasto: mapas, biomassa, vigor e previsão de chuva."),
@@ -47,30 +44,36 @@ VIDEOS = {
             ("user", "Quero! Qual é a biomassa da minha fazenda hoje?"),
             ("bot", "Para analisar a sua fazenda, preciso primeiro cadastrar a propriedade. Pode me enviar o número do CAR ou a localização pelo WhatsApp?"),
         ]),
-        TextCard([("Próximo passo", 52, GREEN), ("Cadastrar a sua propriedade", 36, INK)], 3.5),
+        TextCard([("Próximo passo", 52, GREEN), ("Cadastrar a sua propriedade", 36, INK)]),
     ],
     "cadastro": lambda: [
-        TextCard([("Cadastro de propriedade", 54, GREEN), ("Passo a passo no WhatsApp", 34, MUTED)], 3.5),
-        TextCard([("Passo 1", 40, MUTED), ("Envie o número do CAR", 52, GREEN), ("ou a localização pelo WhatsApp", 32, INK)], 4.0, show_logo=False),
+        TextCard([("Cadastro de propriedade", 54, GREEN), ("Passo a passo no WhatsApp", 34, MUTED)], 4.0),
+        TextCard([("Passo 1", 40, MUTED), ("Envie o número do CAR", 52, GREEN), ("ou a localização pelo WhatsApp", 32, INK)], show_logo=False),
         Chat([
-            ("user", "Quero cadastrar minha propriedade. O meu CAR é GO-0000000-A1B2C3D4E5F6"),
-            ("bot", "Procurando o seu imóvel no SICAR. Um instante."),
+            ("user", "Quero cadastrar minha propriedade. O meu CAR é GO-0000000-A1B2C3D4E5F60718293A4B5C6D7E8F90"),
             ("bot", "Encontrei! Este é o contorno do imóvel: 85,9 hectares em Goiás. É essa a sua propriedade?", "map"),
             ("user", "Sim, é essa!"),
             ("bot", "Propriedade confirmada. Quer dar um nome a ela? Por exemplo: Fazenda Boa Vista."),
             ("user", "Sítio Esperança"),
-            ("bot", "Pronto! O Sítio Esperança está salvo. Já posso gerar mapas e análises."),
+            ("bot", "Sítio Esperança salvo! Pelo satélite, a propriedade tem cerca de 60 hectares de pasto em bom vigor. Quer calcular a capacidade de suporte para planejar a lotação?"),
         ], tail=2.5),
-        TextCard([("Propriedade cadastrada", 48, GREEN), ("Agora é só perguntar", 36, INK)], 4.0),
+        TextCard([("Propriedade cadastrada", 48, GREEN), ("Agora é só perguntar", 36, INK)]),
     ],
 }
 
 
-def main(names: list[str]) -> None:
-    for name in names or list(VIDEOS):
-        output = render(VIDEOS[name](), OUTPUT_DIR / f"pasto_legal_{name}.mp4", progress=lambda n, total: print(f"{name}: {n}/{total}") if n % 300 == 0 else None)
-        print(f"{output} ({output.stat().st_size / 1e6:.1f} MB)")
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Gera os vídeos do Pasto Legal em assets/videos/.")
+    parser.add_argument("videos", nargs="*", metavar="video", help=f"um ou mais de: {', '.join(VIDEOS)} (padrão: todos)")
+    args = parser.parse_args(argv)
+    unknown = [name for name in args.videos if name not in VIDEOS]
+    if unknown:
+        parser.error(f"vídeo desconhecido: {', '.join(unknown)} (opções: {', '.join(VIDEOS)})")
+
+    for name in args.videos or VIDEOS:
+        output = render(VIDEOS[name](), OUTPUT_DIR / f"pasto_legal_{name}.mp4", progress=lambda n, total, name=name: print(f"{name}: {n}/{total}") if n % 300 == 0 else None)
+        print(f"{output.relative_to(ROOT)} ({output.stat().st_size / 1e6:.1f} MB)")
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    main()

@@ -46,6 +46,7 @@ from domain.tools.property_tools import (
     start_registration_by_geojson,
     start_registration_by_url,
 )
+from domain.tools.tutorial_tools import send_tutorial_video
 from domain.tools.weather_tools import (
     get_daily_precipitation_forecast,
     get_dry_season_onset_forecast,
@@ -125,6 +126,7 @@ def get_tools(run_context: RunContext):
             start_registration_by_geojson,
             start_buffer_registration_by_coordinate,
             start_buffer_registration_by_url,
+            send_tutorial_video,
             *_ANALYST_TOOLS
         ])
 

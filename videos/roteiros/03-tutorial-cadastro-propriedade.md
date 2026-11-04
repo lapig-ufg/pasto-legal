@@ -1,16 +1,27 @@
 # Roteiro 3: Tutorial 1, cadastro de propriedade
 
-**Formato:** animação vertical 9:16 (720x1280), ~38 s, sem áudio.
+**Formato:** animação vertical 9:16 (720x1280), 46 s, sem áudio.
 **Status:** aguardando aprovação de Pedro Novaes.
 
 | Cena | Tempo | Na tela |
 |---|---|---|
-| 1. Abertura | 0-3,5 s | Logo e "Cadastro de propriedade: passo a passo no WhatsApp" |
-| 2. Passo 1 | 3,5-7,5 s | "Envie o número do CAR ou a localização pelo WhatsApp" |
-| 3. Conversa | 7,5-33 s | Usuário envia o CAR; o sistema busca no SICAR, mostra o contorno do imóvel sobre a imagem de satélite e pede confirmação; usuário confirma; o sistema pede um nome; usuário responde "Sítio Esperança"; o sistema confirma o cadastro |
-| 4. Encerramento | 33-38 s | "Propriedade cadastrada: agora é só perguntar" |
+| 1. Abertura | 0-4 s | Logo e "Cadastro de propriedade: passo a passo no WhatsApp" |
+| 2. Passo 1 | 4-10 s | "Envie o número do CAR ou a localização pelo WhatsApp" |
+| 3. Conversa | 10-43 s | Ver as falas abaixo |
+| 4. Encerramento | 43-46 s | "Propriedade cadastrada: agora é só perguntar" |
+
+**Falas da conversa (cena 3)**
+
+| Quem | Mensagem |
+|---|---|
+| Usuário | "Quero cadastrar minha propriedade. O meu CAR é GO-0000000-A1B2C3D4E5F60718293A4B5C6D7E8F90" |
+| Pasto Legal | Imagem de satélite com o contorno do imóvel e a legenda "Encontrei! Este é o contorno do imóvel: 85,9 hectares em Goiás. É essa a sua propriedade?" |
+| Usuário | "Sim, é essa!" |
+| Pasto Legal | "Propriedade confirmada. Quer dar um nome a ela? Por exemplo: Fazenda Boa Vista." |
+| Usuário | "Sítio Esperança" |
+| Pasto Legal | "Sítio Esperança salvo! Pelo satélite, a propriedade tem cerca de 60 hectares de pasto em bom vigor. Quer calcular a capacidade de suporte para planejar a lotação?" |
 
 **Pontos para a revisão**
-- O número do CAR (GO-0000000-A1B2C3D4E5F6) e a imagem do contorno são fictícios.
-- O imóvel de 85,9 ha em Goiás é ilustrativo.
+- O CAR (formato real: GO-, 7 dígitos e 32 caracteres) e a imagem do contorno são fictícios e não correspondem a nenhum imóvel.
+- A última mensagem resume o primeiro diagnóstico que o sistema entrega após o cadastro (um parágrafo curto e uma pergunta sobre capacidade de suporte). Os valores são ilustrativos.
 - O cadastro por localização do WhatsApp é citado no passo 1, mas não é demonstrado em conversa.

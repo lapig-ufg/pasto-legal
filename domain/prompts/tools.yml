@@ -252,6 +252,32 @@ analysis_tools:
       error: |
         Erro inesperado: {error}.
 
+tutorial_tools:
+  send_tutorial_video:
+    description: |
+      Envia ao usuário um vídeo animado (MP4) que ensina a usar o Pasto Legal ou apresenta o sistema.
+
+      Vídeos disponíveis:
+      - primeiras_interacoes: como conversar com o Pasto Legal nas primeiras mensagens.
+      - cadastro: passo a passo para cadastrar uma propriedade (pelo número do CAR ou pela localização).
+      - propaganda: apresentação geral do Pasto Legal.
+
+      Use quando o usuário pedir ou perguntar se existe um vídeo, tutorial ou demonstração de como
+      usar o sistema ou cadastrar a propriedade: envie na hora, sem pedir confirmação antes.
+      Não envie por iniciativa própria.
+
+      params:
+          video (str): "primeiras_interacoes", "cadastro" ou "propaganda".
+
+      Return:
+          ToolResult: Texto de confirmação e o vídeo MP4.
+    results:
+      unknown_video: |
+        Vídeo não encontrado: {video}. Opções disponíveis: {options}.
+      success: |
+        O vídeo "{title}" foi enviado ao usuário junto desta resposta. Diga em uma frase curta que o vídeo está acima e ofereça ajuda para o próximo passo.
+      error: |
+        Erro ao enviar o vídeo: {error}.
 tts_tools:
   generate_speech:
     description: |
