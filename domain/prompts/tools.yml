@@ -260,7 +260,7 @@ tutorial_tools:
       Vídeos disponíveis:
       - primeiras_interacoes: como conversar com o Pasto Legal nas primeiras mensagens.
       - cadastro: passo a passo para cadastrar uma propriedade (pelo número do CAR ou pela localização).
-      - propaganda: apresentação geral do Pasto Legal.
+      - propaganda: apresentação geral do Pasto Legal (o que é e o que faz), não um passo a passo.
 
       Use quando o usuário pedir ou perguntar se existe um vídeo, tutorial ou demonstração de como
       usar o sistema ou cadastrar a propriedade: envie na hora, sem pedir confirmação antes.
@@ -274,6 +274,8 @@ tutorial_tools:
     results:
       unknown_video: |
         Vídeo não encontrado: {video}. Opções disponíveis: {options}.
+      invalid_file: |
+        O vídeo {video} está indisponível no momento. Peça desculpas ao usuário e ofereça explicar o passo a passo por texto.
       success: |
         O vídeo "{title}" foi enviado ao usuário junto desta resposta. Diga em uma frase curta que o vídeo está acima e ofereça ajuda para o próximo passo.
       error: |

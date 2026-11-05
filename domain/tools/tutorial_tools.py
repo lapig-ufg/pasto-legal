@@ -7,6 +7,8 @@ from semente.logging import log_debug, log_error
 
 TUTORIAL_VIDEOS_DIR = Path(__file__).resolve().parents[2] / "assets" / "videos"
 
+WHATSAPP_MAX_VIDEO_BYTES = 16 * 1024 * 1024
+
 TUTORIAL_VIDEOS = {
     "primeiras_interacoes": "Primeiras conversas com o Pasto Legal",
     "cadastro": "Cadastro de propriedade",
@@ -33,9 +35,14 @@ def send_tutorial_video(run_context: RunContext, video: str) -> ToolResult:
                 "tutorial_tools", "send_tutorial_video", "unknown_video", video=video, options=", ".join(TUTORIAL_VIDEOS),
             ))
 
+        content = path.read_bytes()
+        if not content or len(content) > WHATSAPP_MAX_VIDEO_BYTES or content[4:8] != b"ftyp":
+            log_error(f"send_tutorial_video: arquivo inválido ({path.name}, {len(content)} bytes)")
+            return ToolResult(content=get_tool_result_text("tutorial_tools", "send_tutorial_video", "invalid_file", video=video))
+
         return ToolResult(
             content=get_tool_result_text("tutorial_tools", "send_tutorial_video", "success", title=TUTORIAL_VIDEOS[video]),
-            videos=[Video(content=path.read_bytes(), mime_type="video/mp4", format="mp4")],
+            videos=[Video(content=content, mime_type="video/mp4", format="mp4")],
         )
     except Exception as e:
         log_error(f"send_tutorial_video: {e}")

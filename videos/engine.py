@@ -1,3 +1,4 @@
+import os
 import random
 import shutil
 import subprocess
@@ -17,6 +18,7 @@ LOGO_PATH = ROOT / "assets" / "logos" / "pasto_legal_logo.png"
 WIDTH, HEIGHT, FPS = 720, 1280, 30
 CROSSFADE = 0.4
 FADE_OUT = 0.5
+FADE_STRENGTH = 0.6
 
 GREEN = (27, 138, 72)
 LIME = (177, 198, 35)
@@ -35,6 +37,7 @@ BUBBLE_GAP = 18
 BUBBLE_MAX_W = 520
 PAD = 22
 LINE_H = 38
+MAP_H = 240
 SCROLL_SECONDS = 0.3
 TYPING_SECONDS = 1.3
 WORDS_PER_SECOND = 3.0
@@ -54,6 +57,16 @@ def logo(size: int) -> Image.Image:
     return img.resize((size, size), Image.LANCZOS)
 
 
+@cache
+def avatar() -> Image.Image:
+    """Círculo branco com a logo, desenhado em 4x para ter borda suavizada."""
+    scale, size = 4, 84
+    disc = Image.new("RGBA", (size * scale, size * scale), (0, 0, 0, 0))
+    ImageDraw.Draw(disc).ellipse((0, 0, size * scale - 1, size * scale - 1), fill=WHITE)
+    disc.alpha_composite(logo(70 * scale), (7 * scale, 7 * scale))
+    return disc.resize((size, size), Image.LANCZOS)
+
+
 def ease(x: float) -> float:
     """Suaviza uma progressão linear [0, 1] (ease-out cúbico)."""
     x = min(max(x, 0.0), 1.0)
@@ -65,18 +78,30 @@ def reading_seconds(text: str) -> float:
     return len(text.split()) / WORDS_PER_SECOND
 
 
+def _fit(word: str, f: ImageFont.FreeTypeFont, max_width: int) -> int:
+    """Maior prefixo de `word` que cabe em max_width, preferindo cortar logo após um hífen."""
+    narrowest = min(f.getlength(c) for c in ".il'!") or 1
+    low, high = 1, min(len(word), int(max_width / narrowest) + 1)
+    while low < high:
+        mid = (low + high + 1) // 2
+        if f.getlength(word[:mid]) <= max_width:
+            low = mid
+        else:
+            high = mid - 1
+    hyphen = word.rfind("-", 0, low) + 1
+    return hyphen if hyphen > 1 else low
+
+
 def wrap(text: str, size: int, max_width: int) -> list[str]:
     """Quebra o texto em linhas que cabem em max_width pixels; palavras maiores que a linha são partidas."""
     f = font(size)
     lines, current = [], ""
     for word in text.split():
-        while f.getlength(word) > max_width:
-            cut = len(word)
-            while cut > 1 and f.getlength(word[:cut]) > max_width:
-                cut -= 1
+        while len(word) > 1 and (len(word) > int(max_width / 3) or f.getlength(word) > max_width):
             if current:
                 lines.append(current)
                 current = ""
+            cut = _fit(word, f, max_width)
             lines.append(word[:cut])
             word = word[cut:]
         candidate = f"{current} {word}".strip()
@@ -128,9 +153,11 @@ def fake_map(width: int, height: int) -> Image.Image:
 
 def bubble(sender: str, text: str = "", kind: str = "text") -> Image.Image:
     """Renderiza um balão de conversa (texto, ou imagem do imóvel com legenda opcional) como RGBA."""
+    if sender not in ("user", "bot") or kind not in ("text", "map"):
+        raise ValueError(f"Balão inválido: sender={sender!r}, kind={kind!r}")
     color = USER_BUBBLE if sender == "user" else WHITE
     lines = wrap(text, 28, BUBBLE_MAX_W - 2 * PAD)
-    image_h = 300 if kind == "map" else 0
+    image_h = MAP_H if kind == "map" else 0
     text_w = max((int(font(28).getlength(line)) for line in lines), default=0)
     width = BUBBLE_MAX_W if kind == "map" else max(text_w, 40) + 2 * PAD
     gap = 12 if image_h and lines else 0
@@ -183,11 +210,14 @@ class TextCard(Scene):
         words = " ".join(text for text, _, _ in lines)
         super().__init__(duration or max(3.5, 2.0 + reading_seconds(words)))
         self.lines, self.background, self.show_logo = lines, background, show_logo
+        self.blocks = [(wrap(text, size, WIDTH - 120), size, color) for text, size, color in lines]
+        self.total = sum(len(wrapped) * int(size * 1.35) + 24 for wrapped, size, _ in self.blocks)
+        if self.total + (300 if show_logo else 0) > HEIGHT - 200:
+            raise ValueError("Texto demais para um cartão: reduza as linhas ou o tamanho da fonte")
 
     def frame(self, t: float) -> Image.Image:
         canvas = Image.new("RGBA", (WIDTH, HEIGHT), self.background + (255,))
-        blocks = [(wrap(text, size, WIDTH - 120), size, color) for text, size, color in self.lines]
-        total = sum(len(wrapped) * int(size * 1.35) + 24 for wrapped, size, _ in blocks)
+        blocks, total = self.blocks, self.total
         logo_h = 300 if self.show_logo else 0
         y = (HEIGHT - total - logo_h) // 2
         if self.show_logo:
@@ -282,10 +312,9 @@ class Chat(Scene):
                 canvas.alpha_composite(with_alpha(item["img"], progress), (x, y + int((1 - progress) * 20)))
         draw = ImageDraw.Draw(canvas)
         draw.rectangle((0, 0, WIDTH, HEADER_H), fill=GREEN)
-        draw.ellipse((24, 23, 108, 107), fill=WHITE)
-        canvas.alpha_composite(logo(70), (31, 30))
+        canvas.alpha_composite(avatar(), (24, 23))
         draw.text((128, 36), "Pasto Legal", font=font(34), fill=WHITE)
-        draw.text((128, 80), "online", font=font(22), fill=(232, 247, 237))
+        draw.text((128, 80), "online", font=font(22), fill=(245, 252, 247))
         draw.rectangle((0, HEIGHT - INPUT_H, WIDTH, HEIGHT), fill=(224, 220, 198))
         draw.rounded_rectangle((28, HEIGHT - INPUT_H + 22, WIDTH - 28, HEIGHT - 22), radius=33, fill=WHITE)
         draw.text((58, HEIGHT - INPUT_H + 38), "Mensagem", font=font(26), fill=(120, 130, 120))
@@ -293,7 +322,7 @@ class Chat(Scene):
 
 
 def frame_at(scenes: list[Scene], starts: list[float], t: float) -> Image.Image:
-    active = [(s, t - st) for s, st in zip(scenes, starts) if st <= t < st + s.duration]
+    active = [(s, t - st) for s, st in zip(scenes, starts, strict=True) if st <= t < st + s.duration]
     if len(active) == 1:
         scene, local = active[0]
         return scene.frame(local)
@@ -316,7 +345,8 @@ def render(scenes: list[Scene], output: Path, progress: Callable[[int, int], Non
 
     Raises:
         ValueError: Quando não há cenas ou alguma cena é curta demais para a transição.
-        RuntimeError: Quando o ffmpeg não é encontrado ou falha na codificação (o MP4 parcial é removido).
+        RuntimeError: Quando o ffmpeg não é encontrado ou falha na codificação. O MP4 é gravado em arquivo parcial
+            e só substitui o destino ao terminar, então uma falha ou interrupção nunca deixa vídeo truncado.
     """
     output = Path(output)
     if not scenes:
@@ -335,12 +365,13 @@ def render(scenes: list[Scene], output: Path, progress: Callable[[int, int], Non
     total = int(total_seconds * FPS)
 
     output.parent.mkdir(parents=True, exist_ok=True)
+    partial = output.with_name(f".{output.name}.{os.getpid()}.part")
     command = [
         ffmpeg, "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{WIDTH}x{HEIGHT}",
         "-r", str(FPS), "-i", "-", "-vf", "scale=out_color_matrix=bt709:out_range=tv,format=yuv420p",
         "-c:v", "libx264", "-profile:v", "main", "-bf", "0", "-crf", "20",
         "-x264-params", "colorprim=bt709:transfer=bt709:colormatrix=bt709:fullrange=off",
-        "-movflags", "+faststart", "-an", str(output),
+        "-movflags", "+faststart", "-an", "-f", "mp4", str(partial),
     ]
     white = Image.new("RGB", (WIDTH, HEIGHT), WHITE)
     with tempfile.TemporaryFile() as stderr:
@@ -351,7 +382,7 @@ def render(scenes: list[Scene], output: Path, progress: Callable[[int, int], Non
                 frame = frame_at(scenes, starts, t).convert("RGB")
                 fade = (t - (total_seconds - FADE_OUT)) / FADE_OUT
                 if fade > 0:
-                    frame = Image.blend(frame, white, min(fade, 1.0))
+                    frame = Image.blend(frame, white, FADE_STRENGTH * min(fade, 1.0))
                 encoder.stdin.write(frame.tobytes())
                 if progress:
                     progress(n + 1, total)
@@ -360,7 +391,7 @@ def render(scenes: list[Scene], output: Path, progress: Callable[[int, int], Non
         except BaseException:
             encoder.kill()
             encoder.wait()
-            output.unlink(missing_ok=True)
+            partial.unlink(missing_ok=True)
             raise
         finally:
             with suppress(BrokenPipeError):
@@ -368,6 +399,7 @@ def render(scenes: list[Scene], output: Path, progress: Callable[[int, int], Non
         returncode = encoder.wait()
         if returncode != 0:
             stderr.seek(0)
-            output.unlink(missing_ok=True)
+            partial.unlink(missing_ok=True)
             raise RuntimeError(f"ffmpeg falhou ({returncode}): {stderr.read().decode(errors='replace')}")
+    os.replace(partial, output)
     return output

@@ -41,7 +41,7 @@ def test_wrap_breaks_words_longer_than_the_line():
 
 def test_bubble_accepts_empty_text_and_map_without_caption():
     assert bubble("user", "").height > 0
-    assert bubble("bot", "", "map").height > 300
+    assert bubble("bot", "", "map").height > 240
 
 
 def test_chat_schedules_replies_after_questions():
@@ -86,15 +86,65 @@ def test_render_reports_missing_ffmpeg_clearly(monkeypatch, tmp_path):
         render([TextCard([("a", 40, (0, 0, 0))], 1.0)], tmp_path / "out.mp4")
 
 
-@needs_ffmpeg
-def test_render_removes_the_partial_file_when_ffmpeg_fails(tmp_path):
-    output = tmp_path / "out.invalid_ext"
+def test_render_leaves_no_file_behind_when_ffmpeg_fails(monkeypatch, tmp_path):
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/false")
+    output = tmp_path / "out.mp4"
     with pytest.raises(RuntimeError, match="ffmpeg falhou"):
         render([TextCard([("a", 40, (0, 0, 0))], 1.0)], output)
-    assert not output.exists()
+    assert list(tmp_path.iterdir()) == []
+
+
+@needs_ffmpeg
+def test_render_keeps_the_previous_video_until_the_new_one_is_complete(tmp_path):
+    output = tmp_path / "out.mp4"
+    output.write_bytes(b"video anterior")
+
+    def interrupt(n, total):
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        render([TextCard([("a", 40, (0, 0, 0))], 1.0)], output, progress=interrupt)
+
+    assert output.read_bytes() == b"video anterior"
+    assert [p.name for p in tmp_path.iterdir()] == ["out.mp4"]
+
+
+@needs_ffmpeg
+def test_concurrent_renders_to_the_same_output_do_not_corrupt_it(tmp_path):
+    output = tmp_path / "out.mp4"
+    code = f"from pathlib import Path; from videos.engine import TextCard, render; render([TextCard([('a', 40, (0, 0, 0))], 1.0)], Path('{output}'))"
+    procs = [subprocess.Popen(["uv", "run", "python", "-c", code]) for _ in range(2)]
+    assert [p.wait() for p in procs] == [0, 0]
+    subprocess.run(["ffmpeg", "-v", "error", "-i", str(output), "-f", "null", "-"], check=True, capture_output=True)
+    assert [p.name for p in tmp_path.iterdir()] == ["out.mp4"]
 
 
 def test_cli_rejects_unknown_video_before_rendering(capsys):
     with pytest.raises(SystemExit):
         cli.main(["cadastro", "inexistente"])
     assert "inexistente" in capsys.readouterr().err
+
+
+def test_wrap_handles_huge_unbroken_words_quickly():
+    import time
+
+    start = time.time()
+    lines = wrap("A" * 20000, 28, BUBBLE_MAX_W)
+    assert time.time() - start < 3
+    assert "".join(lines) == "A" * 20000
+
+
+def test_wrap_breaks_long_codes_after_the_hyphen():
+    assert wrap("GO-0000000-A1B2C3D4E5F60718293A4B5C6D7E8F90", 28, BUBBLE_MAX_W - 44)[0] == "GO-0000000-"
+
+
+def test_bubble_rejects_unknown_sender_or_kind():
+    with pytest.raises(ValueError):
+        bubble("robot", "Oi")
+    with pytest.raises(ValueError):
+        bubble("bot", "Oi", "video")
+
+
+def test_text_card_rejects_text_that_does_not_fit_the_screen():
+    with pytest.raises(ValueError):
+        TextCard([("palavra " * 200, 40, (0, 0, 0))])

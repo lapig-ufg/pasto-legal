@@ -55,3 +55,14 @@ def test_tool_is_available_in_the_default_state_only():
 
     assert "send_tutorial_video" in default
     assert "send_tutorial_video" not in pending
+
+
+@pytest.mark.parametrize("content", [b"", b"nao e um mp4", b"\x00\x00\x00\x18ftyp" + b"0" * (16 * 1024 * 1024)])
+def test_empty_corrupt_or_oversized_file_is_not_sent(monkeypatch, tmp_path, content):
+    (tmp_path / "pasto_legal_cadastro.mp4").write_bytes(content)
+    monkeypatch.setattr(tutorial_tools, "TUTORIAL_VIDEOS_DIR", tmp_path)
+
+    result = _send("cadastro")
+
+    assert not result.videos
+    assert "indisponível" in result.content

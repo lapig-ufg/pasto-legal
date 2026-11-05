@@ -1,14 +1,14 @@
 # Roteiro 3: Tutorial 1, cadastro de propriedade
 
-**Formato:** animação vertical 9:16 (720x1280), 46 s, sem áudio.
+**Formato:** animação vertical 9:16 (720x1280), 44 s, sem áudio.
 **Status:** aguardando aprovação de Pedro Novaes.
 
 | Cena | Tempo | Na tela |
 |---|---|---|
 | 1. Abertura | 0-4 s | Logo e "Cadastro de propriedade: passo a passo no WhatsApp" |
 | 2. Passo 1 | 4-10 s | "Envie o número do CAR ou a localização pelo WhatsApp" |
-| 3. Conversa | 10-43 s | Ver as falas abaixo |
-| 4. Encerramento | 43-46 s | "Propriedade cadastrada: agora é só perguntar" |
+| 3. Conversa | 10-41 s | Ver as falas abaixo |
+| 4. Encerramento | 41-44 s | "Propriedade cadastrada: agora é só perguntar" |
 
 **Falas da conversa (cena 3)**
 
@@ -19,9 +19,10 @@
 | Usuário | "Sim, é essa!" |
 | Pasto Legal | "Propriedade confirmada. Quer dar um nome a ela? Por exemplo: Fazenda Boa Vista." |
 | Usuário | "Sítio Esperança" |
-| Pasto Legal | "Sítio Esperança salvo! Pelo satélite, a propriedade tem cerca de 60 hectares de pasto em bom vigor. Quer calcular a capacidade de suporte para planejar a lotação?" |
+| Pasto Legal | "Sítio Esperança salvo! A propriedade tem cerca de 60 hectares de pasto em bom vigor. Quer calcular a capacidade de suporte?" |
 
 **Pontos para a revisão**
-- O CAR (formato real: GO-, 7 dígitos e 32 caracteres) e a imagem do contorno são fictícios e não correspondem a nenhum imóvel.
+- O CAR (formato real: UF, 7 dígitos e 32 caracteres; no balão ele quebra após o hífen) e a imagem do contorno são fictícios e não correspondem a nenhum imóvel.
 - A última mensagem resume o primeiro diagnóstico que o sistema entrega após o cadastro (um parágrafo curto e uma pergunta sobre capacidade de suporte). Os valores são ilustrativos.
 - O cadastro por localização do WhatsApp é citado no passo 1, mas não é demonstrado em conversa.
+- No sistema real, este fluxo vem depois do aceite dos Termos e do cadastro do nome e do perfil, já feitos no tutorial de primeiras interações.

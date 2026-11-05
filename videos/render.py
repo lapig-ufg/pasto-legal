@@ -35,7 +35,7 @@ VIDEOS = {
         TextCard([("Pasto Legal", 64, GREEN), ("Tecnologia de satélite para o produtor rural", 30, INK), ("pasto.legal", 34, MUTED), ("Uma iniciativa do LAPIG/UFG", 26, MUTED)], 6.0),
     ],
     "primeiras_interacoes": lambda: [
-        TextCard([("Primeiras conversas", 56, GREEN), ("Veja como é fácil começar", 34, MUTED)], 4.0),
+        TextCard([("Primeiras conversas", 56, GREEN), ("Veja como é fácil começar", 34, MUTED), ("Depois do aceite dos Termos e do cadastro do nome e do perfil", 24, MUTED)], 5.0),
         Chat([
             ("user", "Oi! O que você consegue fazer?"),
             ("bot", "Oi! Eu sou o Pasto Legal. Uso imagens de satélite e inteligência artificial para acompanhar o seu pasto: mapas, biomassa, vigor e previsão de chuva."),
@@ -55,7 +55,7 @@ VIDEOS = {
             ("user", "Sim, é essa!"),
             ("bot", "Propriedade confirmada. Quer dar um nome a ela? Por exemplo: Fazenda Boa Vista."),
             ("user", "Sítio Esperança"),
-            ("bot", "Sítio Esperança salvo! Pelo satélite, a propriedade tem cerca de 60 hectares de pasto em bom vigor. Quer calcular a capacidade de suporte para planejar a lotação?"),
+            ("bot", "Sítio Esperança salvo! A propriedade tem cerca de 60 hectares de pasto em bom vigor. Quer calcular a capacidade de suporte?"),
         ], tail=2.5),
         TextCard([("Propriedade cadastrada", 48, GREEN), ("Agora é só perguntar", 36, INK)]),
     ],
