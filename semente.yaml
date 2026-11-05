@@ -13,6 +13,11 @@ features:
     enable: true
     file: docs/knowledge/termos_de_uso.md
     url: https://pasto.legal/termos-de-uso
+  welcome-media:
+    videos:
+      - assets/videos/pasto_legal_propaganda.mp4
+      - assets/videos/pasto_legal_primeiras_interacoes.mp4
+      - assets/videos/pasto_legal_cadastro.mp4
 models:
   primary: { provider: google, id: gemini-3.5-flash-lite }
   fallback: { provider: ollama, id: gemma4:31b-cloud }
