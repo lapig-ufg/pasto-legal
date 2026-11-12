@@ -678,6 +678,7 @@ def retrieve_t2g_biomass_image(coords: List[List[List[List[float]]]], month: int
             "Peça ao usuário que tente novamente mais tarde."
         )
 
+
 def retrieve_gpw_biomass_image(coords: List[List[List[List[float]]]], year: int = None) -> PIL.Image.Image:
     """
     Mapa de biomassa seca de pastagem (Global Pasture Watch), usado como fallback
@@ -730,7 +731,9 @@ def retrieve_gpw_biomass_image(coords: List[List[List[List[float]]]], year: int 
         title=f"Biomassa\n({str(year)}) - GPW",
         vmin=round(min_bio_val),
         vmax=round(max_bio_val),
-        palette=palette
+        unit="ton/ha",
+        palette=palette,
+        ndigits=1
     )
 
     return img

@@ -17,7 +17,7 @@ from domain.services.geospatial.pasture_cache import cache_exists, load_cache, s
 from domain.services.geospatial.xee_grid import _utm_grid
 
 
-_GPW_UGPP_ASSET = "projects/global-pasture-watch/assets/ggpp-30m/v1/ugpp_m"
+_GPW_UGPP_ASSET = "projects/global-pasture-watch/assets/ggpp-30m/v1-1/ugpp_m"
 
 _GPW_GRASSLAND_ASSET = "projects/global-pasture-watch/assets/ggc-30m/v1-1/grassland_c"
 
