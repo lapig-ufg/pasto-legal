@@ -1,20 +1,29 @@
 import time
 import traceback
 
-from io import BytesIO
 from typing import Dict, Optional, Tuple
 
 import ee
+import numpy as np
 import PIL
-import requests
 import xarray as xr
 
 from semente.logging import log_error, log_info
 
-from domain.services.geospatial.gee import _FEATURE_BUFFER, _IMAGE_DIMENSION, _draw_feature_boundaries, _get_base_image
-from domain.services.geospatial.image import append_discrete_legend
-from domain.services.geospatial.pasture_cache import cache_exists, load_cache, save_cache
-from domain.services.geospatial.xee_grid import _native_crs, _utm_grid
+from domain.services.geospatial import raster_layers, raster_render
+from domain.services.geospatial.gee import _FEATURE_BUFFER, _IMAGE_DIMENSION
+from domain.services.geospatial.pasture_cache import (
+    dataset_exists,
+    load_dataset,
+    save_cache,
+)
+from domain.services.geospatial.xee_grid import (
+    _native_crs,
+    _utm_grid,
+    grid_for_roi,
+    resample_nearest,
+    source_grid_from_dataset,
+)
 
 
 _EMBEDDING_ASSET = "GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL"
@@ -81,8 +90,8 @@ def _samples(roi: ee.Geometry, train_year: int) -> Tuple[ee.FeatureCollection, e
         .eq(_PASTURE_CLASS)
         .rename("pasto")
     )
-    emb = _embedding(roi=roi, year=train_year)
-    fc = label.addBands(emb).stratifiedSample(
+    embedding = _embedding(roi=roi, year=train_year)
+    feature_collection = label.addBands(embedding).stratifiedSample(
         numPoints=0,
         classValues=[1, 0],
         classPoints=[_NUM_POINTS_PASTURE, _NUM_POINTS_NOT_PASTURE],
@@ -92,7 +101,7 @@ def _samples(roi: ee.Geometry, train_year: int) -> Tuple[ee.FeatureCollection, e
         seed=42,
         geometries=False,
     )
-    return fc, emb.bandNames()
+    return feature_collection, embedding.bandNames()
 
 
 def _latest_mapbiomas_year() -> int:
@@ -123,38 +132,32 @@ def _area_ha_from_pasto(pasto: xr.DataArray) -> float:
     return float((pasto.values == 1).sum()) * (_SCALE ** 2) / 1e4
 
 
-def _render_classification_image(roi: ee.Geometry, classified: ee.Image, base_year: int) -> "PIL.Image.Image":
-    """
-    Overlay the classified pasture (green) on the satellite image + property boundary.
-
-    Blends the classified raster (masked to show only pasture) with the base
-    satellite image for `base_year` and the property boundary, clipped to the
-    property buffer, and downloads the result as a PNG via getThumbURL.
-
-    Args:
-        roi (ee.Geometry): Property geometry.
-        classified (ee.Image): Binary "pasto" image (1 = pasture).
-        base_year (int): Year of the base satellite image.
-
-    Returns:
-        PIL.Image.Image: PNG com título e legenda, mesmo padrão visual das
-        outras camadas on-the-fly (idade, vigor, biomassa).
-    """
+def _render_classification_image(
+    roi: ee.Geometry,
+    pasto,
+    source_grid,
+    car_code: str,
+    base_year: int,
+    coords,
+) -> "PIL.Image.Image":
+    """Renders the cached classification over the cached satellite base."""
     _PASTURE_COLOR = "#00c800"
+    render_grid = grid_for_roi(roi, scale=_SCALE, buffer_m=_FEATURE_BUFFER)
+    values = resample_nearest(pasto.values, source_grid, render_grid)
+    values = np.nan_to_num(values, nan=0).astype(int)
 
-    overlay = classified.selfMask().visualize(palette=[_PASTURE_COLOR.lstrip("#")])
-    base = _get_base_image(roi=roi, year=base_year)
-    boundary = _draw_feature_boundaries(roi=roi)
-
-    final_image = base.blend(overlay).blend(boundary).clip(roi.buffer(_FEATURE_BUFFER).bounds())
-    url = final_image.getThumbURL({"dimensions": _IMAGE_DIMENSION, "format": "png"})
-
-    response = requests.get(url, timeout=60)
-    response.raise_for_status()
-
-    img_pil = PIL.Image.open(BytesIO(response.content))
-    return append_discrete_legend(
-        img_pil, f"Classificação de Pastagem ({base_year})", {"Pastagem": _PASTURE_COLOR}
+    base_rgb = raster_layers.get_base_raster(
+        roi=roi, feature_key=car_code, year=base_year, grid=render_grid
+    )
+    return raster_render.render_discrete_map(
+        base_rgb=base_rgb,
+        values=values,
+        coords=coords,
+        grid=render_grid,
+        class_colors={1: _PASTURE_COLOR},
+        class_labels={1: "Pastagem"},
+        title=f"Classificação de Pastagem ({base_year})",
+        dimension=_IMAGE_DIMENSION,
     )
 
 
@@ -209,10 +212,19 @@ def classify_pasture_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int 
         pred_year = pred_year or (train_year + 1)
         cache_key = f"{pred_year}_{_CACHE_VERSION}"
 
-        if cache_exists(car_code, cache_key):
-            dataset, image = load_cache(car_code, cache_key)
+        if dataset_exists(car_code, cache_key, kind="pasture"):
+            dataset = load_dataset(car_code, cache_key, kind="pasture")
             pasto = dataset["pasto"].isel(time=0)
             area_ha = _area_ha_from_pasto(pasto)
+            source_grid = source_grid_from_dataset(dataset, "pasto")
+            image = _render_classification_image(
+                roi=roi,
+                pasto=pasto,
+                source_grid=source_grid,
+                car_code=car_code,
+                base_year=pred_year,
+                coords=roi.coordinates().getInfo(),
+            )
             log_info(f"[{car_code}] pasture cache hit ({pred_year}): {area_ha} ha")
             return {
                 "imagem": image,
@@ -234,12 +246,21 @@ def classify_pasture_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int 
         dataset = xr.open_dataset(
             collection, engine="ee", crs=crs, crs_transform=transform,
             shape_2d=(width, height), mask_and_scale=False, ee_mask_value=_MASK_VALUE,
-        ).load().astype("int16")
+        ).load()
+        dataset = dataset.fillna(_MASK_VALUE).astype("int16")
 
         pasto = dataset["pasto"].isel(time=0)
         area_ha = _area_ha_from_pasto(pasto)
+        source_grid = source_grid_from_dataset(dataset, "pasto")
 
-        image = _render_classification_image(roi=roi, classified=classified, base_year=pred_year)
+        image = _render_classification_image(
+            roi=roi,
+            pasto=pasto,
+            source_grid=source_grid,
+            car_code=car_code,
+            base_year=pred_year,
+            coords=roi.coordinates().getInfo(),
+        )
         save_cache(car_code, cache_key, dataset, image)
 
         log_info(f"[{car_code}] classify_pasture_on_the_fly {pred_year}: {area_ha} ha em {time.perf_counter() - start:.2f}s")

@@ -41,6 +41,16 @@ def _cache_paths(car_code: str, key: Union[str, int], kind: str = "pasture") -> 
     return str(local_dir / f"{stem}.zarr"), str(local_dir / f"{stem}.png")
 
 
+def dataset_exists(car_code: str, key: Union[str, int], kind: str = "pasture") -> bool:
+    """Whether the zarr dataset exists (PNG preview is not required)."""
+    zarr_path, _png_path = _cache_paths(car_code, key, kind)
+
+    if config.APP_ENV in _S3_ENVS:
+        return _s3_filesystem().exists(zarr_path.removeprefix("s3://"))
+
+    return Path(zarr_path).exists()
+
+
 def cache_exists(car_code: str, key: Union[str, int], kind: str = "pasture") -> bool:
     """Se já existe zarr + png em cache para o imóvel/chave."""
     zarr_path, png_path = _cache_paths(car_code, key, kind)
@@ -50,6 +60,16 @@ def cache_exists(car_code: str, key: Union[str, int], kind: str = "pasture") -> 
         return fs.exists(zarr_path.removeprefix("s3://")) and fs.exists(png_path)
 
     return Path(zarr_path).exists() and Path(png_path).exists()
+
+
+def load_dataset(car_code: str, key: Union[str, int], kind: str = "pasture") -> xr.Dataset:
+    """Reads only the zarr dataset from the cache."""
+    zarr_path, _png_path = _cache_paths(car_code, key, kind)
+
+    if config.APP_ENV in _S3_ENVS:
+        return xr.open_zarr(zarr_path, storage_options=_s3_storage_options())
+
+    return xr.open_zarr(zarr_path)
 
 
 def load_cache(car_code: str, key: Union[str, int], kind: str = "pasture") -> Tuple[xr.Dataset, "PIL.Image.Image"]:
@@ -63,6 +83,18 @@ def load_cache(car_code: str, key: Union[str, int], kind: str = "pasture") -> Tu
         return dataset, image
 
     return xr.open_zarr(zarr_path), PIL.Image.open(png_path)
+
+
+def save_dataset(car_code: str, key: Union[str, int], dataset: xr.Dataset, kind: str = "pasture") -> None:
+    """Persists only the zarr dataset (no PNG preview)."""
+    zarr_path, _png_path = _cache_paths(car_code, key, kind)
+
+    if config.APP_ENV in _S3_ENVS:
+        dataset.to_zarr(zarr_path, mode="w", storage_options=_s3_storage_options())
+        return
+
+    Path(zarr_path).parent.mkdir(parents=True, exist_ok=True)
+    dataset.to_zarr(zarr_path, mode="w")
 
 
 def save_cache(car_code: str, key: Union[str, int], dataset: xr.Dataset, image: "PIL.Image.Image", kind: str = "pasture") -> None:

@@ -42,5 +42,5 @@ def test_tool_helper_builds_the_mask_from_the_property_geometry(monkeypatch):
     coords = [[[[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [0.0, 0.0]]]]
     feature = Feature(feature_id="CAR-1", coords=coords, metadata=[], total_area=1.0, feature_type="rural_property")
 
-    assert analysis_tools._biomass_pasture_mask(feature) == "mask"
+    assert analysis_tools._pasture_mask(feature) == "mask"
     assert received == [("geometry", coords)]

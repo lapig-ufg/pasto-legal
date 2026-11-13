@@ -1,27 +1,35 @@
 import time
 import traceback
 
-from io import BytesIO
 from typing import Dict
 
 import ee
 import numpy as np
 import PIL.Image
-import requests
 import xarray as xr
 
 from semente.logging import log_error, log_info
 
-from domain.services.geospatial.gee import _FEATURE_BUFFER, _IMAGE_DIMENSION, _draw_feature_boundaries, _get_base_image
-from domain.services.geospatial.image import append_discrete_legend
-from domain.services.geospatial.pasture_cache import cache_exists, load_cache, save_cache
+from domain.services.geospatial import raster_layers, raster_render
+from domain.services.geospatial.gee import _FEATURE_BUFFER, _IMAGE_DIMENSION
+from domain.services.geospatial.pasture_cache import (
+    dataset_exists,
+    load_dataset,
+    save_cache,
+)
 from domain.services.geospatial.pasture_classification import (
     _MAPBIOMAS_ASSET,
     _PASTURE_CLASS,
     _classify,
     _latest_mapbiomas_year,
 )
-from domain.services.geospatial.xee_grid import _native_crs, _utm_grid
+from domain.services.geospatial.xee_grid import (
+    _native_crs,
+    _utm_grid,
+    grid_for_roi,
+    resample_nearest,
+    source_grid_from_dataset,
+)
 
 
 _MAPBIOMAS_AGE_ASSET = "projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_age_v2"
@@ -88,26 +96,53 @@ def _bucket_age_class(age_years: ee.Image) -> ee.Image:
     )
 
 
-def _render_age_image(roi: ee.Geometry, age_years: ee.Image, base_year: int) -> "PIL.Image.Image":
-    """Mapa de idade (5 classes) sobreposto ao satélite, mesmo padrão visual das outras camadas."""
-    palette_dict = {
-        "1-10": _AGE_PALETTE[0], "10-20": _AGE_PALETTE[1], "20-30": _AGE_PALETTE[2],
-        "30-40": _AGE_PALETTE[3], "≥40 (indeterminada)": _AGE_PALETTE[4],
+def _bucket_age_values(values: np.ndarray) -> np.ndarray:
+    """Buckets continuous age values into classes 1..5 (0 = no data)."""
+    result = np.zeros(values.shape, dtype=np.int16)
+    valid = np.isfinite(values)
+    result[valid & (values >= 1) & (values <= 10)] = 1
+    result[valid & (values > 10) & (values <= 20)] = 2
+    result[valid & (values > 20) & (values <= 30)] = 3
+    result[valid & (values > 30) & (values < 40)] = 4
+    result[valid & (values >= 40)] = 5
+    return result
+
+
+def _render_age_image(
+    roi: ee.Geometry,
+    age_years,
+    source_grid,
+    car_code: str,
+    base_year: int,
+    coords,
+) -> "PIL.Image.Image":
+    """Mapa de idade (5 classes) sobreposto ao satélite, renderizado localmente."""
+    class_colors = {
+        1: _AGE_PALETTE[0], 2: _AGE_PALETTE[1], 3: _AGE_PALETTE[2],
+        4: _AGE_PALETTE[3], 5: _AGE_PALETTE[4],
+    }
+    class_labels = {
+        1: "1-10", 2: "10-20", 3: "20-30", 4: "30-40",
+        5: "≥40 (indeterminada)",
     }
 
-    age_class = _bucket_age_class(age_years)
-    overlay = age_class.visualize(min=1, max=5, palette=_AGE_PALETTE)
-    base = _get_base_image(roi=roi, year=base_year)
-    boundary = _draw_feature_boundaries(roi=roi)
+    render_grid = grid_for_roi(roi, scale=_SCALE, buffer_m=_FEATURE_BUFFER)
+    values = resample_nearest(age_years.values, source_grid, render_grid)
+    classes = _bucket_age_values(values)
 
-    final_image = base.blend(overlay).blend(boundary).clip(roi.buffer(_FEATURE_BUFFER).bounds())
-    url = final_image.getThumbURL({"dimensions": _IMAGE_DIMENSION, "format": "png"})
-
-    response = requests.get(url, timeout=60)
-    response.raise_for_status()
-
-    img_pil = PIL.Image.open(BytesIO(response.content))
-    return append_discrete_legend(img_pil, "Idade da Pastagem (anos)", palette_dict)
+    base_rgb = raster_layers.get_base_raster(
+        roi=roi, feature_key=car_code, year=base_year, grid=render_grid
+    )
+    return raster_render.render_discrete_map(
+        base_rgb=base_rgb,
+        values=classes,
+        coords=coords,
+        grid=render_grid,
+        class_colors=class_colors,
+        class_labels=class_labels,
+        title="Idade da Pastagem (anos)",
+        dimension=_IMAGE_DIMENSION,
+    )
 
 
 def estimate_pasture_age_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int = None, train_year: int = None) -> Dict:
@@ -135,10 +170,19 @@ def estimate_pasture_age_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: 
         pred_year = pred_year or (train_year + 1)
         cache_key = f"{pred_year}_{_CACHE_VERSION}"
 
-        if cache_exists(car_code, cache_key, kind="age"):
-            dataset, image = load_cache(car_code, cache_key, kind="age")
+        if dataset_exists(car_code, cache_key, kind="age"):
+            dataset = load_dataset(car_code, cache_key, kind="age")
             age_years = dataset["idade_anos"].isel(time=0)
             area_by_class = _area_by_age_class(age_years)
+            source_grid = source_grid_from_dataset(dataset, "idade_anos")
+            image = _render_age_image(
+                roi=roi,
+                age_years=age_years,
+                source_grid=source_grid,
+                car_code=car_code,
+                base_year=pred_year,
+                coords=roi.coordinates().getInfo(),
+            )
             log_info(f"[{car_code}] pasture age cache hit ({pred_year})")
             return {
                 "imagem": image,
@@ -178,8 +222,16 @@ def estimate_pasture_age_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: 
 
         age_years = dataset["idade_anos"].isel(time=0)
         area_by_class = _area_by_age_class(age_years)
+        source_grid = source_grid_from_dataset(dataset, "idade_anos")
 
-        image = _render_age_image(roi=roi, age_years=new_age, base_year=pred_year)
+        image = _render_age_image(
+            roi=roi,
+            age_years=age_years,
+            source_grid=source_grid,
+            car_code=car_code,
+            base_year=pred_year,
+            coords=roi.coordinates().getInfo(),
+        )
         save_cache(car_code, cache_key, dataset, image, kind="age")
 
         log_info(f"[{car_code}] estimate_pasture_age_on_the_fly {pred_year}: {time.perf_counter() - start:.2f}s")
