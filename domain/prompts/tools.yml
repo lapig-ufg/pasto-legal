@@ -487,10 +487,12 @@ property_tools:
       Returns:
           ToolResult: Resultado da busca contendo imagem e instruções para o próximo passo.
     results:
-      sicar_miss_buffer_fallback: |
-        Nenhuma propriedade foi encontrada na base do SICAR para esta localização.
-        Informe ao usuário que, por não haver um imóvel registrado no SICAR, o sistema registrará no lugar uma área de buffer ao redor do ponto indicado.
-        Mostre a imagem e pergunte ao usuário se ele deseja continuar com o registro dessa área de buffer ou cancelar a operação.
+      sicar_miss_suggest_buffer: |
+        Nenhuma propriedade foi encontrada na base do SICAR para esta localização (lat {latitude}, lon {longitude}).
+        NÃO inicie nenhum registro automaticamente.
+        Informe ao usuário que não há imóvel registrado no SICAR neste ponto e pergunte se ele deseja registrar uma área de buffer ao redor dele (raio entre 50 e 1000 metros, padrão 200 metros).
+        Se o usuário aceitar, chame a ferramenta `start_buffer_registration_by_coordinate` com latitude {latitude} e longitude {longitude} (e o raio escolhido, se o usuário informar).
+        Se o usuário recusar, encerre a operação.
       confirm_single_property: |
         Pergunte ao usuário se a seguinte propriedade é a correta:
         {property_details}
@@ -574,10 +576,12 @@ property_tools:
       url_coords_not_extracted: |
         Peça desculpas ao usuário e informe que não foi possível extrair coordenadas geográficas válidas deste link.
         Sugira ao usuário que envie o link novamente (verificando se é um link de compartilhamento do Google Maps)
-      sicar_miss_buffer_fallback: |
+      sicar_miss_suggest_buffer: |
         Nenhuma propriedade foi encontrada na base do SICAR para esta localização.
-        Informe ao usuário que, por não haver um imóvel registrado no SICAR, o sistema registrará no lugar uma área de buffer ao redor do ponto indicado.
-        Mostre a imagem e pergunte ao usuário se ele deseja continuar com o registro dessa área de buffer ou cancelar a operação.
+        NÃO inicie nenhum registro automaticamente.
+        Informe ao usuário que não há imóvel registrado no SICAR neste ponto e pergunte se ele deseja registrar uma área de buffer ao redor dele (raio entre 50 e 1000 metros, padrão 200 metros).
+        Se o usuário aceitar, chame a ferramenta `start_buffer_registration_by_url` com a URL {url} (e o raio escolhido, se o usuário informar).
+        Se o usuário recusar, encerre a operação.
       confirm_single_property: |
         Pergunte ao usuário se a seguinte propriedade é a correta:
         {property_details}

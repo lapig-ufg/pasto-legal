@@ -32,10 +32,11 @@ _MIN_RADIUS_METERS = 50
 _MAX_RADIUS_METERS = 1000
 _DEFAULT_RADIUS_METERS = 200
 
-# Instruction appended when a SICAR lookup finds nothing and the buffer
-# fallback registers an area instead (see _register_buffer_candidate).
-# Rendered from tools.yml (property_tools.*.results.sicar_miss_buffer_fallback).
-_SICAR_MISS_BUFFER_TOOL_KEY = "sicar_miss_buffer_fallback"
+# Instruction returned when a SICAR lookup finds nothing: it only suggests the
+# user register a buffer area. The registration itself is started by the buffer
+# tools, never automatically. Rendered from tools.yml
+# (property_tools.*.results.sicar_miss_suggest_buffer).
+_SICAR_MISS_SUGGEST_BUFFER_TOOL_KEY = "sicar_miss_suggest_buffer"
 
 
 def _first_geojson_bytes(files: Optional[List[File]]) -> Optional[bytes]:
@@ -63,9 +64,8 @@ def _register_buffer_candidate(
     Builds a buffer area candidate from a coordinate and radius, stores it in
     the session as the pending registration and renders its image.
 
-    Shared by the buffer registration tools and by the SICAR tools fallback
-    (when no property exists in the SICAR database). Does not validate the
-    radius bounds; callers must do it beforehand.
+    Shared by the buffer registration tools. Does not validate the radius
+    bounds; callers must do it beforehand.
 
     Returns:
         Tuple (Feature, PNG image bytes) on success. Raises on failure; the
@@ -128,14 +128,12 @@ def start_registration_by_coordinate(run_context: RunContext, latitude: float, l
 
         if not properties:
             log_warning(f"Nenhuma propriedade encontrada para lat={latitude}, lon={longitude}")
-            fallback = _register_buffer_candidate(run_context, latitude=latitude, longitude=longitude)
-
-            _, img_bytes = fallback
             return ToolResult(
                 content=get_tool_result_text(
-                    "property_tools", "start_registration_by_coordinate", _SICAR_MISS_BUFFER_TOOL_KEY
+                    "property_tools", "start_registration_by_coordinate",
+                    _SICAR_MISS_SUGGEST_BUFFER_TOOL_KEY,
+                    latitude=latitude, longitude=longitude,
                 ),
-                images=[Image(content=img_bytes)]
             )
 
         registered_features = get_registered_features(run_context.session_state)
@@ -464,12 +462,12 @@ def start_registration_by_url(run_context: RunContext, url: str) -> ToolResult:
 
         if not properties:
             log_warning(f"Nenhuma propriedade encontrada para lat={latitude}, lon={longitude}")
-            _, img_bytes = _register_buffer_candidate(run_context, latitude=latitude, longitude=longitude)
             return ToolResult(
                 content=get_tool_result_text(
-                    "property_tools", "start_registration_by_url", _SICAR_MISS_BUFFER_TOOL_KEY
+                    "property_tools", "start_registration_by_url",
+                    _SICAR_MISS_SUGGEST_BUFFER_TOOL_KEY,
+                    url=url,
                 ),
-                images=[Image(content=img_bytes)]
             )
 
         registered_features = get_registered_features(run_context.session_state)
