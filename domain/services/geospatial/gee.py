@@ -47,7 +47,7 @@ _LABEL_FONT_PATH = "assets/fonts/DejaVuSans-Bold.ttf"
 _HIGHVOLUME_URL = "https://earthengine-highvolume.googleapis.com"
 
 _BIOMASS_CACHE_VERSION = "v1"
-_BIOMASS_PALETTE = ["#f75639", "#eef79c", "#f5d570", "#8aa637", "#0b391f"]
+_BIOMASS_PALETTE = raster_render.BIOMASS_PALETTE
 
 try:
     credentials = ee.ServiceAccountCredentials(config.GEE_SERVICE_ACCOUNT, config.GEE_KEY_FILE)
@@ -713,7 +713,7 @@ def retrieve_gpw_biomass_image(
         )
 
     min_bio_val, max_bio_val = raster_render.robust_range(masked)
-    palette = ["#000033", "#9400D3", "#FF00FF", "#00FFFF", "#FFFFFF"]
+    palette = _BIOMASS_PALETTE
 
     base_rgb = raster_layers.get_base_raster(
         roi=roi, feature_key=feature_key, year=year, grid=grid
@@ -735,7 +735,7 @@ def retrieve_gpw_biomass_image(
 
 BIOMASS_VIDEO_MIN_YEAR = 2025
 
-BIOMASS_VIDEO_PALETTE = ['#000033', '#9400D3', '#FF00FF', '#00FFFF', '#FFFFFF']
+BIOMASS_VIDEO_PALETTE = _BIOMASS_PALETTE
 
 
 def _iterate_reference_months(

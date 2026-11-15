@@ -23,6 +23,10 @@ from domain.services.geospatial.xee_grid import RasterGrid
 MIN_RENDER_DIMENSION = 512
 MAX_RENDER_DIMENSION = 4096
 
+# Single ramp for every biomass layer (T2G map, GPW fallback and the video), so
+# the same quantity never changes colour between products.
+BIOMASS_PALETTE = ["#f75639", "#eef79c", "#f5d570", "#8aa637", "#0b391f"]
+
 
 def _rgb(hex_color: str) -> Tuple[int, int, int]:
     value = hex_color.lstrip("#")

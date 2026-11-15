@@ -565,7 +565,7 @@ def test_append_continuous_colorbar_fits_a_narrow_image():
     image = Image.new("RGB", (214, 217), "grey")
     out = append_continuous_colorbar(
         image, "Biomassa\n(2024) - GPW", 16.12, 29.10, "ton/ha/ano",
-        ["#000033", "#9400D3", "#FF00FF", "#00FFFF", "#FFFFFF"],
+        ["#f75639", "#eef79c", "#f5d570", "#8aa637", "#0b391f"],
     )
 
     assert out.size[0] == 214
