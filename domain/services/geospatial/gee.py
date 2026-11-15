@@ -15,7 +15,12 @@ from semente.logging import log_error, log_warning
 from semente.configs.config import config
 
 from domain.services.geospatial.image import append_discrete_legend, append_continuous_colorbar
-from domain.services.geospatial.pasture_biomass import DRY_BIOMASS_FACTOR, _annual_biomass_image, _latest_gpw_year
+from domain.services.geospatial.pasture_biomass import (
+    DRY_BIOMASS_FACTOR,
+    _annual_biomass_image,
+    _grassland_mask,
+    _latest_gpw_year,
+)
 from domain.schemas.property_stats import PropertyStats, PastureStats, TopographicStats
 from domain.schemas.property_stats import (
     Value, 
@@ -536,18 +541,19 @@ def _get_t2g_biomass_image(
     ugpp = ee.ImageCollection("projects/wri-lcl-time2graze/assets/ugpp_prod_10m_v1").filter(ee.Filter.date('2025-07-03', '2025-07-04').Not())
     ugpp_col = ugpp.filterBounds(roi).filterDate(start_date, end_date)
 
-    # Máscara de pastagem no mesmo ano do período de biomassa pedido (não mais fixa em 2024) —
-    # limitada ao último ano publicado pelo GPW, já que o asset não cobre anos futuros.
-    mask_year = min(start_year, _latest_gpw_year())
-    grassland_asset = ee.ImageCollection("projects/global-pasture-watch/assets/ggc-30m/v1-1/grassland_c")
-    grassland_mask = grassland_asset.filterBounds(roi).filterDate(f'{mask_year}-01-01', f'{mask_year + 1}-01-01').first().gte(1)
-
     if ugpp_col.size().eq(0).getInfo():
         log_error(
             f"_get_t2g_biomass_image returned None: empty UGPP collection "
             f"for roi={roi}, period={start_year}/{start_month}/{start_day} - {end_year}/{end_month}/{end_day}"
         )
         return None
+
+    # Máscara de pastagem no mesmo ano do período de biomassa pedido (não mais fixa em 2024).
+    # `_grassland_mask` cai para o último ano publicado quando o `grassland_c` ainda
+    # não cobre o ano pedido (ele costuma ficar um ano atrás do `ugpp_m`) — sem isso
+    # o filterDate exato volta vazio e o GEE falha com "Image.clip: Parameter
+    # 'input' is required and may not be null.".
+    grassland_mask = _grassland_mask(roi, start_year)
 
     grassland_image: ee.Image = ugpp_col.mean() \
         .multiply(ee.Image(n_days)).multiply(ee.Image(UGPP_SCALE_FACTOR)).multiply(DRY_BIOMASS_FACTOR) \

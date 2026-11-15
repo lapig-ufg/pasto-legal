@@ -65,6 +65,30 @@ def _latest_gpw_year() -> int:
     return ee.Date(latest.get("system:time_start")).get("year").getInfo()
 
 
+def _grassland_mask(roi: ee.Geometry, year: int) -> ee.Image:
+    """
+    Máscara binária de pastagem (1 = pastagem) do ano pedido, ou do ano mais
+    recente disponível até ele.
+
+    O `grassland_c` pode ficar um ano atrás do `ugpp_m` (ex.: `ugpp_m` já tem
+    2025, `grassland_c` só até 2024). Filtrar exatamente o ano pedido faz o
+    `filterDate` voltar vazio, `first()` virar null e o GEE falhar com
+    "Image.clip: Parameter 'input' is required and may not be null.".
+    """
+    if year < _HISTORY_START_YEAR:
+        raise ValueError(
+            f"Não há dados de pastagem do Global Pasture Watch para {year}: "
+            f"a série começa em {_HISTORY_START_YEAR}."
+        )
+
+    return (ee.ImageCollection(_GPW_GRASSLAND_ASSET)
+        .filterDate(f"{_HISTORY_START_YEAR}-01-01", f"{year + 1}-01-01")
+        .sort("system:time_start", False)
+        .first()
+        .clip(roi)
+        .gte(1))
+
+
 def _annual_biomass_image(roi: ee.Geometry, year: int) -> ee.Image:
     """
     Biomassa seca de pastagem (t/ha) de um ano, mascarada para pixels de pastagem.
@@ -72,11 +96,7 @@ def _annual_biomass_image(roi: ee.Geometry, year: int) -> ee.Image:
     Fonte: Global Pasture Watch (`ugpp_m` já calibrado + `grassland_c` como máscara),
     convertido com o mesmo fator (LUE=0.5 x IPCC=2.7 x 0.01) usado no restante do app.
     """
-    grassland_mask = (ee.ImageCollection(_GPW_GRASSLAND_ASSET)
-        .filterDate(f"{year}-01-01", f"{year + 1}-01-01")
-        .first()
-        .clip(roi)
-        .gte(1))
+    grassland_mask = _grassland_mask(roi, year)
 
     return (ee.ImageCollection(_GPW_UGPP_ASSET)
         .filterDate(f"{year}-01-01", f"{year + 1}-01-01")
