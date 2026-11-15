@@ -630,15 +630,15 @@ def retrieve_t2g_biomass_image(
 
         biomass, target_year, target_month = result
         pasture = _get_pasture_mask_array(roi, feature_key, grid)
-        masked = np.where(pasture == 1, biomass, np.nan)
+        inside_roi = raster_render.roi_mask(coords, grid)
+        masked = np.where((pasture == 1) & inside_roi, biomass, np.nan)
 
         if not np.isfinite(masked).any():
             raise ValueError(
                 "Não foi possível calcular a biomassa. A área pode não conter pastagem mapeada."
             )
 
-        min_bio_val = float(np.nanmin(masked))
-        max_bio_val = float(np.nanmax(masked))
+        min_bio_val, max_bio_val = raster_render.robust_range(masked)
 
         base_rgb = raster_layers.get_base_raster(
             roi=roi, feature_key=feature_key, year=target_year, grid=grid
@@ -653,8 +653,8 @@ def retrieve_t2g_biomass_image(
             unit="ton/ha",
             vmin=min_bio_val,
             vmax=max_bio_val,
-            dimension=_IMAGE_DIMENSION,
-            ndigits=1,
+            # Native grid resolution: one image pixel per 10 m cell, no blur.
+            dimension=None,
         )
 
         return img, target_year, target_month
@@ -705,14 +705,14 @@ def retrieve_gpw_biomass_image(
         scale=10,
     )
 
-    masked = np.where(np.isfinite(values), values, np.nan)
+    inside_roi = raster_render.roi_mask(coords, grid)
+    masked = np.where(np.isfinite(values) & inside_roi, values, np.nan)
     if not np.isfinite(masked).any():
         raise ValueError(
             "Não foi possível calcular a biomassa. A área pode não conter pastagem mapeada."
         )
 
-    min_bio_val = float(np.nanmin(masked))
-    max_bio_val = float(np.nanmax(masked))
+    min_bio_val, max_bio_val = raster_render.robust_range(masked)
     palette = ["#000033", "#9400D3", "#FF00FF", "#00FFFF", "#FFFFFF"]
 
     base_rgb = raster_layers.get_base_raster(
@@ -728,7 +728,8 @@ def retrieve_gpw_biomass_image(
         unit="ton/ha/ano",
         vmin=min_bio_val,
         vmax=max_bio_val,
-        dimension=_IMAGE_DIMENSION,
+        # Native grid resolution: one image pixel per 10 m cell, no blur.
+        dimension=None,
     )
 
 
@@ -850,8 +851,11 @@ def _retrieve_t2g_biomass_video_cached(
         )
         return None
 
-    global_min = min(float(np.nanmin(frame)) for _, frame, _, _ in frames_data)
-    global_max = max(float(np.nanmax(frame)) for _, frame, _, _ in frames_data)
+    global_min, global_max = raster_render.robust_range(
+        np.concatenate(
+            [frame[np.isfinite(frame)] for _, frame, _, _ in frames_data]
+        )
+    )
     frame_months = [(acc_year, acc_month) for _, _, acc_year, acc_month in frames_data]
 
     base_by_year = {

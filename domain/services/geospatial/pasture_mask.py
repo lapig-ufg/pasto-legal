@@ -1,4 +1,9 @@
-"""Cached pasture mask used to mask the biomass raster locally."""
+"""Cached pasture mask used to mask the biomass raster locally.
+
+The mask comes from a per-pixel classification, so it is speckled at 10 m.
+It is regularised once with ``clean_mask`` before being cached: without that,
+rendering at the native grid resolution shows confetti instead of fields.
+"""
 
 from typing import Optional
 
@@ -17,13 +22,14 @@ from domain.services.geospatial.xee_grid import (
     source_grid_from_dataset,
 )
 from domain.services.geospatial.raster_layers import download_image_dataset, layer_cache_key
+from domain.services.geospatial.raster_render import clean_mask
 from domain.services.geospatial.pasture_classification import (
     _CACHE_VERSION,
     _classify,
     _latest_mapbiomas_year,
 )
 
-_MASK_CACHE_VERSION = "v1"
+_MASK_CACHE_VERSION = "v2"
 
 
 def _cached_pasture_array(
@@ -67,12 +73,13 @@ def get_pasture_mask_array(
     ):
         cached = _cached_pasture_array(feature_key, key, grid)
         if cached is not None:
-            return cached
+            return clean_mask(cached)
 
     mask_key = layer_cache_key([pred_year], grid, _MASK_CACHE_VERSION)
     if dataset_exists(feature_key, mask_key, kind="pasture_mask"):
         dataset = load_dataset(feature_key, mask_key, kind="pasture_mask")
-        return dataset["pasto"].isel(time=0).values
+        # Stored masks are already cleaned (see below).
+        return dataset["pasto"].isel(time=0).values == 1
 
     classified, _embedding = _classify(
         roi=roi,
@@ -81,12 +88,16 @@ def get_pasture_mask_array(
     )
     mask_image = classified.gte(1).rename("pasto")
     dataset = download_image_dataset(mask_image, grid, band_name="pasto", dtype="int16")
+    cleaned = clean_mask(dataset["pasto"].isel(time=0).values)
+    cleaned_data = cleaned.astype("int16")[np.newaxis, :, :]
+    dataset = dataset.assign(pasto=dataset["pasto"].copy(data=cleaned_data))
     dataset.attrs.update(
         {
             "pred_year": int(pred_year),
             "train_year": int(train_year),
             "grid_hash": grid.hash,
+            "cleaned": True,
         }
     )
     save_dataset(feature_key, mask_key, dataset, kind="pasture_mask")
-    return dataset["pasto"].isel(time=0).values
+    return cleaned

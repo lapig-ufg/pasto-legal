@@ -198,11 +198,11 @@ def _overlay_fixed_colorbar(
                 append_continuous_colorbar(
                     frame,
                     title=title,
-                    vmin=round(vmin, 1),
-                    vmax=round(vmax, 1),
+                    vmin=vmin,
+                    vmax=vmax,
                     unit="ton/ha",
                     palette=BIOMASS_VIDEO_PALETTE,
-                    ndigits=1,
+                    ndigits=2,
                 )
             )
             frame_index += 1

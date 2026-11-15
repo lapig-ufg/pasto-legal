@@ -5,16 +5,23 @@ the same canonical grid, so a pasture mask and a biomass layer can be combined
 pixel-by-pixel without any server-side Earth Engine operation.
 """
 
-import math
 from typing import Dict, Iterable, List, Sequence, Tuple
 
 import numpy as np
 import PIL.Image
 import PIL.ImageDraw
+import PIL.ImageFilter
+import PIL.ImageOps
 from pyproj import Transformer
 
 from domain.services.geospatial.image import append_continuous_colorbar, append_discrete_legend
 from domain.services.geospatial.xee_grid import RasterGrid
+
+# Native-resolution renders are clamped to this window so small properties stay
+# readable and huge ones stay manageable. Any resampling here is nearest
+# neighbour (never LANCZOS), which would blur the raster cells.
+MIN_RENDER_DIMENSION = 512
+MAX_RENDER_DIMENSION = 4096
 
 
 def _rgb(hex_color: str) -> Tuple[int, int, int]:
@@ -143,14 +150,115 @@ def draw_outline(
     return image
 
 
+def roi_mask(coords, grid: RasterGrid) -> np.ndarray:
+    """Boolean mask of the property polygon(s) on the raster grid.
+
+    Accepts both Polygon and MultiPolygon coordinate nestings, and excludes
+    interior rings (holes). Returns an all-True mask when there are no
+    coordinates, so a malformed geometry never silently drops a whole layer.
+    """
+    if not coords:
+        return np.ones((grid.height, grid.width), dtype=bool)
+
+    mask = PIL.Image.new("L", (int(grid.width), int(grid.height)), 0)
+    draw = PIL.ImageDraw.Draw(mask)
+
+    for polygon in _iter_polygons(coords):
+        if not polygon:
+            continue
+        exterior = _project_ring(polygon[0], grid)
+        if len(exterior) >= 3:
+            draw.polygon(exterior, fill=255)
+        for hole in polygon[1:]:
+            hole_points = _project_ring(hole, grid)
+            if len(hole_points) >= 3:
+                draw.polygon(hole_points, fill=0)
+
+    mask_array = np.asarray(mask, dtype=np.uint8) > 0
+    if not mask_array.any():
+        # Degenerate geometry (e.g. an unexpected nesting): keep the whole
+        # layer visible rather than silently rendering an empty map.
+        return np.ones((grid.height, grid.width), dtype=bool)
+    return mask_array
+
+
+def fill_mask_holes(mask: np.ndarray) -> np.ndarray:
+    """Fills holes fully enclosed by a boolean 2-D mask.
+
+    Uses a flood fill from a one-pixel padded border on the inverted mask: any
+    background region still set after the fill is enclosed and therefore a hole.
+    """
+    mask = np.asarray(mask, dtype=bool)
+    inverted = PIL.Image.fromarray((~mask).astype(np.uint8) * 255)
+    inverted = PIL.ImageOps.expand(inverted, border=1, fill=255)
+    PIL.ImageDraw.floodfill(inverted, (0, 0), 0)
+    inverted = inverted.crop((1, 1, inverted.width - 1, inverted.height - 1))
+    return mask | (np.asarray(inverted) > 127)
+
+
+def clean_mask(
+    values: np.ndarray,
+    median_size: int = 3,
+    closing_size: int = 5,
+) -> np.ndarray:
+    """Cleans a binary raster mask (1 = mapped class) for display.
+
+    The per-pixel classifications are speckled at 10 m: isolated false
+    positives, pinholes inside fields and stair-stepped edges. At native
+    resolution that reads as confetti, so the mask is regularised with:
+
+    1. a median filter (removes single-pixel salt/pepper),
+    2. a morphological closing (fills pinholes and small notches),
+    3. hole filling (removes larger fully enclosed gaps).
+
+    Large fields and their real boundaries are preserved.
+    """
+    mask = np.asarray(values) == 1
+    if mask.size == 0:
+        return mask
+
+    image = PIL.Image.fromarray(mask.astype(np.uint8) * 255)
+    image = image.filter(PIL.ImageFilter.MedianFilter(median_size))
+    image = image.filter(PIL.ImageFilter.MaxFilter(closing_size))
+    image = image.filter(PIL.ImageFilter.MinFilter(closing_size))
+
+    return fill_mask_holes(np.asarray(image) > 127)
+
+
+def robust_range(
+    values: np.ndarray,
+    lower: float = 2.0,
+    upper: float = 98.0,
+) -> Tuple[float, float]:
+    """Percentile display range, robust to the long tail of raster outliers.
+
+    Using absolute min/max on a skewed layer (e.g. biomass: median 0.29 with a
+    max of 1.08) squeezes almost every pixel into two shades of the ramp.
+    """
+    values = np.asarray(values, dtype=np.float64)
+    finite = values[np.isfinite(values)]
+    if finite.size == 0:
+        return 0.0, 1.0
+
+    vmin = float(np.percentile(finite, lower))
+    vmax = float(np.percentile(finite, upper))
+    if vmax <= vmin:
+        vmax = vmin + 1e-9
+    return vmin, vmax
+
+
 def resize_map(
     image: PIL.Image.Image,
-    dimension: int,
+    dimension: int | None,
     resampling: PIL.Image.Resampling = PIL.Image.Resampling.LANCZOS,
 ) -> PIL.Image.Image:
-    """Resizes an image preserving aspect ratio, longest side = ``dimension``."""
+    """Resizes an image preserving aspect ratio, longest side = ``dimension``.
+
+    ``dimension=None`` keeps the native pixel size (one image pixel per raster
+    cell), which is what the biomass maps use so no pixel is ever blurred.
+    """
     width, height = image.size
-    if width <= 0 or height <= 0:
+    if width <= 0 or height <= 0 or dimension is None:
         return image
     if width >= height:
         new_size = (dimension, max(1, round(dimension * height / width)))
@@ -189,14 +297,42 @@ def render_rgba_frame(
     overlay: np.ndarray,
     coords: List[List[List[List[float]]]],
     grid: RasterGrid,
-    dimension: int = 512,
+    dimension: int | None = 512,
     outline_width: int = 3,
     resampling: PIL.Image.Resampling = PIL.Image.Resampling.LANCZOS,
+    clip_to_roi: bool = True,
 ) -> PIL.Image.Image:
-    """Composites a base RGB array with an RGBA overlay and resizes it."""
+    """Composites a base RGB array with an RGBA overlay and resizes it.
+
+    The overlay is clipped to the property polygon before compositing, so data
+    never paints outside the farm while the satellite image stays as the full
+    background. Masking happens before the composite, keeping the result opaque
+    and avoiding transparent halos when the image is resized.
+
+    ``dimension=None`` keeps the native grid resolution, clamped to
+    ``[MIN_RENDER_DIMENSION, MAX_RENDER_DIMENSION]`` with nearest-neighbour
+    resampling: small properties stay readable without ever being blurred.
+    """
+    if clip_to_roi:
+        mask = roi_mask(coords, grid)
+        if mask.any():
+            overlay = overlay.copy()
+            overlay[..., 3] = np.where(mask, overlay[..., 3], 0)
+
     composed = composite_rgba(base_rgb, overlay)
     image = PIL.Image.fromarray(composed, mode="RGB")
-    image = resize_map(image, dimension, resampling=resampling)
+
+    if dimension is not None:
+        image = resize_map(image, dimension, resampling=resampling)
+    else:
+        # Native resolution, clamped so tiny properties are still readable.
+        longest = max(image.size)
+        target = min(max(longest, MIN_RENDER_DIMENSION), MAX_RENDER_DIMENSION)
+        if target != longest:
+            image = resize_map(
+                image, target, resampling=PIL.Image.Resampling.NEAREST
+            )
+
     return draw_outline(
         image,
         coords,
@@ -215,8 +351,8 @@ def render_continuous_map(
     unit: str,
     vmin: float,
     vmax: float,
-    dimension: int = 512,
-    ndigits: int | None = None,
+    dimension: int | None = 512,
+    ndigits: int = 2,
 ) -> PIL.Image.Image:
     """Renders a continuous layer over a cached satellite base, with colorbar."""
     overlay = continuous_rgba(values, palette, vmin, vmax)
@@ -240,7 +376,7 @@ def render_discrete_map(
     class_colors: Dict[int, str],
     class_labels: Dict[int, str],
     title: str,
-    dimension: int = 512,
+    dimension: int | None = 512,
 ) -> PIL.Image.Image:
     """Renders a discrete layer over a cached satellite base, with legend."""
     overlay = discrete_rgba(values, class_colors)
@@ -265,11 +401,3 @@ def resize_nearest(values: np.ndarray, target_shape: Tuple[int, int]) -> np.ndar
     rows = np.clip(rows, 0, values.shape[0] - 1)
     cols = np.clip(cols, 0, values.shape[1] - 1)
     return values[np.ix_(rows, cols)]
-
-
-def _fit_dimension(width: float, height: float, dimension: int) -> Tuple[int, int]:
-    if width <= 0 or height <= 0:
-        return dimension, dimension
-    if width >= height:
-        return dimension, max(1, int(math.floor(dimension * height / width)))
-    return max(1, int(math.floor(dimension * width / height))), dimension
