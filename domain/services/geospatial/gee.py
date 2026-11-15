@@ -484,7 +484,7 @@ def _get_t2g_biomass_image(
     if ugpp_col.size().eq(0).getInfo():
         log_error(
             f"_get_t2g_biomass_image returned None: empty UGPP collection "
-            f"for roi={roi}, period={start_year}/{start_month}/{start_day} - {end_year}/{end_month}/{end_day}"
+            f"for period={start_year}/{start_month}/{start_day} - {end_year}/{end_month}/{end_day}"
         )
         return None
 
