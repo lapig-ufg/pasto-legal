@@ -164,8 +164,8 @@ def test_overlay_colorbar_draws_per_frame_dates():
 
     gif_dated = PILImage.open(BytesIO(with_dates))
     assert gif_dated.n_frames == 2
-    # A barra de cores amplia o canvas para a direita
-    assert gif_dated.size[0] > 128
+    # A barra de cores é anexada abaixo da imagem
+    assert gif_dated.size[1] > 96
 
     # O canto superior esquerdo deve diferir entre rodar com e sem data
     gif_dates = PILImage.open(BytesIO(with_dates))

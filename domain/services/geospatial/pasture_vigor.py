@@ -2,27 +2,35 @@ import math
 import time
 import traceback
 
-from io import BytesIO
 from typing import Dict, List, Tuple
 
 import ee
 import numpy as np
 import PIL.Image
-import requests
 import xarray as xr
 
 from semente.logging import log_error, log_info, log_warning
 
-from domain.services.geospatial.gee import _FEATURE_BUFFER, _IMAGE_DIMENSION, _draw_feature_boundaries, _get_base_image
-from domain.services.geospatial.image import append_discrete_legend
-from domain.services.geospatial.pasture_cache import cache_exists, load_cache, save_cache
+from domain.services.geospatial import raster_layers, raster_render
+from domain.services.geospatial.gee import _FEATURE_BUFFER, _IMAGE_DIMENSION
+from domain.services.geospatial.pasture_cache import (
+    dataset_exists,
+    load_dataset,
+    save_cache,
+)
 from domain.services.geospatial.pasture_classification import (
     _MAPBIOMAS_ASSET,
     _PASTURE_CLASS,
     _classify,
     _latest_mapbiomas_year,
 )
-from domain.services.geospatial.xee_grid import _native_crs, _utm_grid
+from domain.services.geospatial.xee_grid import (
+    _native_crs,
+    _utm_grid,
+    grid_for_roi,
+    resample_nearest,
+    source_grid_from_dataset,
+)
 
 
 _MAPBIOMAS_VIGOR_ASSET = "projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_vigor_v3"
@@ -181,21 +189,34 @@ def _area_by_vigor_class(vigor_class: np.ndarray) -> Dict[str, float]:
     return result
 
 
-def _render_vigor_image(roi: ee.Geometry, vigor_image: ee.Image, base_year: int) -> "PIL.Image.Image":
-    palette_dict = {"Baixo": _VIGOR_PALETTE[0], "Médio": _VIGOR_PALETTE[1], "Alto": _VIGOR_PALETTE[2]}
+def _render_vigor_image(
+    roi: ee.Geometry,
+    vigor_class,
+    source_grid,
+    car_code: str,
+    base_year: int,
+    coords,
+) -> "PIL.Image.Image":
+    class_colors = {1: _VIGOR_PALETTE[0], 2: _VIGOR_PALETTE[1], 3: _VIGOR_PALETTE[2]}
+    class_labels = {1: "Baixo", 2: "Médio", 3: "Alto"}
 
-    overlay = vigor_image.visualize(min=1, max=3, palette=_VIGOR_PALETTE)
-    base = _get_base_image(roi=roi, year=base_year)
-    boundary = _draw_feature_boundaries(roi=roi)
+    render_grid = grid_for_roi(roi, scale=_SCALE, buffer_m=_FEATURE_BUFFER)
+    values = resample_nearest(vigor_class, source_grid, render_grid)
+    values = np.nan_to_num(values, nan=0).astype(int)
 
-    final_image = base.blend(overlay).blend(boundary).clip(roi.buffer(_FEATURE_BUFFER).bounds())
-    url = final_image.getThumbURL({"dimensions": _IMAGE_DIMENSION, "format": "png"})
-
-    response = requests.get(url, timeout=60)
-    response.raise_for_status()
-
-    img_pil = PIL.Image.open(BytesIO(response.content))
-    return append_discrete_legend(img_pil, "Vigor da Pastagem (estimativa)", palette_dict)
+    base_rgb = raster_layers.get_base_raster(
+        roi=roi, feature_key=car_code, year=base_year, grid=render_grid
+    )
+    return raster_render.render_discrete_map(
+        base_rgb=base_rgb,
+        values=values,
+        coords=coords,
+        grid=render_grid,
+        class_colors=class_colors,
+        class_labels=class_labels,
+        title="Vigor da Pastagem (estimativa)",
+        dimension=_IMAGE_DIMENSION,
+    )
 
 
 def estimate_pasture_vigor_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int = None, train_year: int = None) -> Dict:
@@ -224,9 +245,18 @@ def estimate_pasture_vigor_on_the_fly(roi: ee.Geometry, car_code: str, pred_year
         pred_year = pred_year or (train_year + 1)
         cache_key = f"{pred_year}_{_CACHE_VERSION}"
 
-        if cache_exists(car_code, cache_key, kind="vigor"):
-            dataset, image = load_cache(car_code, cache_key, kind="vigor")
+        if dataset_exists(car_code, cache_key, kind="vigor"):
+            dataset = load_dataset(car_code, cache_key, kind="vigor")
             vigor_class = dataset["vigor_class"].isel(time=0).values
+            source_grid = source_grid_from_dataset(dataset, "vigor_class")
+            image = _render_vigor_image(
+                roi=roi,
+                vigor_class=vigor_class,
+                source_grid=source_grid,
+                car_code=car_code,
+                base_year=pred_year,
+                coords=roi.coordinates().getInfo(),
+            )
             log_info(f"[{car_code}] pasture vigor cache hit ({pred_year})")
             return {
                 "imagem": image,
@@ -290,8 +320,16 @@ def estimate_pasture_vigor_on_the_fly(roi: ee.Geometry, car_code: str, pred_year
         dataset.attrs["calibration_status"] = calibration_status
 
         vigor_class = dataset["vigor_class"].isel(time=0).values
+        source_grid = source_grid_from_dataset(dataset, "vigor_class")
 
-        image = _render_vigor_image(roi=roi, vigor_image=vigor_image, base_year=pred_year)
+        image = _render_vigor_image(
+            roi=roi,
+            vigor_class=vigor_class,
+            source_grid=source_grid,
+            car_code=car_code,
+            base_year=pred_year,
+            coords=roi.coordinates().getInfo(),
+        )
         save_cache(car_code, cache_key, dataset, image, kind="vigor")
 
         log_info(

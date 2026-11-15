@@ -1,7 +1,7 @@
 import PIL
 
 from PIL import Image, ImageDraw, ImageFont, ImageColor
-from typing import Dict, List, Union
+from typing import Dict, List, Tuple, Union
 
 
 def draw_corner_label(
@@ -54,6 +54,63 @@ def draw_corner_label(
     return labeled
 
 
+def format_tick(value: Union[int, float], ndigits: int = 2) -> str:
+    """Formats a colorbar tick with a fixed number of decimal places."""
+    return f"{float(value):.{ndigits}f}"
+
+
+def _colorbar_layout(
+    font_path: str,
+    base_font_size: int,
+    labels: Tuple[str, str, str],
+    available: int,
+    min_width: int,
+) -> Tuple["ImageFont.ImageFont", int, bool, int]:
+    """Picks the tick font, whether the mid tick fits, and the bar width.
+
+    Labels are anchored at the bar ends (min left, max right), so the bar must
+    be at least as wide as ``min + gap + max``. The mid tick is only drawn when
+    it also fits, otherwise the labels would overlap on narrow images.
+
+    Returns:
+        (font, font_size, show_mid, cb_width)
+    """
+    vmin_label, mid_label, vmax_label = labels
+    probe = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+
+    def measure(font, size) -> Tuple[float, float, float, int]:
+        gap = max(6, int(size * 0.6))
+        return (
+            probe.textlength(vmin_label, font=font),
+            probe.textlength(mid_label, font=font),
+            probe.textlength(vmax_label, font=font),
+            gap,
+        )
+
+    candidates = []
+    for scale in (1.0, 0.85, 0.7):
+        size = max(9, int(base_font_size * scale))
+        try:
+            candidate = ImageFont.truetype(font_path, size)
+        except IOError:
+            candidate = ImageFont.load_default()
+        candidates.append((size, candidate))
+
+    size, font = candidates[-1]
+    show_mid = False
+    for candidate_size, candidate_font in candidates:
+        wmin, wmid, wmax, gap = measure(candidate_font, candidate_size)
+        if wmin + wmax + gap <= available:
+            size, font = candidate_size, candidate_font
+            show_mid = (wmin + wmid + wmax + 3 * gap) <= available
+            break
+
+    wmin, wmid, wmax, gap = measure(font, size)
+    needed = wmin + wmid + wmax + 3 * gap if show_mid else wmin + wmax + gap
+    cb_width = min(max(min_width, int(needed)), available)
+    return font, size, show_mid, max(1, int(cb_width))
+
+
 def append_continuous_colorbar(
     image: Image.Image, 
     title: str, 
@@ -61,40 +118,51 @@ def append_continuous_colorbar(
     vmax: Union[int, float], 
     unit: str,
     palette: List[str],
-    ndigits: int = None,
+    ndigits: int = 2,
     font_path: str = "assets/fonts/DejaVuSans-Bold.ttf"
 ) -> Image.Image:
     """
     Appends a continuous color gradient bar below the image, with the title
     centered above it. The bar is horizontal with min, mid and max ticks
-    (the unit is shown only on the max label).
+    (the unit is shown only on the max label; the mid tick is omitted when the
+    image is too narrow for the three labels).
 
     Args:
-        ndigits (int, optional): Decimal places for the tick labels. None
-            (default) keeps integer labels.
+        ndigits (int, optional): Decimal places for the tick labels
+            (2 by default).
     """
     width, height = image.size
-    
-    # 1. Dynamic sizing based on image dimensions
-    cb_width = max(150, int(width * 0.6))
+
     margin = max(10, int(width * 0.02))
-    
+    available = max(1, width - 2 * margin)
     base_font_size = max(12, int(height * 0.025))
-    title_font_size = int(base_font_size * 1.2)
-    cb_height = base_font_size
-    
+
+    # 1. Dynamic sizing based on image dimensions and label widths, so the ticks
+    #    never overlap (labels carry decimals and the unit).
+    mid = vmin + (vmax - vmin) / 2
+    vmin_label = format_tick(vmin, ndigits)
+    mid_label = format_tick(mid, ndigits)
+    vmax_label = format_tick(vmax, ndigits)
+    font, font_size, show_mid, cb_width = _colorbar_layout(
+        font_path=font_path,
+        base_font_size=base_font_size,
+        labels=(vmin_label, mid_label, f"{vmax_label} {unit}"),
+        available=available,
+        min_width=max(150, int(width * 0.6)),
+    )
+
+    cb_height = font_size
+    title_font_size = int(font_size * 1.2)
     try:
-        font = ImageFont.truetype(font_path, base_font_size)
         title_font = ImageFont.truetype(font_path, title_font_size)
     except IOError:
-        font = ImageFont.load_default()
         title_font = ImageFont.load_default()
-    
+
     # 2. Create new expanded canvas: title band on top, legend band below
     probe = ImageDraw.Draw(Image.new("RGB", (1, 1)))
     title_bbox = probe.multiline_textbbox((0, 0), title, font=title_font)
     title_height = title_bbox[3] - title_bbox[1]
-    font_height = base_font_size
+    font_height = font_size
     
     top_band = title_height + (margin * 2)
     bottom_band = cb_height + font_height + (margin * 3)
@@ -143,14 +211,9 @@ def append_continuous_colorbar(
         width=1
     )
 
-    # 5. Draw labels (vmin left, mid centered, vmax + unit right)
+    # 5. Draw labels (vmin left, mid centered when it fits, vmax + unit right)
     text_y = y_offset + cb_height + margin // 2
-    mid = vmin + (vmax - vmin) / 2
-    
-    vmin_label = str(round(vmin, ndigits) if ndigits is not None else vmin)
-    mid_label = str(round(mid, ndigits) if ndigits is not None else round(mid))
-    vmax_label = str(round(vmax, ndigits) if ndigits is not None else vmax)
-    
+
     draw.text(
         (x_offset, text_y),
         vmin_label,
@@ -158,15 +221,16 @@ def append_continuous_colorbar(
         font=font,
         anchor="la"
     )
-    
-    draw.text(
-        (x_offset + cb_width // 2, text_y),
-        mid_label,
-        fill="black",
-        font=font,
-        anchor="ma"
-    )
-    
+
+    if show_mid:
+        draw.text(
+            (x_offset + cb_width // 2, text_y),
+            mid_label,
+            fill="black",
+            font=font,
+            anchor="ma"
+        )
+
     draw.text(
         (x_offset + cb_width, text_y),
         f"{vmax_label} {unit}",
@@ -174,7 +238,7 @@ def append_continuous_colorbar(
         font=font,
         anchor="ra"
     )
-    
+
     return new_image
 
 

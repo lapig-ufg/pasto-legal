@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import tempfile
 
@@ -30,7 +31,7 @@ def gif_bytes_to_mp4_bytes(gif_bytes: bytes) -> bytes:
             f.write(gif_bytes)
 
         command = [
-            "ffmpeg", "-y",
+            shutil.which("ffmpeg", path=env["PATH"] if env else None) or "ffmpeg", "-y",
             "-i", gif_path,
             "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
             "-movflags", "faststart",
@@ -41,6 +42,7 @@ def gif_bytes_to_mp4_bytes(gif_bytes: bytes) -> bytes:
         result = subprocess.run(
             command,
             capture_output=True,
+            close_fds=False,
             env=env,
         )
 

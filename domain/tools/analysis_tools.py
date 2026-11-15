@@ -28,7 +28,7 @@ from domain.services.geospatial.gee import (
     query_pasture_statistics,
     query_topographic_stats,
     )
-from domain.services.geospatial.pasture_classification import classify_pasture_on_the_fly
+from domain.services.geospatial.pasture_classification import classify_pasture_on_the_fly, get_on_the_fly_pasture_mask
 from domain.services.geospatial.pasture_biomass import estimate_pasture_biomass_history
 from domain.services.geospatial.pasture_age import estimate_pasture_age_on_the_fly
 from domain.services.geospatial.pasture_vigor import estimate_pasture_vigor_on_the_fly
@@ -104,7 +104,10 @@ def generate_biomass_image(run_context: RunContext, feature_id: str) -> ToolResu
 
         today = datetime.date.today()
 
-        result = retrieve_t2g_biomass_image(selected_property.get_coords(), today.month, today.year)
+        result = retrieve_t2g_biomass_image(
+            selected_property.get_coords(), today.month, today.year,
+            feature_key=_cache_key_for(selected_property),
+        )
 
         if result is not None:
             biomass_img, _target_year, _target_month = result
@@ -121,7 +124,10 @@ def generate_biomass_image(run_context: RunContext, feature_id: str) -> ToolResu
                 images=[Image(content=buffer.getvalue())]
             )
 
-        img = retrieve_gpw_biomass_image(selected_property.get_coords())
+        img = retrieve_gpw_biomass_image(
+            selected_property.get_coords(),
+            feature_key=_cache_key_for(selected_property),
+        )
 
         buffer = BytesIO()
         img.save(buffer, format="PNG")
@@ -192,10 +198,11 @@ def _overlay_fixed_colorbar(
                 append_continuous_colorbar(
                     frame,
                     title=title,
-                    vmin=round(vmin),
-                    vmax=round(vmax),
+                    vmin=vmin,
+                    vmax=vmax,
                     unit="ton/ha",
                     palette=BIOMASS_VIDEO_PALETTE,
+                    ndigits=2,
                 )
             )
             frame_index += 1
@@ -274,6 +281,7 @@ def generate_biomass_video(
             start_month=start_month,
             end_year=end_year,
             end_month=end_month,
+            feature_key=_cache_key_for(selected_property),
         )
 
         if result is None:
@@ -307,8 +315,8 @@ def generate_biomass_video(
                 "analysis_tools", "generate_biomass_video", "success",
                 start=f"{effective_start[1]}/{effective_start[0]}",
                 end=f"{effective_end[1]}/{effective_end[0]}",
-                min=round(global_min),
-                max=round(global_max),
+                min=round(global_min, 1),
+                max=round(global_max, 1),
             ),
             videos=[Video(content=mp4_bytes, mime_type="video/mp4", format="mp4")],
         )
@@ -380,7 +388,10 @@ def generate_soil_texture_image(run_context: RunContext, feature_id: str) -> Too
             log_warning(f"Feição não encontrada: {feature_id}")
             return ToolResult(content=get_tool_result_text("analysis_tools", "generate_soil_texture_image", "feature_not_found", feature_id=feature_id))
 
-        img = retrieve_feature_soil_texture_image(coords=selected_property.get_coords())
+        img = retrieve_feature_soil_texture_image(
+            coords=selected_property.get_coords(),
+            feature_key=_cache_key_for(selected_property),
+        )
 
         buffer = BytesIO()
         img.save(buffer, format="PNG")
@@ -425,7 +436,8 @@ def get_pasture_stats(run_context: RunContext, feature_id: str):
         new_pasture_stats: PastureStats = query_pasture_statistics(
             coords=selected_property.get_coords(),
             month=today.month,
-            year=today.year
+            year=today.year,
+            feature_key=_cache_key_for(selected_property),
         )
 
         log_debug(f"get_pasture_stats: stats recuperadas ({selected_property.id})")
@@ -481,6 +493,11 @@ def _cache_key_for(selected_property: Feature) -> str:
     return selected_property.get_metadata("car_code") or selected_property.id
 
 
+def _pasture_mask(selected_property: Feature):
+    """Máscara on-the-fly da biomassa Time2Graze; None cai pro mapa GPW."""
+    return get_on_the_fly_pasture_mask(ee.Geometry.MultiPolygon(selected_property.get_coords()))
+
+
 def _safe_fetch_image(label: str, fetch_fn):
     """Busca um mapa 'extra' do boletim sem derrubar o PDF inteiro se essa camada específica falhar."""
     try:
@@ -517,7 +534,13 @@ def generate_property_boletim(run_context: RunContext, feature_id: str) -> ToolR
         coords = selected_property.get_coords()
         today = datetime.date.today()
 
-        pasture_stats = query_pasture_statistics(coords=coords, month=today.month, year=today.year)
+        feature_key = _cache_key_for(selected_property)
+        pasture_stats = query_pasture_statistics(
+            coords=coords,
+            month=today.month,
+            year=today.year,
+            feature_key=feature_key,
+        )
         stats = PropertyStats(car_code=selected_property.id or selected_property.get_metadata("car_code") or "", list_pasture_stats=[pasture_stats])
 
         location_image = retrieve_feature_images(coords)[0]
@@ -527,15 +550,23 @@ def generate_property_boletim(run_context: RunContext, feature_id: str) -> ToolR
         pasture_map_image = pasture_result["imagem"]
 
         def _fetch_biomass_image():
-            result = retrieve_t2g_biomass_image(coords, today.month, today.year)
+            result = retrieve_t2g_biomass_image(
+                coords, today.month, today.year, feature_key=feature_key
+            )
             if result is not None:
                 biomass_img, _target_year, _target_month = result
                 return biomass_img
-            return retrieve_gpw_biomass_image(coords)
+            return retrieve_gpw_biomass_image(coords, feature_key=feature_key)
 
         biomass_map_image = _safe_fetch_image("mapa de biomassa", _fetch_biomass_image)
-        vigor_map_image = _safe_fetch_image("mapa de vigor", lambda: retrieve_pasture_vigor_image(coords))
-        soil_map_image = _safe_fetch_image("mapa de textura do solo", lambda: retrieve_feature_soil_texture_image(coords))
+        vigor_map_image = _safe_fetch_image(
+            "mapa de vigor",
+            lambda: retrieve_pasture_vigor_image(coords, feature_key=feature_key),
+        )
+        soil_map_image = _safe_fetch_image(
+            "mapa de textura do solo",
+            lambda: retrieve_feature_soil_texture_image(coords, feature_key=feature_key),
+        )
 
         soil_stats = _safe_fetch_image("estatísticas de solo", lambda: get_soil_texture_stats(roi=roi))
         topographic_stats = _safe_fetch_image("dados topográficos", lambda: query_topographic_stats(coords=coords))
