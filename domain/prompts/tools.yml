@@ -334,21 +334,35 @@ weather_tools:
       Return:
           ToolResult: Text with the monthly precipitation forecast (date + mean mm).
     results:
+      feature_not_found: |
+        Feição não encontrada: {feature_id}.
+      invalid_range: |
+        Parâmetro fora do intervalo permitido (recebido: {received}; permitido: {min} a {max}).
+        Chame a ferramenta novamente com um valor dentro do intervalo. Não mostre esta mensagem ao produtor.
       error: |
-        Erro inesperado: {error}
+        O serviço de previsão do tempo está indisponível no momento.
+        Informe ao produtor, de forma breve e amigável, que não foi possível carregar a previsão agora e sugira tentar novamente mais tarde.
+        NÃO invente valores de previsão. NÃO mencione detalhes técnicos, códigos ou mensagens de erro.
   get_daily_precipitation_forecast:
     description: |
       Retrieves the precipitation forecast (mm) for a specific target day of the rural property.
 
       params:
           feature_id (str): Identifier (id) of the registered feature.
-          forecast_days (int): Target day to forecast, between 1 and 36. Defaults to 1.
+          forecast_days (int): Target day to forecast, between 1 and 32. Defaults to 1.
 
       Return:
           ToolResult: Text with the precipitation forecast for the chosen day.
     results:
+      feature_not_found: |
+        Feição não encontrada: {feature_id}.
+      invalid_range: |
+        Parâmetro fora do intervalo permitido (recebido: {received}; permitido: {min} a {max}).
+        Chame a ferramenta novamente com um valor dentro do intervalo. Não mostre esta mensagem ao produtor.
       error: |
-        Erro inesperado: {error}
+        O serviço de previsão do tempo está indisponível no momento.
+        Informe ao produtor, de forma breve e amigável, que não foi possível carregar a previsão agora e sugira tentar novamente mais tarde.
+        NÃO invente valores de previsão. NÃO mencione detalhes técnicos, códigos ou mensagens de erro.
   get_rain_season_onset_forecast:
     description: |
       Predicts the start date of the rainy season for the rural property.
@@ -360,8 +374,12 @@ weather_tools:
           ToolResult: Predicted rain onset date (YYYY-MM-DD), or a message
           indicating the rainy season has already begun / is unavailable.
     results:
+      feature_not_found: |
+        Feição não encontrada: {feature_id}.
       error: |
-        Erro inesperado: {error}
+        O serviço de previsão do tempo está indisponível no momento.
+        Informe ao produtor, de forma breve e amigável, que não foi possível carregar a previsão agora e sugira tentar novamente mais tarde.
+        NÃO invente valores de previsão. NÃO mencione detalhes técnicos, códigos ou mensagens de erro.
   get_dry_season_onset_forecast:
     description: |
       Predicts the start date of the dry season (end of rains) for the rural property.
@@ -374,8 +392,12 @@ weather_tools:
           message indicating the dry season is underway / the forecast
           horizon does not extend far enough.
     results:
+      feature_not_found: |
+        Feição não encontrada: {feature_id}.
       error: |
-        Erro inesperado: {error}
+        O serviço de previsão do tempo está indisponível no momento.
+        Informe ao produtor, de forma breve e amigável, que não foi possível carregar a previsão agora e sugira tentar novamente mais tarde.
+        NÃO invente valores de previsão. NÃO mencione detalhes técnicos, códigos ou mensagens de erro.
   get_temperature_forecast:
     description: |
       Retrieves the daily maximum and minimum temperature forecast (°C) for the rural property.
@@ -387,9 +409,15 @@ weather_tools:
       Return:
           ToolResult: Text with the daily temperature forecast (date, max, min).
     results:
+      feature_not_found: |
+        Feição não encontrada: {feature_id}.
+      invalid_range: |
+        Parâmetro fora do intervalo permitido (recebido: {received}; permitido: {min} a {max}).
+        Chame a ferramenta novamente com um valor dentro do intervalo. Não mostre esta mensagem ao produtor.
       error: |
-        Erro inesperado: {error}
-
+        O serviço de previsão do tempo está indisponível no momento.
+        Informe ao produtor, de forma breve e amigável, que não foi possível carregar a previsão agora e sugira tentar novamente mais tarde.
+        NÃO invente valores de previsão. NÃO mencione detalhes técnicos, códigos ou mensagens de erro.
 feedback_tools:
   record_analisys_feedback:
     description: |
