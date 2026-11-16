@@ -246,13 +246,13 @@ def test_retrieve_t2g_biomass_video_real_gee():
     assert frame_colors is not None and len(frame_colors) > 10, \
         f"Frame parece não ter fundo de satélite ({len(frame_colors) if frame_colors else '>100000'} cores)"
 
-    # Pipeline completo da tool: datas por frame + colorbar fixa
+    # Pipeline completo da tool: o serviço já desenhou as datas; a tool só
+    # acrescenta a barra de cores fixa.
     from domain.tools.analysis_tools import _overlay_fixed_colorbar
 
-    frame_dates = [f"{acc_month:02d}/{acc_year}" for acc_year, acc_month in frame_months]
     dated_gif_bytes = _overlay_fixed_colorbar(
         gif_bytes, vmin=global_min, vmax=global_max,
-        title="Biomassa (T2G)\nton/ha", frame_dates=frame_dates,
+        title="Biomassa (T2G)\nton/ha",
     )
     dated_gif = PILImage.open(BytesIO(dated_gif_bytes))
     assert dated_gif.n_frames == gif.n_frames

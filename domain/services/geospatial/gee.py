@@ -16,6 +16,7 @@ from semente.logging import log_error, log_warning
 from semente.configs.config import config
 
 from domain.services.geospatial import raster_layers, raster_render
+from domain.services.geospatial.image import draw_corner_label
 from domain.services.geospatial.pasture_cache import dataset_exists, load_dataset, save_dataset
 from domain.services.geospatial.xee_grid import RasterGrid, grid_for_roi
 from domain.services.geospatial.pasture_biomass import (
@@ -52,7 +53,7 @@ _LABEL_FONT_PATH = "assets/fonts/DejaVuSans-Bold.ttf"
 
 _HIGHVOLUME_URL = "https://earthengine-highvolume.googleapis.com"
 
-_BIOMASS_CACHE_VERSION = "v2"
+_BIOMASS_CACHE_VERSION = "v3"
 _BIOMASS_PALETTE = raster_render.BIOMASS_PALETTE
 
 try:
@@ -510,7 +511,7 @@ def _get_t2g_biomass_image(
             grassland_mask = grassland_asset.filterBounds(roi).filterDate(f'{mask_year}-01-01', f'{mask_year + 1}-01-01').first().gte(1)
 
     if ugpp_col.size().eq(0).getInfo():
-        log_error(
+        log_warning(
             f"_get_t2g_biomass_image returned None: empty UGPP collection "
             f"for period={start_year}/{start_month}/{start_day} - {end_year}/{end_month}/{end_day}"
         )
@@ -542,12 +543,13 @@ def _get_t2g_biomass_array(
     Returns the unmasked T2G biomass array cached on the canonical grid.
 
     When the requested reference month has no UGPP data, retries up to
-    ``max_fallbacks`` previous months. The cache stays keyed by the requested
-    period; the effective (fallback) period is stored in the dataset attrs.
+    ``max_fallbacks`` previous months. The cache key includes ``max_fallbacks``
+    so direct-only callers (e.g. the video, with ``max_fallbacks=0``) never
+    reuse a cached fallback period.
     """
     grid = grid or grid_for_roi(roi, scale=10, buffer_m=_FEATURE_BUFFER)
     cache_key = raster_layers.layer_cache_key(
-        [year, month], grid, _BIOMASS_CACHE_VERSION
+        [year, month, max_fallbacks], grid, _BIOMASS_CACHE_VERSION
     )
 
     if dataset_exists(feature_key, cache_key, kind="biomass_t2g"):
@@ -882,6 +884,9 @@ def _retrieve_t2g_biomass_video_cached(
             month=ref_month,
             year=ref_year,
             grid=grid,
+            # No video, cada mês é independente: meses sem dados são omitidos,
+            # não substituídos pelo mês anterior (evita frames duplicados).
+            max_fallbacks=0,
         )
         if result is None:
             log_warning(
@@ -921,20 +926,22 @@ def _retrieve_t2g_biomass_video_cached(
     }
 
     frames = []
-    for _ref_year, values, acc_year, _acc_month in frames_data:
+    for _ref_year, values, acc_year, acc_month in frames_data:
         overlay = raster_render.continuous_rgba(
             values, BIOMASS_VIDEO_PALETTE, global_min, global_max
         )
-        frames.append(
-            raster_render.render_rgba_frame(
-                base_rgb=base_by_year[acc_year],
-                values=values,
-                overlay=overlay,
-                coords=coords,
-                grid=grid,
-                dimension=_IMAGE_DIMENSION,
-            )
+        frame = raster_render.render_rgba_frame(
+            base_rgb=base_by_year[acc_year],
+            values=values,
+            overlay=overlay,
+            coords=coords,
+            grid=grid,
+            dimension=_IMAGE_DIMENSION,
         )
+        # O rótulo de data é desenhado antes de salvar o GIF: além de identificar
+        # o frame, garante que frames visualmente idênticos não sejam fundidos
+        # pelo encoder do Pillow (o que quebraria a correspondência com frame_months).
+        frames.append(draw_corner_label(frame, f"{acc_month:02d}/{acc_year}"))
 
     buffer = BytesIO()
     frames[0].save(
@@ -966,7 +973,9 @@ def retrieve_t2g_biomass_video(
     via `_month_period` + `_get_t2g_biomass_image` e empilha os frames
     compostos como no mapa estático de biomassa: imagem de satélite de fundo,
     camada de biomassa visualizada com a mesma paleta e contorno vermelho da
-    propriedade. Meses sem dados UGPP são ignorados.
+    propriedade. Meses sem dados UGPP são ignorados (sem fallback para o mês
+    anterior). Cada frame recebe o rótulo MM/AAAA do próprio mês antes de ser
+    salvo no GIF.
 
     Args:
         coords: Lista de coordenadas representando o MultiPolygon da fazenda.

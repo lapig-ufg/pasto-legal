@@ -403,6 +403,84 @@ def test_resolve_gpw_biomass_year_falls_back_to_the_latest_year(monkeypatch):
     assert pasture_biomass.resolve_gpw_biomass_year(2025) == 2024
 
 
+def test_biomass_video_keeps_one_frame_per_month_even_with_identical_renders(monkeypatch):
+    from io import BytesIO
+
+    import PIL
+    from domain.services.geospatial import gee
+
+    calls = []
+
+    def fake_array(**kwargs):
+        calls.append(kwargs)
+        return (
+            np.ones((2, 2), dtype=np.float32),
+            kwargs["year"],
+            kwargs["month"],
+        )
+
+    monkeypatch.setattr(gee.ee.Geometry, "MultiPolygon", lambda coords: "roi")
+    monkeypatch.setattr(gee, "grid_for_roi", lambda *args, **kwargs: _grid())
+    monkeypatch.setattr(
+        gee, "_get_pasture_mask_array",
+        lambda *args, **kwargs: np.ones((2, 2), dtype=np.int16),
+    )
+    monkeypatch.setattr(gee, "_get_t2g_biomass_array", fake_array)
+    monkeypatch.setattr(
+        gee.raster_layers, "get_base_raster",
+        lambda *args, **kwargs: np.zeros((2, 2, 3), dtype=np.uint8),
+    )
+    monkeypatch.setattr(
+        gee.raster_render, "continuous_rgba",
+        lambda *args, **kwargs: np.zeros((2, 2, 4), dtype=np.uint8),
+    )
+    # Every month renders the exact same image; the baked date label is what
+    # keeps the GIF frames distinct.
+    monkeypatch.setattr(
+        gee.raster_render, "render_rgba_frame",
+        lambda **kwargs: PIL.Image.new("RGB", (64, 64), (10, 20, 30)),
+    )
+
+    result = gee._retrieve_t2g_biomass_video_cached(
+        coords=[[[[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [0.0, 0.0]]]],
+        feature_key="feature",
+        months=[(2025, 1), (2025, 2)],
+        effective_start=(2025, 1),
+        effective_end=(2025, 2),
+    )
+
+    assert result is not None
+    gif_bytes, _, _, frame_months, _, _ = result
+    gif = PIL.Image.open(BytesIO(gif_bytes))
+    assert frame_months == [(2025, 1), (2025, 2)]
+    assert gif.n_frames == 2
+    assert all(call["max_fallbacks"] == 0 for call in calls)
+
+
+def test_t2g_cache_key_separates_direct_and_fallback_modes(monkeypatch):
+    from domain.services.geospatial import gee
+
+    keys = []
+
+    def exists(feature_key, key, kind=None):
+        keys.append(key)
+        return False
+
+    monkeypatch.setattr(gee, "dataset_exists", exists)
+    monkeypatch.setattr(gee, "_get_t2g_biomass_image", lambda *args, **kwargs: None)
+
+    grid = _grid()
+    for max_fallbacks in (0, 3):
+        assert gee._get_t2g_biomass_array(
+            roi="roi", feature_key="feature", month=9, year=2026,
+            grid=grid, max_fallbacks=max_fallbacks,
+        ) is None
+
+    assert keys[0] != keys[1]
+    assert keys[0].startswith("2026_9_0_")
+    assert keys[1].startswith("2026_9_3_")
+
+
 def test_format_tick_uses_two_decimals_by_default():
     from domain.services.geospatial.image import format_tick
 

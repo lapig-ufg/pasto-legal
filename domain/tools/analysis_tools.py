@@ -341,15 +341,14 @@ def generate_biomass_video(
                 )
             )
 
-        gif_bytes, effective_start, effective_end, frame_months, global_min, global_max = result
+        gif_bytes, effective_start, effective_end, _frame_months, global_min, global_max = result
 
-        frame_dates = [f"{acc_month:02d}/{acc_year}" for acc_year, acc_month in frame_months]
+        # Cada frame já vem com o rótulo MM/AAAA desenhado pelo serviço.
         gif_bytes = _overlay_fixed_colorbar(
             gif_bytes,
             vmin=global_min,
             vmax=global_max,
             title="Biomassa (T2G)",
-            frame_dates=frame_dates,
         )
         mp4_bytes = gif_bytes_to_mp4_bytes(gif_bytes)
 
