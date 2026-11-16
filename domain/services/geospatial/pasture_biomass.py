@@ -2,7 +2,7 @@ import time
 import traceback
 
 from io import BytesIO
-from typing import Dict
+from typing import Dict, Optional
 
 import ee
 import matplotlib
@@ -63,6 +63,42 @@ def _latest_gpw_year() -> int:
     """Ano mais recente disponível na coleção ugpp_m do Global Pasture Watch."""
     latest = ee.ImageCollection(_GPW_UGPP_ASSET).sort("system:time_start", False).first()
     return ee.Date(latest.get("system:time_start")).get("year").getInfo()
+
+
+def _gpw_year_available(year: int) -> bool:
+    """Indica se a coleção anual do GPW possui imagem para o ano informado."""
+    return bool(
+        ee.ImageCollection(_GPW_UGPP_ASSET)
+        .filterDate(f"{year}-01-01", f"{year + 1}-01-01")
+        .size()
+        .getInfo()
+    )
+
+
+def resolve_gpw_biomass_year(year: Optional[int] = None) -> int:
+    """
+    Resolve o ano do mapa anual de biomassa do Global Pasture Watch (GPW).
+
+    O GPW publica uma imagem por ano. Se o ano pedido estiver fora da série
+    (antes de 2000 ou depois do último ano publicado) ou não tiver imagem
+    disponível, usa o ano mais recente disponível — o mapa anual nunca deixa de
+    ser gerado por causa de um ano sem publicação.
+
+    Args:
+        year (int, optional): Ano solicitado; ``None`` usa o mais recente.
+
+    Returns:
+        int: Ano efetivo do mapa anual do GPW.
+    """
+    latest_year = _latest_gpw_year()
+
+    if year is None or year < _HISTORY_START_YEAR or year > latest_year:
+        return latest_year
+
+    if not _gpw_year_available(year):
+        return latest_year
+
+    return year
 
 
 def _grassland_mask(roi: ee.Geometry, year: int) -> ee.Image:

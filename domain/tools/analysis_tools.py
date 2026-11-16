@@ -85,17 +85,29 @@ def generate_property_image(run_context: RunContext, feature_id: str) -> ToolRes
 
 
 @tool(tool_hooks=[_require_registered_property], description=get_tool_description("analysis_tools", "generate_biomass_image"))
-def generate_biomass_image(run_context: RunContext, feature_id: str) -> ToolResult:
+def generate_biomass_image(
+    run_context: RunContext,
+    feature_id: str,
+    month: int | None = None,
+    year: int | None = None,
+) -> ToolResult:
     """
     Gera um mapa temático da biomassa (matéria seca) sobre os limites da propriedade rural.
 
+    Por padrão usa o mês/ano atual. Se um mês/ano for informado e não houver imagem
+    T2G para o período, tenta até três meses anteriores (4 meses no total) e,
+    se ainda não houver dados mensais, usa o mapa anual do GPW do ano pedido — ou o
+    ano mais recente do GPW quando esse ano não estiver disponível.
+
     params:
         feature_id (str): Identificador (id) da feição registrada.
+        month (int, optional): Mês de referência (1 a 12). Padrão: mês atual.
+        year (int, optional): Ano de referência. Padrão: ano atual.
 
     Return:
         ToolResult: Mapa renderizado em formato PNG.
     """
-    log_debug(f"generate_biomass_image: feature_id={feature_id}")
+    log_debug(f"generate_biomass_image: feature_id={feature_id}, month={month}, year={year}")
     try:
         selected_property = resolve_feature(run_context, feature_id)
         if selected_property is None:
@@ -103,9 +115,27 @@ def generate_biomass_image(run_context: RunContext, feature_id: str) -> ToolResu
             return ToolResult(content=get_tool_result_text("analysis_tools", "generate_biomass_image", "feature_not_found", feature_id=feature_id))
 
         today = datetime.date.today()
+        requested_month = month if month is not None else today.month
+        requested_year = year if year is not None else today.year
+
+        if not 1 <= requested_month <= 12:
+            log_warning(f"generate_biomass_image: mês inválido ({requested_month})")
+            return ToolResult(content=get_tool_result_text("analysis_tools", "generate_biomass_image", "invalid_period"))
+
+        if (requested_year, requested_month) > (today.year, today.month):
+            log_warning(
+                f"generate_biomass_image: período no futuro "
+                f"({requested_month}/{requested_year})"
+            )
+            return ToolResult(
+                content=get_tool_result_text(
+                    "analysis_tools", "generate_biomass_image", "future_period",
+                    requested_month=requested_month, requested_year=requested_year,
+                )
+            )
 
         result = retrieve_t2g_biomass_image(
-            selected_property.get_coords(), today.month, today.year,
+            selected_property.get_coords(), requested_month, requested_year,
             feature_key=_cache_key_for(selected_property),
         )
 
@@ -115,26 +145,43 @@ def generate_biomass_image(run_context: RunContext, feature_id: str) -> ToolResu
             buffer = BytesIO()
             biomass_img.save(buffer, format="PNG")
 
-            log_debug(f"generate_biomass_image: mapa t2g gerado ({selected_property.id}, {_target_month}/{_target_year})")
+            # `_target_*` is the effective reference month itself.
+            used_fallback = (_target_year, _target_month) != (requested_year, requested_month)
+            result_text = get_tool_result_text(
+                "analysis_tools",
+                "generate_biomass_image",
+                "success_t2g_fallback_legend" if used_fallback else "success_t2g_legend",
+                ref_month=_target_month,
+                ref_year=_target_year,
+                requested_month=requested_month,
+                requested_year=requested_year,
+            )
+
+            log_debug(
+                f"generate_biomass_image: mapa t2g gerado "
+                f"({selected_property.id}, {_target_month}/{_target_year}"
+                f"{', fallback' if used_fallback else ''})"
+            )
             return ToolResult(
-                content=get_tool_result_text(
-                    "analysis_tools", "generate_biomass_image", "success_t2g_legend",
-                    ref_month=_target_month, ref_year=_target_year,
-                ),
+                content=result_text,
                 images=[Image(content=buffer.getvalue())]
             )
 
-        img = retrieve_gpw_biomass_image(
+        img, gpw_year = retrieve_gpw_biomass_image(
             selected_property.get_coords(),
+            year=requested_year,
             feature_key=_cache_key_for(selected_property),
         )
 
         buffer = BytesIO()
         img.save(buffer, format="PNG")
 
-        log_debug(f"generate_biomass_image: mapa mapbiomas gerado ({selected_property.id})")
+        log_debug(f"generate_biomass_image: mapa mapbiomas gerado ({selected_property.id}, {gpw_year})")
         return ToolResult(
-            content=get_tool_result_text("analysis_tools", "generate_biomass_image", "success_mapbiomas_legend"),
+            content=get_tool_result_text(
+                "analysis_tools", "generate_biomass_image", "success_mapbiomas_legend",
+                ref_year=gpw_year,
+            ),
             images=[Image(content=buffer.getvalue())]
         )
 
@@ -242,7 +289,7 @@ def generate_biomass_video(
     Gera um vídeo (MP4) animado mostrando a evolução mensal da biomassa (matéria seca,
     ton/ha) acumulada na propriedade rural, mês a mês, sobre a imagem de satélite.
 
-    Cada frame corresponde ao acumulado do mês anterior ao mês de referência
+    Cada frame corresponde ao acumulado do mês de referência
     (mesma regra do mapa de biomassa), com escala de cores fixa entre os frames
     para permitir comparação direta entre os meses, e indica no canto superior
     esquerdo o mês de acumulação do frame.
@@ -556,7 +603,7 @@ def generate_property_boletim(run_context: RunContext, feature_id: str) -> ToolR
             if result is not None:
                 biomass_img, _target_year, _target_month = result
                 return biomass_img
-            return retrieve_gpw_biomass_image(coords, feature_key=feature_key)
+            return retrieve_gpw_biomass_image(coords, feature_key=feature_key)[0]
 
         biomass_map_image = _safe_fetch_image("mapa de biomassa", _fetch_biomass_image)
         vigor_map_image = _safe_fetch_image(

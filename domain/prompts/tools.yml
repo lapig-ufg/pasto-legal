@@ -35,18 +35,35 @@ analysis_tools:
   generate_biomass_image:
     description: |
       Gera um mapa temático da biomassa (matéria seca) sobre os limites da propriedade rural.
+
+      Por padrão usa o mês/ano atual. Se um mês/ano for informado e não houver imagem
+      de biomassa mensal (T2G) para esse período, tenta até três meses anteriores
+      (4 meses no total). Se ainda assim não houver dados mensais, usa o mapa
+      anual do Global Pasture Watch (GPW) do ano solicitado ou, quando esse ano não
+      estiver disponível no GPW, o ano mais recente publicado.
+
+      A data solicitada não pode estar no futuro.
+
       params:
           feature_id (str): Identificador (id) da feição registrada.
+          month (int, optional): Mês de referência (1 a 12). Padrão: mês atual.
+          year (int, optional): Ano de referência. Padrão: ano atual.
 
       Return:
           ToolResult: Mapa renderizado em formato PNG.
     results:
       feature_not_found: |
         Feição não encontrada: {feature_id}.
+      invalid_period: |
+        Período inválido: o mês deve estar entre 1 (janeiro) e 12 (dezembro).
+      future_period: |
+        Período inválido: {requested_month}/{requested_year} está no futuro. Informe um mês/ano igual ou anterior ao atual.
       success_t2g_legend: |
         Legenda: Acumulado de biomassa no mês de referência. Azul claro (Alta concentração) a Roxo escuro (Baixa concentração). Data referência: mês {ref_month}, ano {ref_year}.
+      success_t2g_fallback_legend: |
+        Legenda: Acumulado de biomassa no mês de referência. Azul claro (Alta concentração) a Roxo escuro (Baixa concentração). Data referência: mês {ref_month}, ano {ref_year}. Não havia dados de biomassa para o período solicitado ({requested_month}/{requested_year}); foi usado o período mais recente disponível.
       success_mapbiomas_legend: |
-        Legenda: Acumulado de biomassa no ano de referência. Azul claro (Alta concentração) a Roxo escuro (Baixa concentração). Data referência: ano 2024.
+        Legenda: Acumulado de biomassa no ano de referência. Azul claro (Alta concentração) a Roxo escuro (Baixa concentração). Data referência: ano {ref_year}.
       error: |
         Erro inesperado: {error}.
   generate_biomass_video:
@@ -54,7 +71,7 @@ analysis_tools:
       Gera um vídeo (MP4) animado mostrando a evolução mensal da biomassa (matéria seca,
       ton/ha) acumulada na propriedade rural, mês a mês, sobre a imagem de satélite.
 
-      Cada frame corresponde ao acumulado do mês anterior ao mês de referência
+      Cada frame corresponde ao acumulado do mês de referência
       (mesma regra do mapa de biomassa), com escala de cores fixa entre os frames
       para permitir comparação direta entre os meses, e indica no canto superior
       esquerdo o mês de acumulação do frame.

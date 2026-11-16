@@ -286,6 +286,123 @@ def test_get_biomass_applies_cached_pasture_mask(monkeypatch):
     assert result.amount.value == pytest.approx(0.8)
 
 
+def test_reference_month_candidates_retreats_and_wraps_the_year():
+    from domain.services.geospatial import gee
+
+    assert gee._reference_month_candidates(2026, 1, 2) == [
+        (2026, 1),
+        (2025, 12),
+        (2025, 11),
+    ]
+    assert gee._reference_month_candidates(2026, 11, 0) == [(2026, 11)]
+
+
+def test_month_period_uses_the_month_itself():
+    import datetime
+
+    from domain.services.geospatial import gee
+
+    assert gee._month_period(2026, 8) == (
+        datetime.date(2026, 8, 1),
+        datetime.date(2026, 9, 1),
+    )
+    assert gee._month_period(2026, 12) == (
+        datetime.date(2026, 12, 1),
+        datetime.date(2027, 1, 1),
+    )
+
+
+def test_t2g_biomass_array_uses_the_requested_month_and_retries_previous_months(monkeypatch):
+    from domain.services.geospatial import gee
+
+    calls = []
+
+    def fake_image(
+        roi, start_year, start_month, start_day,
+        end_year, end_month, end_day, apply_mask=True,
+    ):
+        calls.append((start_year, start_month))
+        if (start_year, start_month) == (2026, 9):
+            return "image", 2026, 9
+        return None
+
+    dataset = xr.Dataset(
+        {"tonC_hec": (("time", "y", "x"), np.ones((1, 2, 2), dtype=np.float32))},
+        coords={
+            "time": [np.datetime64("2000-01-01")],
+            "y": [0.5, -0.5],
+            "x": [0.5, 1.5],
+        },
+    )
+    grid = RasterGrid(
+        crs="EPSG:4326",
+        transform=(1.0, 0.0, 0.0, 0.0, -1.0, 1.0),
+        width=2,
+        height=2,
+        scale=1,
+    )
+
+    monkeypatch.setattr(gee, "_get_t2g_biomass_image", fake_image)
+    monkeypatch.setattr(gee, "dataset_exists", lambda *args, **kwargs: False)
+    monkeypatch.setattr(gee, "save_dataset", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        gee.raster_layers, "download_image_dataset", lambda *args, **kwargs: dataset
+    )
+
+    values, target_year, target_month = gee._get_t2g_biomass_array(
+        roi="roi", feature_key="feature", month=11, year=2026, grid=grid,
+        max_fallbacks=2,
+    )
+
+    # Candidates: nov/2026 -> out/2026 -> set/2026 (second fallback succeeds).
+    assert calls == [(2026, 11), (2026, 10), (2026, 9)]
+    np.testing.assert_array_equal(values.astype(int), [[1, 1], [1, 1]])
+    assert (target_year, target_month) == (2026, 9)
+
+
+def test_t2g_biomass_array_returns_none_after_all_fallbacks(monkeypatch):
+    from domain.services.geospatial import gee
+
+    calls = []
+
+    def empty_image(*args, **kwargs):
+        calls.append((args[1], args[2]))
+        return None
+
+    grid = RasterGrid(
+        crs="EPSG:4326",
+        transform=(1.0, 0.0, 0.0, 0.0, -1.0, 1.0),
+        width=2,
+        height=2,
+        scale=1,
+    )
+    monkeypatch.setattr(gee, "_get_t2g_biomass_image", empty_image)
+    monkeypatch.setattr(gee, "dataset_exists", lambda *args, **kwargs: False)
+
+    result = gee._get_t2g_biomass_array(
+        roi="roi", feature_key="feature", month=1, year=2026, grid=grid,
+        max_fallbacks=3,
+    )
+
+    assert result is None
+    assert calls == [(2026, 1), (2025, 12), (2025, 11), (2025, 10)]
+
+
+def test_resolve_gpw_biomass_year_falls_back_to_the_latest_year(monkeypatch):
+    from domain.services.geospatial import pasture_biomass
+
+    monkeypatch.setattr(pasture_biomass, "_latest_gpw_year", lambda: 2024)
+    monkeypatch.setattr(
+        pasture_biomass, "_gpw_year_available", lambda year: year == 2022
+    )
+
+    assert pasture_biomass.resolve_gpw_biomass_year(2022) == 2022
+    assert pasture_biomass.resolve_gpw_biomass_year(2021) == 2024
+    assert pasture_biomass.resolve_gpw_biomass_year(None) == 2024
+    assert pasture_biomass.resolve_gpw_biomass_year(1999) == 2024
+    assert pasture_biomass.resolve_gpw_biomass_year(2025) == 2024
+
+
 def test_format_tick_uses_two_decimals_by_default():
     from domain.services.geospatial.image import format_tick
 

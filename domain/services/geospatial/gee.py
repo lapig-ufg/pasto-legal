@@ -23,6 +23,7 @@ from domain.services.geospatial.pasture_biomass import (
     _annual_biomass_image,
     _grassland_mask,
     _latest_gpw_year,
+    resolve_gpw_biomass_year,
 )
 from domain.schemas.property_stats import PropertyStats, PastureStats, TopographicStats
 from domain.schemas.property_stats import (
@@ -51,7 +52,7 @@ _LABEL_FONT_PATH = "assets/fonts/DejaVuSans-Bold.ttf"
 
 _HIGHVOLUME_URL = "https://earthengine-highvolume.googleapis.com"
 
-_BIOMASS_CACHE_VERSION = "v1"
+_BIOMASS_CACHE_VERSION = "v2"
 _BIOMASS_PALETTE = raster_render.BIOMASS_PALETTE
 
 try:
@@ -407,9 +408,9 @@ def retrieve_property_overview_image(
         )
 
 
-def _reference_period(year: int, month: int) -> tuple[datetime.date, datetime.date]:
+def _month_period(year: int, month: int) -> tuple[datetime.date, datetime.date]:
     """
-    Regra do mês de referência: o período acumulado é o mês anterior ao mês/ano informado.
+    Período do próprio mês de referência (sem recuar para o mês anterior).
 
     Args:
         year (int): Ano de referência.
@@ -418,10 +419,37 @@ def _reference_period(year: int, month: int) -> tuple[datetime.date, datetime.da
     Returns:
         tuple[datetime.date, datetime.date]: (início, fim) com fim exclusivo.
     """
-    start_year, start_month = (year - 1, 12) if month == 1 else (year, month - 1)
-    start_date = datetime.date(start_year, start_month, 1)
-    end_date = datetime.date(year, month, 1)
+    start_date = datetime.date(year, month, 1)
+    if month == 12:
+        end_date = datetime.date(year + 1, 1, 1)
+    else:
+        end_date = datetime.date(year, month + 1, 1)
     return start_date, end_date
+
+
+def _previous_reference_month(year: int, month: int) -> tuple[int, int]:
+    """Mês de referência imediatamente anterior (janeiro volta para dezembro)."""
+    return (year - 1, 12) if month == 1 else (year, month - 1)
+
+
+def _reference_month_candidates(
+    year: int, month: int, max_fallbacks: int = 2
+) -> list[tuple[int, int]]:
+    """
+    Lista os meses de referência a tentar, do pedido até os anteriores.
+
+    Args:
+        year (int): Ano de referência solicitado.
+        month (int): Mês de referência solicitado.
+        max_fallbacks (int): Quantas vezes recuar para o mês anterior.
+
+    Returns:
+        list[tuple[int, int]]: [(ano, mês) solicitado, ..., (ano, mês) recuado].
+    """
+    candidates = [(year, month)]
+    for _ in range(max(0, max_fallbacks)):
+        candidates.append(_previous_reference_month(*candidates[-1]))
+    return candidates
 
 
 def _get_t2g_biomass_image(
@@ -508,8 +536,15 @@ def _get_t2g_biomass_array(
     month: int,
     year: int,
     grid: Optional[RasterGrid] = None,
+    max_fallbacks: int = 1,
 ):
-    """Returns the unmasked T2G biomass array cached on the canonical grid."""
+    """
+    Returns the unmasked T2G biomass array cached on the canonical grid.
+
+    When the requested reference month has no UGPP data, retries up to
+    ``max_fallbacks`` previous months. The cache stays keyed by the requested
+    period; the effective (fallback) period is stored in the dataset attrs.
+    """
     grid = grid or grid_for_roi(roi, scale=10, buffer_m=_FEATURE_BUFFER)
     cache_key = raster_layers.layer_cache_key(
         [year, month], grid, _BIOMASS_CACHE_VERSION
@@ -526,23 +561,24 @@ def _get_t2g_biomass_array(
             int(dataset.attrs.get("target_month", month)),
         )
 
-    start_date, end_date = _reference_period(year, month)
-    result = _get_t2g_biomass_image(
-        roi,
-        start_date.year, start_date.month, start_date.day,
-        end_date.year, end_date.month, end_date.day,
-        apply_mask=False,
-    )
-
-    if result is None:
-        fallback_month, fallback_year = (12, year - 1) if month == 1 else (month - 1, year)
-        start_date, end_date = _reference_period(fallback_year, fallback_month)
+    result = None
+    for candidate_year, candidate_month in _reference_month_candidates(
+        year, month, max_fallbacks
+    ):
+        start_date, end_date = _month_period(candidate_year, candidate_month)
         result = _get_t2g_biomass_image(
             roi,
             start_date.year, start_date.month, start_date.day,
             end_date.year, end_date.month, end_date.day,
             apply_mask=False,
         )
+        if result is not None:
+            if (candidate_year, candidate_month) != (year, month):
+                log_warning(
+                    f"_get_t2g_biomass_array: sem dados UGPP para "
+                    f"{month}/{year}; usando fallback {candidate_month}/{candidate_year}"
+                )
+            break
 
     if result is None:
         return None
@@ -591,10 +627,11 @@ def retrieve_t2g_biomass_image(
     year: int,
     pasture_mask: Optional[ee.Image] = None,
     feature_key: Optional[str] = None,
+    max_fallbacks: int = 3,
 ) -> tuple[PIL.Image.Image, int, int] | None:
     """
-    Generates a satellite image with the T2G (Time2Graze) biomass layer overlaid,
-    relative to the reference month (the month before the one given), with a colorbar.
+    Generates a satellite image with the T2G (Time2Graze) biomass layer overlaid
+    for the given reference month, with a colorbar.
 
     The biomass raster is downloaded once from GEE into a zarr cache and masked
     locally by the cached pasture classification, then rendered over the cached
@@ -602,16 +639,18 @@ def retrieve_t2g_biomass_image(
 
     Args:
         coords: List of coordinates representing the farm MultiPolygon.
-        month (int): Reference month (the accumulation uses the previous month).
+        month (int): Reference month (accumulated directly, not the previous month).
         year (int): Reference year.
         pasture_mask: Deprecated; kept for backward compatibility.
         feature_key: Stable cache key for the property.
+        max_fallbacks (int): How many previous months to try when the requested
+            period has no UGPP data. Defaults to 3 (4 months total).
 
     Returns:
         tuple[PIL.Image.Image, int, int]: (final image with satellite, biomass,
-        outline and colorbar, effective accumulation year and month), or None
-        when no UGPP data is available for the period. If the chosen month has
-        no data, falls back once to the previous month before returning None.
+        outline and colorbar, effective year and month), or None when no UGPP
+        data is available for the period. If the chosen month has no data,
+        falls back up to ``max_fallbacks`` previous months before returning None.
 
     Raises:
         ValueError: If the area contains no mapped pasture with computable biomass.
@@ -629,6 +668,7 @@ def retrieve_t2g_biomass_image(
             month=month,
             year=year,
             grid=grid,
+            max_fallbacks=max_fallbacks,
         )
         if result is None:
             return None
@@ -684,27 +724,37 @@ def retrieve_gpw_biomass_image(
     coords: List[List[List[List[float]]]],
     year: int = None,
     feature_key: Optional[str] = None,
-) -> PIL.Image.Image:
+) -> tuple[PIL.Image.Image, int]:
     """
     Mapa de biomassa seca de pastagem (Global Pasture Watch), usado como fallback
     quando o T2G não cobre a propriedade (fora da lista fixa de tiles) — cobertura
-    nacional/global, sem essa limitação. Se `year` for omitido, usa o ano mais
-    recente disponível no GPW. O raster é cacheado em zarr e renderizado localmente.
+    nacional/global, sem essa limitação.
+
+    O GPW publica uma imagem por ano. Se `year` for omitido, ou se não houver
+    imagem para o ano pedido, usa o ano mais recente disponível no GPW. O raster
+    é cacheado em zarr e renderizado localmente.
+
+    Returns:
+        tuple[PIL.Image.Image, int]: (mapa renderizado, ano efetivo do GPW).
     """
     roi = ee.Geometry.MultiPolygon(coords)
     feature_key = feature_key or raster_layers.feature_key_from_coords(coords)
     grid = grid_for_roi(roi, scale=10, buffer_m=_FEATURE_BUFFER)
 
-    if year is None:
-        year = _latest_gpw_year()
+    gpw_year = resolve_gpw_biomass_year(year)
+    if year is not None and gpw_year != year:
+        log_warning(
+            f"retrieve_gpw_biomass_image: sem imagem GPW para {year}; "
+            f"usando o ano mais recente disponível ({gpw_year})"
+        )
 
-    key = raster_layers.layer_cache_key([year], grid, "v1")
+    key = raster_layers.layer_cache_key([gpw_year], grid, "v1")
     values, grid = raster_layers.get_layer_array(
         roi=roi,
         feature_key=feature_key,
         kind="biomass_gpw",
         key=key,
-        image_factory=lambda: _annual_biomass_image(roi, year),
+        image_factory=lambda: _annual_biomass_image(roi, gpw_year),
         band_name="t_ha_year",
         grid=grid,
         scale=10,
@@ -721,21 +771,22 @@ def retrieve_gpw_biomass_image(
     palette = _BIOMASS_PALETTE
 
     base_rgb = raster_layers.get_base_raster(
-        roi=roi, feature_key=feature_key, year=year, grid=grid
+        roi=roi, feature_key=feature_key, year=gpw_year, grid=grid
     )
-    return raster_render.render_continuous_map(
+    img = raster_render.render_continuous_map(
         base_rgb=base_rgb,
         values=masked,
         coords=coords,
         grid=grid,
         palette=palette,
-        title=f"Biomassa\n({year}) - GPW",
+        title=f"Biomassa\n({gpw_year}) - GPW",
         unit="ton/ha/ano",
         vmin=min_bio_val,
         vmax=max_bio_val,
         # Native grid resolution: one image pixel per 10 m cell, no blur.
         dimension=None,
     )
+    return img, int(gpw_year)
 
 
 BIOMASS_VIDEO_MIN_YEAR = 2025
@@ -754,9 +805,8 @@ def _iterate_reference_months(
 
     Regras:
         - O ano inicial não pode ser anterior a 2025 (início da série UGPP/T2G).
-        - O intervalo final é limitado ao mês de referência atual (mês corrente,
-          o mesmo limite aplicado por `_reference_period`); pedidos além disso
-          são ajustados (clamp) para o limite, sem erro.
+        - O intervalo final é limitado ao mês de referência atual (mês corrente);
+          pedidos além disso são ajustados (clamp) para o limite, sem erro.
         - Meses fora de 1-12 geram erro.
 
     Args:
@@ -912,8 +962,8 @@ def retrieve_t2g_biomass_video(
     série T2G (Time2Graze/UGPP), sobre a imagem de satélite e com o contorno
     da propriedade em cada frame, com escala de cores fixa entre os frames.
 
-    Para cada mês de referência no intervalo (inclusivo), acumula o mês anterior
-    via `_reference_period` + `_get_t2g_biomass_image` e empilha os frames
+    Para cada mês de referência no intervalo (inclusivo), acumula o próprio mês
+    via `_month_period` + `_get_t2g_biomass_image` e empilha os frames
     compostos como no mapa estático de biomassa: imagem de satélite de fundo,
     camada de biomassa visualizada com a mesma paleta e contorno vermelho da
     propriedade. Meses sem dados UGPP são ignorados.
@@ -1135,8 +1185,8 @@ def get_biomass(
     feature_key: Optional[str] = None,
 ) -> BiomassStats:
     """
-    Computes pasture dry biomass accumulated in the reference month (the month
-    before the one given), using the Time2Graze collection (10m UGPP).
+    Computes pasture dry biomass accumulated in the reference month itself,
+    using the Time2Graze collection (10m UGPP).
 
     When ``feature_key`` is given, the biomass and pasture mask are read from
     the zarr cache and the total is computed locally. Otherwise the legacy
@@ -1147,7 +1197,7 @@ def get_biomass(
 
     Args:
         roi (ee.Geometry): Region of interest (farm polygon).
-        month (int): Reference month (the accumulation uses the previous month).
+        month (int): Reference month (accumulated directly, not the previous month).
         year (int): Reference year.
         pasture_mask (ee.Image, optional): Deprecated EE mask.
         feature_key (str, optional): Stable cache key for the property.
@@ -1210,7 +1260,7 @@ def get_biomass(
             ),
         )
 
-    start_date, end_date = _reference_period(year, month)
+    start_date, end_date = _month_period(year, month)
     result = _get_t2g_biomass_image(
         roi,
         start_date.year, start_date.month, start_date.day,
@@ -1501,7 +1551,7 @@ def query_pasture_statistics(
 
     Args:
         coords: List of coordinates representing the farm MultiPolygon.
-        month (int): Reference month (biomass accumulates the previous month).
+        month (int): Reference month (biomass is accumulated for this month).
         year (int): Reference year.
         pasture_mask (ee.Image, optional): Deprecated EE mask.
         feature_key (str, optional): Stable cache key for the property.

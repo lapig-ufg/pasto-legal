@@ -12,14 +12,20 @@ from pathlib import Path
 import ee
 import pytest
 
-from domain.services.geospatial.gee import get_biomass, retrieve_gpw_biomass_image, retrieve_t2g_biomass_image
+from domain.services.geospatial.gee import (
+    _reference_month_candidates,
+    get_biomass,
+    retrieve_gpw_biomass_image,
+    retrieve_t2g_biomass_image,
+)
 from domain.services.geospatial.pasture_classification import get_on_the_fly_pasture_mask
 
 _MOCK_PATH = Path(__file__).resolve().parents[2] / "domain/utils/mocks/new_property_mock.json"
 
 pytestmark = pytest.mark.integration
 
-# Referência de agosto/2026 (a biomassa acumula o mês anterior), período com imagens Time2Graze.
+# Referência de setembro/2026, período com imagens Time2Graze; se o mês pedido
+# ainda não tiver imagem, o mapa cai para um dos 3 meses anteriores.
 _MONTH, _YEAR = 9, 2026
 
 
@@ -60,8 +66,11 @@ def test_biomass_map_accepts_the_on_the_fly_mask():
 
     assert result is not None
     image, year, month = result
-    assert image.size[0] > 0 and (year, month) == (2026, 8)
+    assert image.size[0] > 0
+    assert (year, month) in _reference_month_candidates(_YEAR, _MONTH, max_fallbacks=3)
 
 
 def test_gpw_biomass_map_renders_with_its_colorbar():
-    assert retrieve_gpw_biomass_image(_first_property_coords()).size[0] > 0
+    image, year = retrieve_gpw_biomass_image(_first_property_coords())
+    assert image.size[0] > 0
+    assert isinstance(year, int)
