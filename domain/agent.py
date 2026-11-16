@@ -49,6 +49,7 @@ from domain.tools.property_tools import (
 from domain.tools.weather_tools import (
     get_daily_precipitation_forecast,
     get_dry_season_onset_forecast,
+    get_first_month_above_precipitation_threshold,
     get_monthly_precipitation_forecast,
     get_rain_season_onset_forecast,
     get_temperature_forecast,
@@ -76,6 +77,7 @@ _ANALYST_TOOLS = [
     generate_pasture_classification_image,
     generate_property_boletim,
     get_monthly_precipitation_forecast,
+    get_first_month_above_precipitation_threshold,
     get_daily_precipitation_forecast,
     get_rain_season_onset_forecast,
     get_dry_season_onset_forecast,
