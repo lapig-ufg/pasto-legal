@@ -4,6 +4,11 @@ from typing import List, Optional, Union
 from pydantic import BaseModel, Field
 
 
+# Buffer metadata that only adds noise to the agent's system prompt. It stays
+# available in user-facing tool confirmations, where the radius is useful.
+_PROMPT_HIDDEN_METADATA = frozenset({"radius", "center"})
+
+
 def _compute_area_weighted_centroid(coords) -> tuple[float, float]:
     """
     Computes the area-weighted centroid of a GeoJSON MultiPolygon coordinate
@@ -153,11 +158,12 @@ class Feature(BaseModel):
     def get_centroid(self) -> tuple[float, float]:
         return _compute_area_weighted_centroid(self.coords)
 
-    def describe(self) -> str:
+    def describe(self, exclude_metadata=()) -> str:
+        hidden = set(exclude_metadata)
         details = ", ".join(
             f"{entry.key}: {entry.value}"
             for entry in self.metadata
-            if entry.key != "name"
+            if entry.key != "name" and entry.key not in hidden
         )
         region = f", Região: {self.region}" if self.region else ""
         metadata = f", {details}" if details else ""
@@ -251,7 +257,8 @@ class RegisteredFeatures(BaseModel):
 
         clusters: dict[str, List[str]] = {}
         for feature in self.features:
-            clusters.setdefault(feature.feature_type, []).append(feature.describe())
+            description = feature.describe(exclude_metadata=_PROMPT_HIDDEN_METADATA)
+            clusters.setdefault(feature.feature_type, []).append(description)
 
         parts: List[str] = []
         for feature_type, descriptions in clusters.items():

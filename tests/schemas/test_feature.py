@@ -51,6 +51,7 @@ def _build_buffer_area(**overrides) -> Feature:
         coords=_SQUARE_COORDS,
         metadata=[
             FeatureMetadata(key="radius", value=200),
+            FeatureMetadata(key="center", value="-76.534007, 3.483496"),
         ],
         total_area=12.57,
         region=None,
@@ -87,6 +88,13 @@ def test_describe_includes_id_type_area_region_and_metadata():
     assert "Área: 23.4674 ha" in description
     assert "Região: Corrego do Ouro" in description
     assert "car_code: GO-5205703" in description
+
+
+def test_describe_keeps_buffer_radius_and_center_for_tool_confirmations():
+    description = _build_buffer_area().describe()
+
+    assert "radius: 200" in description
+    assert "center: -76.534007, 3.483496" in description
 
 
 def test_get_centroid_returns_lat_lon_pair():
@@ -147,6 +155,8 @@ def test_build_prompt_clusters_features_by_type():
     assert "Fazenda Blue" in rural_block
     assert "GO-5205703" not in buffer_block
     assert "a1b2c3d4e5f6" in buffer_block
+    assert "radius:" not in buffer_block
+    assert "center:" not in buffer_block
 
 
 def test_build_prompt_returns_empty_string_without_features():
