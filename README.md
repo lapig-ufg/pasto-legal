@@ -39,7 +39,7 @@ Pasto Legal is a **[Semente](https://github.com/lapig-ufg/semente) app** — the
 | Onboarding, PII/LGPD guardrails, feedback & persona loop | Property registration tools (SICAR / CAR registry) |
 | WhatsApp + Streamlit channels, message debouncing & chunking | Weather forecast tools (Open-Meteo) |
 | Session store, history, summarization, TTS | EMBRAPA knowledge base (`docs/knowledge/`) |
-| i18n YAML prompt loader & neutral English defaults | pt-BR domain prompts (`domain/prompts/`) |
+| i18n YAML prompt loader & neutral English defaults | pt-BR localization of built-in prompts (`domain/prompts/`); domain tools/agents keep their texts inline |
 | Engine port — swappable agent engine (Agno, ADK, bare) | UA-calculator skill |
 
 In practice: this repository contains a `domain/` package plus a `semente.yaml` manifest. Semente assembles the entire application from them — including the engine (Agno by default), configurable via `engine:` in the manifest or the `SEMENTE_ENGINE` environment variable.

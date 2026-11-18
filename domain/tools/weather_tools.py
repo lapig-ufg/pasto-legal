@@ -12,7 +12,6 @@ from semente import ToolResult
 from semente.context import Context as RunContext
 from semente.logging import log_debug, log_warning, log_error
 
-from semente.configs.prompts import get_tool_description, get_tool_result_text
 from domain.utils.feature_utils import resolve_feature
 from domain.schemas.feature import Feature
 from domain.services.geospatial.season_forecast import (
@@ -31,6 +30,22 @@ SEASONAL_URL = "https://seasonal-api.open-meteo.com/v1/seasonal"
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 
 _THRESHOLD_HORIZON_MONTHS = 7
+_REQUEST_TIMEOUT_S = 30
+
+
+def _feature_not_found(feature_id: str) -> str:
+    return f"Feição não encontrada: {feature_id}."
+
+
+def _unexpected_error(error: Exception) -> str:
+    return f"Erro inesperado: {error}"
+
+
+def _invalid_range(minimum: int, maximum: int, received: int) -> str:
+    return (
+        f"Período inválido: informe um valor entre {minimum} e {maximum} "
+        f"(recebido: {received})."
+    )
 
 
 def _daily_dates(daily) -> list[datetime.date]:
@@ -157,7 +172,7 @@ def _available_rain(
     return available, note
 
 
-@tool(description=get_tool_description("weather_tools", "get_monthly_precipitation_forecast"))
+@tool()
 def get_monthly_precipitation_forecast(
     run_context: RunContext, feature_id: str, months: int = 7
 ) -> ToolResult:
@@ -175,15 +190,12 @@ def get_monthly_precipitation_forecast(
         log_debug(f"get_monthly_precipitation_forecast: feature_id={feature_id}, months={months}")
         if not 1 <= months <= 7:
             log_warning(f"months fora do intervalo permitido: {months}")
-            return ToolResult(content=get_tool_result_text(
-                "weather_tools", "get_monthly_precipitation_forecast", "invalid_range",
-                min=1, max=7, received=months,
-            ))
+            return ToolResult(content=_invalid_range(1, 7, months))
 
         property_obj = resolve_feature(run_context, feature_id)
         if property_obj is None:
             log_warning(f"Feição não encontrada: {feature_id}")
-            return ToolResult(content=get_tool_result_text("weather_tools", "get_monthly_precipitation_forecast", "feature_not_found", feature_id=feature_id))
+            return ToolResult(content=_feature_not_found(feature_id))
         latitude, longitude = property_obj.get_centroid()
 
         monthly_dataframe = _monthly_precipitation(latitude, longitude, months)
@@ -208,19 +220,23 @@ def get_monthly_precipitation_forecast(
 
     except Exception as e:
         log_error(f"get_monthly_precipitation_forecast: {e}")
-        return ToolResult(content=get_tool_result_text("weather_tools", "get_monthly_precipitation_forecast", "error", error=e))
+        return ToolResult(content=_unexpected_error(e))
 
 
-@tool(description=get_tool_description("weather_tools", "get_first_month_above_precipitation_threshold"))
+@tool()
 def get_first_month_above_precipitation_threshold(
     run_context: RunContext, feature_id: str, threshold_mm: float
 ) -> ToolResult:
-    """Finds the first upcoming month expected to reach a rainfall threshold.
+    """Finds the first upcoming month whose expected rainfall reaches a
+    threshold set by the user.
 
-    Walks the seasonal forecast from the current month on and returns the
-    first month whose expected rainfall reaches ``threshold_mm``. For the
-    current month the comparison uses only the rain still to come, since what
-    has already fallen cannot be planned around.
+    Use this when the user asks WHEN a given amount of rain will come
+    (e.g. "quando vai dar 100mm?", "qual o primeiro mês com 150mm de
+    chuva?"), not when they ask for the forecast of a month they already
+    named — that is `get_monthly_precipitation_forecast`.
+
+    For the current month only the rain still to come is counted, since
+    what has already fallen cannot be planned around.
 
     params:
         feature_id (str): Identifier (id) of the registered feature.
@@ -228,8 +244,8 @@ def get_first_month_above_precipitation_threshold(
             for, in millimetres.
 
     Return:
-        ToolResult: The first month that reaches the threshold, or the
-        wettest month in the horizon when none of them does.
+        ToolResult: The first month reaching the threshold, or the wettest
+        month in the next 7 when none of them does.
     """
     try:
         log_debug(
@@ -284,12 +300,10 @@ def get_first_month_above_precipitation_threshold(
 
     except Exception as e:
         log_error(f"get_first_month_above_precipitation_threshold: {e}")
-        return ToolResult(content=get_tool_result_text(
-            "weather_tools", "get_first_month_above_precipitation_threshold", "error", error=e
-        ))
+        return ToolResult(content=_unexpected_error(e))
 
 
-@tool(description=get_tool_description("weather_tools", "get_daily_precipitation_forecast"))
+@tool()
 def get_daily_precipitation_forecast(
     run_context: RunContext, feature_id: str, forecast_days: int = 1
 ) -> ToolResult:
@@ -307,15 +321,12 @@ def get_daily_precipitation_forecast(
         log_debug(f"get_daily_precipitation_forecast: feature_id={feature_id}, forecast_days={forecast_days}")
         if not 1 <= forecast_days <= 32:
             log_warning(f"forecast_days fora do intervalo permitido: {forecast_days}")
-            return ToolResult(content=get_tool_result_text(
-                "weather_tools", "get_daily_precipitation_forecast", "invalid_range",
-                min=1, max=32, received=forecast_days,
-            ))
+            return ToolResult(content=_invalid_range(1, 32, forecast_days))
 
         property_obj = resolve_feature(run_context, feature_id)
         if property_obj is None:
             log_warning(f"Feição não encontrada: {feature_id}")
-            return ToolResult(content=get_tool_result_text("weather_tools", "get_daily_precipitation_forecast", "feature_not_found", feature_id=feature_id))
+            return ToolResult(content=_feature_not_found(feature_id))
         latitude, longitude = property_obj.get_centroid()
 
         params = {
@@ -341,7 +352,12 @@ def get_daily_precipitation_forecast(
 
         if not precipitation_members:
             log_warning(f"get_daily_precipitation_forecast: ensemble sem precipitação ({property_obj.id})")
-            return ToolResult(content=get_tool_result_text("weather_tools", "get_daily_precipitation_forecast", "error"))
+            return ToolResult(
+                content=(
+                    "Erro ao consultar a previsão de precipitação: nenhum dado de "
+                    "chuva disponível para a data solicitada."
+                )
+            )
 
         members_array = np.array(precipitation_members)
 
@@ -349,7 +365,12 @@ def get_daily_precipitation_forecast(
 
         if np.all(np.isnan(last_day_values)):
             log_warning(f"get_daily_precipitation_forecast: sem dados para o dia {forecast_days} ({property_obj.id})")
-            return ToolResult(content=get_tool_result_text("weather_tools", "get_daily_precipitation_forecast", "error"))
+            return ToolResult(
+                content=(
+                    "Erro ao consultar a previsão de precipitação: sem dados para o "
+                    "dia solicitado."
+                )
+            )
 
         q1 = float(np.nanquantile(last_day_values, 0.25))
         q3 = float(np.nanquantile(last_day_values, 0.75))
@@ -368,9 +389,9 @@ def get_daily_precipitation_forecast(
 
     except Exception as e:
         log_error(f"get_daily_precipitation_forecast: {e}", exc_info=True)
-        return ToolResult(content=get_tool_result_text("weather_tools", "get_daily_precipitation_forecast", "error"))
+        return ToolResult(content=_unexpected_error(e))
 
-@tool(description=get_tool_description("weather_tools", "get_rain_season_onset_forecast"))
+@tool()
 def get_rain_season_onset_forecast(
     run_context: RunContext, feature_id: str
 ) -> ToolResult:
@@ -389,7 +410,7 @@ def get_rain_season_onset_forecast(
         property_obj = resolve_feature(run_context, feature_id)
         if property_obj is None:
             log_warning(f"Feição não encontrada: {feature_id}")
-            return ToolResult(content=get_tool_result_text("weather_tools", "get_rain_season_onset_forecast", "feature_not_found", feature_id=feature_id))
+            return ToolResult(content=_feature_not_found(feature_id))
         latitude, longitude = property_obj.get_centroid()
 
         today = datetime.date.today()
@@ -405,10 +426,10 @@ def get_rain_season_onset_forecast(
 
     except Exception as e:
         log_error(f"get_rain_season_onset_forecast: {e}", exc_info=True)
-        return ToolResult(content=get_tool_result_text("weather_tools", "get_rain_season_onset_forecast", "error"))
+        return ToolResult(content=_unexpected_error(e))
 
 
-@tool(description=get_tool_description("weather_tools", "get_dry_season_onset_forecast"))
+@tool()
 def get_dry_season_onset_forecast(
     run_context: RunContext, feature_id: str
 ) -> ToolResult:
@@ -428,7 +449,7 @@ def get_dry_season_onset_forecast(
         property_obj = resolve_feature(run_context, feature_id)
         if property_obj is None:
             log_warning(f"Feição não encontrada: {feature_id}")
-            return ToolResult(content=get_tool_result_text("weather_tools", "get_dry_season_onset_forecast", "feature_not_found", feature_id=feature_id))
+            return ToolResult(content=_feature_not_found(feature_id))
         latitude, longitude = property_obj.get_centroid()
 
         today = datetime.date.today()
@@ -444,9 +465,9 @@ def get_dry_season_onset_forecast(
 
     except Exception as e:
         log_error(f"get_dry_season_onset_forecast: {e}", exc_info=True)
-        return ToolResult(content=get_tool_result_text("weather_tools", "get_dry_season_onset_forecast", "error"))
+        return ToolResult(content=_unexpected_error(e))
 
-@tool(description=get_tool_description("weather_tools", "get_temperature_forecast"))
+@tool()
 def get_temperature_forecast(
     run_context: RunContext, feature_id: str, forecast_days: int = 16
 ) -> ToolResult:
@@ -464,15 +485,12 @@ def get_temperature_forecast(
         log_debug(f"get_temperature_forecast: feature_id={feature_id}, forecast_days={forecast_days}")
         if not 1 <= forecast_days <= 16:
             log_warning(f"forecast_days fora do intervalo permitido: {forecast_days}")
-            return ToolResult(content=get_tool_result_text(
-                "weather_tools", "get_temperature_forecast", "invalid_range",
-                min=1, max=16, received=forecast_days,
-            ))
+            return ToolResult(content=_invalid_range(1, 16, forecast_days))
 
         property_obj = resolve_feature(run_context, feature_id)
         if property_obj is None:
             log_warning(f"Feição não encontrada: {feature_id}")
-            return ToolResult(content=get_tool_result_text("weather_tools", "get_temperature_forecast", "feature_not_found", feature_id=feature_id))
+            return ToolResult(content=_feature_not_found(feature_id))
         latitude, longitude = property_obj.get_centroid()
 
         params = {
@@ -508,4 +526,4 @@ def get_temperature_forecast(
 
     except Exception as e:
         log_error(f"get_temperature_forecast: {e}", exc_info=True)
-        return ToolResult(content=get_tool_result_text("weather_tools", "get_temperature_forecast", "error"))
+        return ToolResult(content=_unexpected_error(e))

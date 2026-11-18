@@ -11,7 +11,6 @@ from semente.context import Context as RunContext
 from semente import File, Image, Video
 from semente.logging import log_debug, log_warning, log_error
 
-from semente.configs.prompts import get_tool_description, get_tool_result_text
 from semente.hooks.tool_hooks import validate_state_hook
 
 from domain.services.video import gif_bytes_to_mp4_bytes
@@ -47,7 +46,15 @@ import ee
 _require_registered_property = validate_state_hook("all_properties")
 
 
-@tool(tool_hooks=[_require_registered_property], description=get_tool_description("analysis_tools", "generate_property_image"))
+def _feature_not_found(feature_id: str) -> str:
+    return f"Feição não encontrada: {feature_id}."
+
+
+def _unexpected_error(error: Exception) -> str:
+    return f"Erro inesperado: {error}."
+
+
+@tool(tool_hooks=[_require_registered_property])
 def generate_property_image(run_context: RunContext, feature_id: str) -> ToolResult:
     """
     Gera uma imagem de satélite em alta resolução (RGB) da propriedade rural,
@@ -66,7 +73,7 @@ def generate_property_image(run_context: RunContext, feature_id: str) -> ToolRes
         selected_property = resolve_feature(run_context, feature_id)
         if selected_property is None:
             log_warning(f"Feição não encontrada: {feature_id}")
-            return ToolResult(content=get_tool_result_text("analysis_tools", "generate_property_image", "feature_not_found", feature_id=feature_id))
+            return ToolResult(content=_feature_not_found(feature_id))
 
         img = retrieve_feature_images(coords=selected_property.get_coords())[0]
 
@@ -75,16 +82,16 @@ def generate_property_image(run_context: RunContext, feature_id: str) -> ToolRes
 
         log_debug(f"generate_property_image: imagem gerada ({selected_property.id})")
         return ToolResult(
-            content=get_tool_result_text("analysis_tools", "generate_property_image", "success_contour_legend"),
+            content="O contorno vermelho indica a delimitação geográfica da propriedade rural.",
             images=[Image(content=buffer.getvalue())]
         )
 
     except Exception as e:
         log_error(f"generate_property_image: {e}")
-        return ToolResult(content=get_tool_result_text("analysis_tools", "generate_property_image", "error", error=e))
+        return ToolResult(content=f"Erro ao gerar imagem: {e}.")
 
 
-@tool(tool_hooks=[_require_registered_property], description=get_tool_description("analysis_tools", "generate_biomass_image"))
+@tool(tool_hooks=[_require_registered_property])
 def generate_biomass_image(
     run_context: RunContext,
     feature_id: str,
@@ -95,9 +102,12 @@ def generate_biomass_image(
     Gera um mapa temático da biomassa (matéria seca) sobre os limites da propriedade rural.
 
     Por padrão usa o mês/ano atual. Se um mês/ano for informado e não houver imagem
-    T2G para o período, tenta até três meses anteriores (4 meses no total) e,
-    se ainda não houver dados mensais, usa o mapa anual do GPW do ano pedido — ou o
-    ano mais recente do GPW quando esse ano não estiver disponível.
+    de biomassa mensal (T2G) para esse período, tenta até três meses anteriores
+    (4 meses no total). Se ainda assim não houver dados mensais, usa o mapa
+    anual do Global Pasture Watch (GPW) do ano solicitado ou, quando esse ano não
+    estiver disponível no GPW, o ano mais recente publicado.
+
+    A data solicitada não pode estar no futuro.
 
     params:
         feature_id (str): Identificador (id) da feição registrada.
@@ -112,7 +122,7 @@ def generate_biomass_image(
         selected_property = resolve_feature(run_context, feature_id)
         if selected_property is None:
             log_warning(f"Feição não encontrada: {feature_id}")
-            return ToolResult(content=get_tool_result_text("analysis_tools", "generate_biomass_image", "feature_not_found", feature_id=feature_id))
+            return ToolResult(content=_feature_not_found(feature_id))
 
         today = datetime.date.today()
         requested_month = month if month is not None else today.month
@@ -120,7 +130,9 @@ def generate_biomass_image(
 
         if not 1 <= requested_month <= 12:
             log_warning(f"generate_biomass_image: mês inválido ({requested_month})")
-            return ToolResult(content=get_tool_result_text("analysis_tools", "generate_biomass_image", "invalid_period"))
+            return ToolResult(
+                content="Período inválido: o mês deve estar entre 1 (janeiro) e 12 (dezembro)."
+            )
 
         if (requested_year, requested_month) > (today.year, today.month):
             log_warning(
@@ -128,9 +140,9 @@ def generate_biomass_image(
                 f"({requested_month}/{requested_year})"
             )
             return ToolResult(
-                content=get_tool_result_text(
-                    "analysis_tools", "generate_biomass_image", "future_period",
-                    requested_month=requested_month, requested_year=requested_year,
+                content=(
+                    f"Período inválido: {requested_month}/{requested_year} está no futuro. "
+                    "Informe um mês/ano igual ou anterior ao atual."
                 )
             )
 
@@ -147,15 +159,17 @@ def generate_biomass_image(
 
             # `_target_*` is the effective reference month itself.
             used_fallback = (_target_year, _target_month) != (requested_year, requested_month)
-            result_text = get_tool_result_text(
-                "analysis_tools",
-                "generate_biomass_image",
-                "success_t2g_fallback_legend" if used_fallback else "success_t2g_legend",
-                ref_month=_target_month,
-                ref_year=_target_year,
-                requested_month=requested_month,
-                requested_year=requested_year,
+            result_text = (
+                "Legenda: Acumulado de biomassa no mês de referência. "
+                "Azul claro (Alta concentração) a Roxo escuro (Baixa concentração). "
+                f"Data referência: mês {_target_month}, ano {_target_year}."
             )
+            if used_fallback:
+                result_text += (
+                    " Não havia dados de biomassa para o período solicitado "
+                    f"({requested_month}/{requested_year}); foi usado o período mais "
+                    "recente disponível."
+                )
 
             log_debug(
                 f"generate_biomass_image: mapa t2g gerado "
@@ -178,16 +192,17 @@ def generate_biomass_image(
 
         log_debug(f"generate_biomass_image: mapa mapbiomas gerado ({selected_property.id}, {gpw_year})")
         return ToolResult(
-            content=get_tool_result_text(
-                "analysis_tools", "generate_biomass_image", "success_mapbiomas_legend",
-                ref_year=gpw_year,
+            content=(
+                "Legenda: Acumulado de biomassa no ano de referência. "
+                "Azul claro (Alta concentração) a Roxo escuro (Baixa concentração). "
+                f"Data referência: ano {gpw_year}."
             ),
             images=[Image(content=buffer.getvalue())]
         )
 
     except Exception as e:
         log_error(f"generate_biomass_image: {e}")
-        return ToolResult(content=get_tool_result_text("analysis_tools", "generate_biomass_image", "error", error=e))
+        return ToolResult(content=_unexpected_error(e))
 
 
 def _overlay_fixed_colorbar(
@@ -276,7 +291,7 @@ def _overlay_fixed_colorbar(
         raise RuntimeError(f"Falha ao adicionar a barra de cores ao vídeo. Detalhes: {str(e)}")
 
 
-@tool(tool_hooks=[_require_registered_property], description=get_tool_description("analysis_tools", "generate_biomass_video"))
+@tool(tool_hooks=[_require_registered_property])
 def generate_biomass_video(
     run_context: RunContext,
     feature_id: str,
@@ -320,7 +335,7 @@ def generate_biomass_video(
         selected_property = resolve_feature(run_context, feature_id)
         if selected_property is None:
             log_warning(f"Feição não encontrada: {feature_id}")
-            return ToolResult(content=get_tool_result_text("analysis_tools", "generate_biomass_video", "feature_not_found", feature_id=feature_id))
+            return ToolResult(content=_feature_not_found(feature_id))
 
         result = retrieve_t2g_biomass_video(
             coords=selected_property.get_coords(),
@@ -334,10 +349,12 @@ def generate_biomass_video(
         if result is None:
             log_warning(f"generate_biomass_video: sem dados UGPP suficientes ({selected_property.id})")
             return ToolResult(
-                content=get_tool_result_text(
-                    "analysis_tools", "generate_biomass_video", "insufficient_data",
-                    start_month=start_month, start_year=start_year,
-                    end_month=end_month, end_year=end_year,
+                content=(
+                    "Não há dados de biomassa suficientes (pelo menos dois meses) "
+                    f"para gerar o vídeo no período de {start_month}/{start_year} a "
+                    f"{end_month}/{end_year}. Informe que a série T2G pode não cobrir "
+                    "a região ou o período solicitado e sugira um período mais recente "
+                    "ou um mapa de biomassa do mês atual."
                 )
             )
 
@@ -356,20 +373,25 @@ def generate_biomass_video(
             f"generate_biomass_video: vídeo gerado ({selected_property.id}, "
             f"{effective_start[1]}/{effective_start[0]} - {effective_end[1]}/{effective_end[0]})"
         )
+        start_label = f"{effective_start[1]}/{effective_start[0]}"
+        end_label = f"{effective_end[1]}/{effective_end[0]}"
         return ToolResult(
-            content=get_tool_result_text(
-                "analysis_tools", "generate_biomass_video", "success",
-                start=f"{effective_start[1]}/{effective_start[0]}",
-                end=f"{effective_end[1]}/{effective_end[0]}",
-                min=round(global_min, 1),
-                max=round(global_max, 1),
+            content=(
+                "Vídeo da evolução mensal da biomassa (ton/ha) de "
+                f"{start_label} a {end_label}, sobre a imagem de satélite e com o "
+                "contorno da propriedade. Cada frame é o acumulado do mês indicado "
+                "no canto superior esquerdo (formato MM/AAAA), com barra de cores de "
+                "escala fixa entre os frames: Roxo escuro (Baixa concentração) a Azul "
+                f"claro (Alta concentração), variando de {round(global_min, 1)} a "
+                f"{round(global_max, 1)} ton/ha. Meses sem dados disponíveis foram "
+                "omitidos."
             ),
             videos=[Video(content=mp4_bytes, mime_type="video/mp4", format="mp4")],
         )
 
     except Exception as e:
         log_error(f"generate_biomass_video: {e}")
-        return ToolResult(content=get_tool_result_text("analysis_tools", "generate_biomass_video", "error", error=e))
+        return ToolResult(content=_unexpected_error(e))
 
 
 @tool(tool_hooks=[_require_registered_property])
@@ -394,7 +416,7 @@ def generate_pasture_classification_image(run_context: RunContext, feature_id: s
         selected_property = resolve_feature(run_context, feature_id)
         if selected_property is None:
             log_warning(f"Feição não encontrada: {feature_id}")
-            return ToolResult(content=get_tool_result_text("analysis_tools", "generate_pasture_classification_image", "feature_not_found", feature_id=feature_id))
+            return ToolResult(content=_feature_not_found(feature_id))
 
         roi = ee.Geometry.MultiPolygon(selected_property.get_coords())
         result = classify_pasture_on_the_fly(roi=roi, car_code=_cache_key_for(selected_property))
@@ -404,23 +426,22 @@ def generate_pasture_classification_image(run_context: RunContext, feature_id: s
 
         log_debug(f"generate_pasture_classification_image: classificação gerada ({selected_property.id}, {result['area_pasto_ha']} ha)")
         return ToolResult(
-            content=get_tool_result_text(
-                "analysis_tools", "generate_pasture_classification_image", "success_area_legend",
-                pred_year=result['pred_year'], pasture_area_ha=result['area_pasto_ha'],
+            content=(
+                f"Área de pastagem classificada (ano {result['pred_year']}): "
+                f"{result['area_pasto_ha']} hectares. Legenda: Verde (Pastagem)."
             ),
             images=[Image(content=buffer.getvalue())]
         )
 
     except Exception as e:
         log_error(f"generate_pasture_classification_image: {e}")
-        return ToolResult(content=get_tool_result_text("analysis_tools", "generate_pasture_classification_image", "error", error=e))
+        return ToolResult(content=_unexpected_error(e))
 
 
-@tool(tool_hooks=[_require_registered_property], description=get_tool_description("analysis_tools", "generate_soil_texture_image"))
+@tool(tool_hooks=[_require_registered_property])
 def generate_soil_texture_image(run_context: RunContext, feature_id: str) -> ToolResult:
     """
     Gera um mapa temático da textura do solo sobre os limites da propriedade rural na profundidade de 0 a 30cm.
-
     params:
         feature_id (str): Identificador (id) da feição registrada.
 
@@ -432,7 +453,7 @@ def generate_soil_texture_image(run_context: RunContext, feature_id: str) -> Too
         selected_property = resolve_feature(run_context, feature_id)
         if selected_property is None:
             log_warning(f"Feição não encontrada: {feature_id}")
-            return ToolResult(content=get_tool_result_text("analysis_tools", "generate_soil_texture_image", "feature_not_found", feature_id=feature_id))
+            return ToolResult(content=_feature_not_found(feature_id))
 
         img = retrieve_feature_soil_texture_image(
             coords=selected_property.get_coords(),
@@ -444,20 +465,23 @@ def generate_soil_texture_image(run_context: RunContext, feature_id: str) -> Too
 
         log_debug(f"generate_soil_texture_image: mapa de solo gerado ({selected_property.id})")
         return ToolResult(
-            content=get_tool_result_text("analysis_tools", "generate_soil_texture_image", "success_soil_legend"),
+            content=(
+                "Legenda: Afloramento (#707070), Muito Argiloso (#9B0F06), "
+                "Argila (#BFA28C), Siltoso (#D8F467), Arenoso (#FFD400) e "
+                "Médio (#F0CFA1)."
+            ),
             images=[Image(content=buffer.getvalue())]
         )
 
     except Exception as e:
         log_error(f"generate_soil_texture_image: {e}")
-        return ToolResult(content=get_tool_result_text("analysis_tools", "generate_soil_texture_image", "error", error=e))
+        return ToolResult(content=_unexpected_error(e))
 
 
-@tool(tool_hooks=[_require_registered_property], description=get_tool_description("analysis_tools", "get_pasture_stats"))
+@tool(tool_hooks=[_require_registered_property])
 def get_pasture_stats(run_context: RunContext, feature_id: str):
     """
     Recupera estatísticas de bimoassa, vigor vegetativo, idade da pastagem e classificação de uso do solo mais recentes.
-
     Use esta ferramenta quando o usuário perguntar sobre:
     - Saúde ou qualidade da pastagem (degradação, vigor).
     - Quantidade de biomassa disponível.
@@ -475,7 +499,7 @@ def get_pasture_stats(run_context: RunContext, feature_id: str):
         selected_property = resolve_feature(run_context, feature_id)
         if selected_property is None:
             log_warning(f"Feição não encontrada: {feature_id}")
-            return ToolResult(content=get_tool_result_text("analysis_tools", "get_pasture_stats", "feature_not_found", feature_id=feature_id))
+            return ToolResult(content=_feature_not_found(feature_id))
 
         today = datetime.date.today()
 
@@ -490,14 +514,13 @@ def get_pasture_stats(run_context: RunContext, feature_id: str):
         return ToolResult(content=str(new_pasture_stats))
     except Exception as e:
         log_error(f"get_pasture_stats: {e}")
-        return ToolResult(content=get_tool_result_text("analysis_tools", "get_pasture_stats", "error", error=e))
+        return ToolResult(content=_unexpected_error(e))
 
 
-@tool(tool_hooks=[_require_registered_property], description=get_tool_description("analysis_tools", "get_topographic_stats"))
+@tool(tool_hooks=[_require_registered_property])
 def get_topographic_stats(run_context: RunContext, feature_id: str):
     """
     Recupera estatísticas de topografia da propriedade (altimetria e declividade).
-
     params:
         feature_id (str): Identificador (id) da feição registrada.
 
@@ -509,7 +532,7 @@ def get_topographic_stats(run_context: RunContext, feature_id: str):
         selected_property = resolve_feature(run_context, feature_id)
         if selected_property is None:
             log_warning(f"Feição não encontrada: {feature_id}")
-            return ToolResult(content=get_tool_result_text("analysis_tools", "get_topographic_stats", "feature_not_found", feature_id=feature_id))
+            return ToolResult(content=_feature_not_found(feature_id))
 
         new_topographic_stats: TopographicStats = query_topographic_stats(coords=selected_property.get_coords())
 
@@ -517,7 +540,7 @@ def get_topographic_stats(run_context: RunContext, feature_id: str):
         return ToolResult(content=str(new_topographic_stats))
     except Exception as e:
         log_error(f"get_topographic_stats: {e}")
-        return ToolResult(content=get_tool_result_text("analysis_tools", "get_topographic_stats", "error", error=e))
+        return ToolResult(content=_unexpected_error(e))
 
 
 def _pil_to_png_bytes(img) -> bytes:
@@ -553,16 +576,24 @@ def _safe_fetch_image(label: str, fetch_fn):
         return None
 
 
-@tool(tool_hooks=[_require_registered_property], description=get_tool_description("analysis_tools", "generate_property_boletim"))
+@tool(tool_hooks=[_require_registered_property])
 def generate_property_boletim(run_context: RunContext, feature_id: str) -> ToolResult:
     """
     Gera um boletim em PDF consolidando as análises da propriedade rural — localização,
-    classificação de pastagem, biomassa, vigor e tipos de solo — com os mapas
-    correspondentes, pronto para compartilhar com agrônomos ou parceiros.
+    classificação de pastagem, biomassa, vigor, tipos de solo, histórico de biomassa
+    (série 2000-atual), topografia e panorama climático (chuva/temperatura previstos) —
+    com os mapas e gráficos correspondentes, pronto para compartilhar com agrônomos ou
+    parceiros.
+
+    IMPORTANTE: a biomassa é calculada para o mês/ano atual; idade, vigor e uso do
+    solo (LULC) refletem o ano mais recente disponível no MapBiomas (2024). Avise o
+    usuário sobre essa defasagem ao entregar o boletim.
 
     Use apenas quando o usuário pedir explicitamente um boletim, relatório ou PDF
-    para compartilhar ou baixar. A geração consulta o satélite e gera vários mapas em
-    tempo real, podendo levar dezenas de segundos.
+    para compartilhar ou baixar. A geração consulta o satélite, o histórico de biomassa
+    (exportação pixel a pixel) e serviços de previsão do tempo, podendo levar alguns
+    minutos na primeira vez (chamadas seguintes para a mesma propriedade são mais
+    rápidas graças ao cache do histórico de biomassa).
 
     params:
         feature_id (str): Identificador (id) da feição registrada.
@@ -575,7 +606,7 @@ def generate_property_boletim(run_context: RunContext, feature_id: str) -> ToolR
         selected_property = resolve_feature(run_context, feature_id)
         if selected_property is None:
             log_warning(f"Feição não encontrada: {feature_id}")
-            return ToolResult(content=get_tool_result_text("analysis_tools", "generate_property_boletim", "feature_not_found", feature_id=feature_id))
+            return ToolResult(content=_feature_not_found(feature_id))
 
         coords = selected_property.get_coords()
         today = datetime.date.today()
@@ -668,10 +699,10 @@ def generate_property_boletim(run_context: RunContext, feature_id: str) -> ToolR
 
     except Exception as e:
         log_error(f"generate_property_boletim: {e}")
-        return ToolResult(content=get_tool_result_text("analysis_tools", "generate_property_boletim", "error", error=e))
+        return ToolResult(content=_unexpected_error(e))
 
 
-@tool(tool_hooks=[_require_registered_property], description=get_tool_description("analysis_tools", "get_pasture_biomass_history"))
+@tool(tool_hooks=[_require_registered_property])
 def get_pasture_biomass_history(run_context: RunContext, feature_id: str) -> ToolResult:
     """
     Recupera a série histórica (2000 até o ano mais recente disponível) de biomassa seca
@@ -679,7 +710,9 @@ def get_pasture_biomass_history(run_context: RunContext, feature_id: str) -> Too
     gráfico de tendência.
 
     Use quando o usuário perguntar sobre a evolução/tendência da biomassa da pastagem ao
-    longo dos anos, não apenas o valor mais recente.
+    longo dos anos, não apenas o valor mais recente. Resolução nativa da fonte (GPW) é
+    30m, reamostrada pra grade de 10m — não inventa precisão espacial por talhão maior
+    que a da fonte.
 
     params:
         feature_id (str): Identificador (id) da feição registrada.
@@ -692,7 +725,7 @@ def get_pasture_biomass_history(run_context: RunContext, feature_id: str) -> Too
         selected_property = resolve_feature(run_context, feature_id)
         if selected_property is None:
             log_warning(f"Feição não encontrada: {feature_id}")
-            return ToolResult(content=get_tool_result_text("analysis_tools", "get_pasture_biomass_history", "feature_not_found", feature_id=feature_id))
+            return ToolResult(content=_feature_not_found(feature_id))
 
         roi = ee.Geometry.MultiPolygon(selected_property.get_coords())
         result = estimate_pasture_biomass_history(roi=roi, car_code=selected_property.id)
@@ -715,17 +748,23 @@ def get_pasture_biomass_history(run_context: RunContext, feature_id: str) -> Too
 
     except Exception as e:
         log_error(f"get_pasture_biomass_history: {e}")
-        return ToolResult(content=get_tool_result_text("analysis_tools", "get_pasture_biomass_history", "error", error=e))
+        return ToolResult(content=_unexpected_error(e))
 
 
-@tool(tool_hooks=[_require_registered_property], description=get_tool_description("analysis_tools", "get_pasture_age_on_the_fly"))
+@tool(tool_hooks=[_require_registered_property])
 def get_pasture_age_on_the_fly(run_context: RunContext, feature_id: str) -> ToolResult:
     """
-    Estima a idade da pastagem (anos) on-the-fly para o ano mais recente possível,
-    combinando a idade do MapBiomas com a classificação de pastagem on-the-fly do ano
-    seguinte, e gera um mapa colorido por faixa de idade.
+    Estima a idade da pastagem (em anos) on-the-fly para o ano mais recente possível,
+    combinando a idade do MapBiomas no último ano disponível com a classificação de
+    pastagem on-the-fly do ano seguinte (áreas que continuam pastagem ganham +1 ano;
+    pastagem nova começa em 1 ano). Gera um mapa colorido por faixa de idade — inclui
+    uma classe "≥40 (idade real indeterminada)" pra pixels cujo dado de origem é
+    censurado (pastagem já madura antes do início da série, idade real desconhecida).
 
-    Use quando o usuário perguntar pela idade da pastagem e quiser o dado mais atual.
+    Use quando o usuário perguntar pela idade da pastagem e quiser o dado mais atual
+    possível, não travado no último ano do MapBiomas. Resolução nativa do asset de
+    idade é 30m, reamostrada pra grade de 10m — não inventa precisão espacial por
+    talhão maior que a da fonte.
 
     params:
         feature_id (str): Identificador (id) da feição registrada.
@@ -738,7 +777,7 @@ def get_pasture_age_on_the_fly(run_context: RunContext, feature_id: str) -> Tool
         selected_property = resolve_feature(run_context, feature_id)
         if selected_property is None:
             log_warning(f"Feição não encontrada: {feature_id}")
-            return ToolResult(content=get_tool_result_text("analysis_tools", "get_pasture_age_on_the_fly", "feature_not_found", feature_id=feature_id))
+            return ToolResult(content=_feature_not_found(feature_id))
 
         roi = ee.Geometry.MultiPolygon(selected_property.get_coords())
         result = estimate_pasture_age_on_the_fly(roi=roi, car_code=selected_property.id)
@@ -758,21 +797,21 @@ def get_pasture_age_on_the_fly(run_context: RunContext, feature_id: str) -> Tool
 
     except Exception as e:
         log_error(f"get_pasture_age_on_the_fly: {e}")
-        return ToolResult(content=get_tool_result_text("analysis_tools", "get_pasture_age_on_the_fly", "error", error=e))
+        return ToolResult(content=_unexpected_error(e))
 
 
-@tool(tool_hooks=[_require_registered_property], description=get_tool_description("analysis_tools", "get_pasture_vigor_on_the_fly"))
+@tool(tool_hooks=[_require_registered_property])
 def get_pasture_vigor_on_the_fly(run_context: RunContext, feature_id: str) -> ToolResult:
     """
     Estima o vigor da pastagem (Baixo/Médio/Alto) on-the-fly para o ano mais recente
-    possível, via regressão harmônica de NDVI calibrada contra o asset estático do
-    MapBiomas dentro da própria propriedade, e gera um mapa colorido por classe.
+    possível, usando regressão harmônica sobre NDVI (Sentinel-2 + Cloud Score+)
+    calibrada, dentro da própria propriedade, contra o asset estático de vigor do
+    MapBiomas no último ano disponível. É uma estimativa heurística própria, não a
+    metodologia oficial do MapBiomas — avise o usuário disso ao entregar o resultado,
+    especialmente se a calibração cair no modo de limiar fixo (fallback).
 
-    IMPORTANTE: é uma estimativa heurística própria, não a metodologia oficial do
-    MapBiomas — avise o usuário disso, principalmente se a calibração cair no modo
-    de limiar fixo (fallback).
-
-    Use quando o usuário perguntar pelo vigor da pastagem e quiser o dado mais atual.
+    Use quando o usuário perguntar pelo vigor da pastagem e quiser o dado mais atual
+    possível, não travado no último ano do MapBiomas.
 
     params:
         feature_id (str): Identificador (id) da feição registrada.
@@ -785,7 +824,7 @@ def get_pasture_vigor_on_the_fly(run_context: RunContext, feature_id: str) -> To
         selected_property = resolve_feature(run_context, feature_id)
         if selected_property is None:
             log_warning(f"Feição não encontrada: {feature_id}")
-            return ToolResult(content=get_tool_result_text("analysis_tools", "get_pasture_vigor_on_the_fly", "feature_not_found", feature_id=feature_id))
+            return ToolResult(content=_feature_not_found(feature_id))
 
         roi = ee.Geometry.MultiPolygon(selected_property.get_coords())
         result = estimate_pasture_vigor_on_the_fly(roi=roi, car_code=selected_property.id)
@@ -811,4 +850,4 @@ def get_pasture_vigor_on_the_fly(run_context: RunContext, feature_id: str) -> To
 
     except Exception as e:
         log_error(f"get_pasture_vigor_on_the_fly: {e}")
-        return ToolResult(content=get_tool_result_text("analysis_tools", "get_pasture_vigor_on_the_fly", "error", error=e))
+        return ToolResult(content=_unexpected_error(e))

@@ -13,6 +13,26 @@ from semente.manifest import Manifest
 
 ROOT = Path(__file__).resolve().parents[2]
 
+# Components/agents shipped by the Semente framework. domain/prompts/*.yml holds
+# only these; domain-owned texts live inline in their Python modules.
+BUILTIN_TOOL_COMPONENTS = {
+    "tts_tools",
+    "onboarding_tools",
+    "version_tools",
+    "feedback_tools",
+    "persona_tools",
+}
+BUILTIN_AGENTS = {
+    "single_agent",
+    "welcoming_agent",
+    "summary_agent",
+    "persona_agent",
+    "remediation_agent",
+    "satisfaction_agent",
+    "image_description_agent",
+    "audio_transcription_agent",
+}
+
 
 def test_manifest_uses_semente_main_features():
     raw = yaml.safe_load((ROOT / "semente.yaml").read_text(encoding="utf-8"))
@@ -44,3 +64,11 @@ def test_welcoming_prompts_use_the_terms_feature():
     hooks = yaml.safe_load((ROOT / "domain/prompts/hooks.yml").read_text(encoding="utf-8"))
     assert "missing_required_state" in hooks["tool_hooks"]
     assert "no_property_selected" not in hooks["tool_hooks"]
+
+
+def test_prompts_yaml_only_contains_builtin_entries():
+    tools = yaml.safe_load((ROOT / "domain/prompts/tools.yml").read_text(encoding="utf-8"))
+    agents = yaml.safe_load((ROOT / "domain/prompts/agents.yml").read_text(encoding="utf-8"))
+
+    assert set(tools) == BUILTIN_TOOL_COMPONENTS
+    assert set(agents) == BUILTIN_AGENTS

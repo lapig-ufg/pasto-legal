@@ -8,9 +8,6 @@ from semente import ToolResult
 from semente import File, Image
 from semente.logging import log_debug, log_warning, log_error
 
-from semente.configs.prompts import get_tool_description
-from semente.configs.prompts import get_tool_result_text
-
 from domain.services.geospatial.sicar import (
     fetch_property_by_car,
     fetch_property_by_coordinates,
@@ -32,11 +29,9 @@ _MIN_RADIUS_METERS = 50
 _MAX_RADIUS_METERS = 1000
 _DEFAULT_RADIUS_METERS = 200
 
-# Instruction returned when a SICAR lookup finds nothing: it only suggests the
-# user register a buffer area. The registration itself is started by the buffer
-# tools, never automatically. Rendered from tools.yml
-# (property_tools.*.results.sicar_miss_suggest_buffer).
-_SICAR_MISS_SUGGEST_BUFFER_TOOL_KEY = "sicar_miss_suggest_buffer"
+
+def _unexpected_error(error: Exception) -> str:
+    return f"Erro inesperado: {error}."
 
 
 def _first_geojson_bytes(files: Optional[List[File]]) -> Optional[bytes]:
@@ -91,24 +86,23 @@ def _register_buffer_candidate(
         raise
 
 
-def _validate_buffer_radius(radius: int, tool_key: str) -> ToolResult | None:
+def _validate_buffer_radius(radius: int) -> ToolResult | None:
     """
-    Returns a ToolResult with the out-of-range instructions (rendered from
-    tools.yml ``results.invalid_radius``) when the radius is outside
-    [_MIN_RADIUS_METERS, _MAX_RADIUS_METERS], or None when valid.
+    Returns a ToolResult with the out-of-range instructions when the radius is
+    outside [_MIN_RADIUS_METERS, _MAX_RADIUS_METERS], or None when valid.
     """
     if not (_MIN_RADIUS_METERS <= radius <= _MAX_RADIUS_METERS):
         log_warning(f"Raio fora do intervalo permitido: {radius}")
         return ToolResult(
-            content=get_tool_result_text(
-                "property_tools", tool_key, "invalid_radius",
-                min_radius=_MIN_RADIUS_METERS, max_radius=_MAX_RADIUS_METERS,
+            content=(
+                "Peça desculpas ao usuário e informe que o raio deve estar entre "
+                f"{_MIN_RADIUS_METERS} e {_MAX_RADIUS_METERS} metros."
             )
         )
     return None
 
 
-@tool(description=get_tool_description("property_tools", "start_registration_by_coordinate"))
+@tool()
 def start_registration_by_coordinate(run_context: RunContext, latitude: float, longitude: float):
     """
     Iniciar o registro de uma nova propriedade rural baseando-se nas coordenadas fornecidas.
@@ -129,10 +123,18 @@ def start_registration_by_coordinate(run_context: RunContext, latitude: float, l
         if not properties:
             log_warning(f"Nenhuma propriedade encontrada para lat={latitude}, lon={longitude}")
             return ToolResult(
-                content=get_tool_result_text(
-                    "property_tools", "start_registration_by_coordinate",
-                    _SICAR_MISS_SUGGEST_BUFFER_TOOL_KEY,
-                    latitude=latitude, longitude=longitude,
+                content=(
+                    "Nenhuma propriedade foi encontrada na base do SICAR para esta "
+                    f"localização (lat {latitude}, lon {longitude}).\n"
+                    "NÃO inicie nenhum registro automaticamente.\n"
+                    "Informe ao usuário que não há imóvel registrado no SICAR neste "
+                    "ponto e pergunte se ele deseja registrar uma área de buffer ao "
+                    "redor dele (raio entre 50 e 1000 metros, padrão 200 metros).\n"
+                    "Se o usuário aceitar, chame a ferramenta "
+                    f"`start_buffer_registration_by_coordinate` com latitude {latitude} "
+                    f"e longitude {longitude} (e o raio escolhido, se o usuário "
+                    "informar).\n"
+                    "Se o usuário recusar, encerre a operação."
                 ),
             )
 
@@ -159,9 +161,9 @@ def start_registration_by_coordinate(run_context: RunContext, latitude: float, l
 
             log_debug("start_registration_by_coordinate: 1 propriedade encontrada")
             return ToolResult(
-                content=get_tool_result_text(
-                    "property_tools", "start_registration_by_coordinate",
-                    "confirm_single_property", property_details=result_text,
+                content=(
+                    "Pergunte ao usuário se a seguinte propriedade é a correta:\n"
+                    f"{result_text}"
                 ),
                 images=[Image(content=buffer.getvalue())]
                 )
@@ -179,37 +181,32 @@ def start_registration_by_coordinate(run_context: RunContext, latitude: float, l
 
             log_debug(f"start_registration_by_coordinate: {len(properties)} propriedades encontradas")
             return ToolResult(
-                content=get_tool_result_text(
-                    "property_tools", "start_registration_by_coordinate",
-                    "confirm_multiple_options", options=result_text,
+                content=(
+                    "Pergunte ao usuário qual das seguinte propriedades é a correta:\n"
+                    f"{result_text}"
                 ),
                 images=[Image(content=buffer.getvalue())]
                 )
     except Exception as e:
         log_error(f"start_registration_by_coordinate: {e}")
-        return ToolResult(content=get_tool_result_text("property_tools", "start_registration_by_coordinate", "error", error=e))
+        return ToolResult(content=_unexpected_error(e))
 
 
-@tool(description=get_tool_description("property_tools", "start_registration_by_geojson"))
+@tool()
 def start_registration_by_geojson(
     run_context: RunContext,
     files: Optional[List[File]] = None,
 ):
     """
     Inicia o registro de uma nova propriedade rural a partir de um arquivo
-    geoespacial enviado pelo usuário (shapefile zip/rar, KMZ, KML ou GeoJSON),
+    geoespacial enviado pelo usuário (shapefile .zip/.rar, KMZ, KML ou GeoJSON),
     que foi convertido para GeoJSON e anexado à conversa como um arquivo .json.
 
     Use esta ferramenta quando o usuário enviar um arquivo de mapa com os
-    limites da propriedade.
+    limites da propriedade (ou dos piquetes).
 
-    O conteúdo é lido diretamente do arquivo anexado à conversa, que o
-    framework injeta no parâmetro ``files``. O modelo não deve copiar nem
-    repassar coordenadas (argumentos muito longos são truncados/corrompidos).
-
-    Args:
-        files (List[File], optional): Arquivos anexados à conversa (injetados
-            automaticamente pelo framework).
+    IMPORTANTE: NÃO copie nem passe o conteúdo do arquivo .json. O sistema lê
+    o arquivo anexado automaticamente. Apenas chame a ferramenta sem argumentos.
 
     Returns:
         ToolResult: Resultado contendo imagem e instruções para o próximo passo.
@@ -220,7 +217,11 @@ def start_registration_by_geojson(
     if content is None:
         log_warning("start_registration_by_geojson chamado sem arquivo geoespacial anexado")
         return ToolResult(
-            content=get_tool_result_text("property_tools", "start_registration_by_geojson", "missing_geojson")
+            content=(
+                "Peça desculpas e informe que não encontrou nenhum arquivo "
+                "geoespacial anexado.\nPeça ao usuário que envie o arquivo novamente "
+                "(shapefile .zip/.rar, KMZ, KML ou GeoJSON)."
+            )
         )
 
     try:
@@ -228,11 +229,15 @@ def start_registration_by_geojson(
     except GeoFileError as e:
         log_warning(f"start_registration_by_geojson: geojson inválido - {e}")
         return ToolResult(
-            content=get_tool_result_text("property_tools", "start_registration_by_geojson", "invalid_geojson")
+            content=(
+                "Peça desculpas e informe que não foi possível interpretar o arquivo "
+                "geoespacial enviado.\nPeça ao usuário que confira o arquivo e envie "
+                "novamente (shapefile .zip/.rar, KMZ, KML ou GeoJSON)."
+            )
         )
     except Exception as e:
         log_error(f"start_registration_by_geojson (parse): {e}")
-        return ToolResult(content=get_tool_result_text("property_tools", "start_registration_by_geojson", "error", error=e))
+        return ToolResult(content=_unexpected_error(e))
 
     try:
         paddock_labels = [(paddock.coords, paddock.feature_id) for paddock in paddocks]
@@ -252,26 +257,27 @@ def start_registration_by_geojson(
 
         log_debug(f"start_registration_by_geojson: propriedade gerada ({property_feature.id}, {len(paddocks)} piquetes)")
         return ToolResult(
-            content=get_tool_result_text(
-                "property_tools", "start_registration_by_geojson",
-                "confirm_property", property_details=result_text,
+            content=(
+                "Pergunte ao usuário se a propriedade delimitada na imagem é a "
+                f"correta:\n{result_text}\nSe houver piquetes, explique que cada "
+                "piquete foi identificado com um rótulo na imagem."
             ),
             images=[Image(content=buffer.getvalue())],
         )
     except Exception as e:
         log_error(f"start_registration_by_geojson: {e}")
-        return ToolResult(content=get_tool_result_text("property_tools", "start_registration_by_geojson", "error", error=e))
+        return ToolResult(content=_unexpected_error(e))
 
 
-@tool(description=get_tool_description("property_tools", "start_registration_by_car"))
+@tool()
 def start_registration_by_car(run_context: RunContext, car_codes: List[str]):
     """
     Inicia o registro de uma nova propriedade rural baseando-se no código CAR fornecidos.
-    
+
     Use esta ferramenta quando o usuário fornecer um valor de CAR ainda não registrado no sistema.
-    
+
     Args:
-        cars (List[str]): Código de Cadastro Ambiental Rural (CAR) no padrão SICAR.
+        car_codes (List[str]): Código de Cadastro Ambiental Rural (CAR) no padrão SICAR.
 
     Returns:
         ToolResult: Resultado da busca contendo imagem e instruções para o próximo passo.
@@ -279,7 +285,9 @@ def start_registration_by_car(run_context: RunContext, car_codes: List[str]):
     log_debug(f"start_registration_by_car: car_codes={car_codes}")
     if len(car_codes) > 3:
         log_warning(f"Tentativa de unificar {len(car_codes)} CARs (limite=3)")
-        return ToolResult(content=get_tool_result_text("property_tools", "start_registration_by_car", "too_many_cars"))
+        return ToolResult(
+            content="Peça desculpas e informe que não é permitido unificar mais que 3 CARs por vezes."
+        )
 
     try:
         clean_car_codes = [clean_car_code(car_code) for car_code in car_codes]
@@ -287,7 +295,12 @@ def start_registration_by_car(run_context: RunContext, car_codes: List[str]):
         if None in clean_car_codes:
             log_warning(f"Código CAR inválido recebido: {car_codes}")
             return ToolResult(
-                content=get_tool_result_text("property_tools", "start_registration_by_car", "invalid_car_format"),
+                content=(
+                    "Peça desculpas e informe que o sistema aceita exclusivamente o "
+                    "**CAR Federal** (padrão SICAR).\nExplique que o padrão exige: "
+                    "2 letras do Estado, seguidas por 7 números, e terminando com 32 "
+                    "caracteres."
+                ),
             )
 
         properties = fetch_property_by_car(car_codes=car_codes)
@@ -295,7 +308,16 @@ def start_registration_by_car(run_context: RunContext, car_codes: List[str]):
         if not properties:
             log_warning(f"Nenhuma propriedade encontrada para CARs={car_codes}")
             return ToolResult(
-                content=get_tool_result_text("property_tools", "start_registration_by_car", "sicar_not_found_instructions"),
+                content=(
+                    "Nenhuma propriedade foi encontrada na base do SICAR para o(s) "
+                    "CAR(s) informado(s).\nComo não há imóvel registrado no SICAR, o "
+                    "registro só pode ser feito como área de buffer.\nExplique isso ao "
+                    "usuário e peça que ele envie um link de compartilhamento do Google "
+                    "Maps ou as coordenadas (latitude/longitude) do local.\nEm seguida, "
+                    "registre a área chamando a ferramenta "
+                    "`start_buffer_registration_by_url` (para o link) ou "
+                    "`start_buffer_registration_by_coordinate` (para as coordenadas)."
+                ),
             )
 
         _property = Feature.unify(properties)
@@ -316,9 +338,10 @@ def start_registration_by_car(run_context: RunContext, car_codes: List[str]):
         if len(properties) == 1:
             log_debug(f"start_registration_by_car: 1 propriedade encontrada ({_property.get_metadata('car_code')})")
             return ToolResult(
-                content=get_tool_result_text(
-                    "property_tools", "start_registration_by_car",
-                    "confirm_single_car", property_details=result_text,
+                content=(
+                    "Informe ao usuário que a seguinte propriedade foi encontrada:\n"
+                    f"{result_text}\nPeça que para o usuário confirmar se a propriedade "
+                    "é a correta."
                 ),
                 images=[Image(content=buffer.getvalue())]
                 )
@@ -326,26 +349,29 @@ def start_registration_by_car(run_context: RunContext, car_codes: List[str]):
         else:
             log_debug(f"start_registration_by_car: {len(properties)} propriedades unificadas ({_property.get_metadata('car_code')})")
             return ToolResult(
-                content=get_tool_result_text(
-                    "property_tools", "start_registration_by_car",
-                    "confirm_unified_cars", property_details=result_text,
+                content=(
+                    "Informe ao usuário que as seguintes propriedades foram encontrada:\n"
+                    f"{result_text}\nInforme que elas foram agrupadas em um único "
+                    "registro que o sistema ira interpretar como uma propriedade única.\n"
+                    "Peça que para o usuário confirmar se as propriedades são as corretas."
                 ),
                 images=[Image(content=buffer.getvalue())]
                 )
     except Exception as e:
         log_error(f"start_registration_by_car: {e}")
-        return ToolResult(content=get_tool_result_text("property_tools", "start_registration_by_car", "error", error=e))
+        return ToolResult(content=_unexpected_error(e))
 
 
-@tool(description=get_tool_description("property_tools", "start_buffer_registration_by_coordinate"))
+@tool()
 def start_buffer_registration_by_coordinate(run_context: RunContext, latitude: float, longitude: float, radius: int = _DEFAULT_RADIUS_METERS):
     """
     Iniciar o registro de uma nova área de buffer baseando-se em um ponto
     (coordenada) e um raio em metros, gerando um buffer circular ao redor do ponto.
 
     Use esta ferramenta quando o usuário indicar um ponto de interesse no mapa
-    e quiser registrar a área ao redor dele, sem possuir um código CAR.
-    Nenhuma busca no CAR é realizada; a área é gerada localmente.
+    e quiser registrar a área ao redor dele, sem possuir um código CAR e sem
+    imóvel registrado na base do SICAR. Nenhuma busca no SICAR é realizada;
+    a área é gerada localmente.
 
     Args:
         latitude (float): Latitude em graus decimais do ponto central.
@@ -357,7 +383,7 @@ def start_buffer_registration_by_coordinate(run_context: RunContext, latitude: f
     """
     log_debug(f"start_buffer_registration_by_coordinate: lat={latitude}, lon={longitude}, radius={radius}")
     try:
-        invalid_radius = _validate_buffer_radius(radius, "start_buffer_registration_by_coordinate")
+        invalid_radius = _validate_buffer_radius(radius)
         if invalid_radius is not None:
             return invalid_radius
 
@@ -367,27 +393,28 @@ def start_buffer_registration_by_coordinate(run_context: RunContext, latitude: f
 
         log_debug(f"start_buffer_registration_by_coordinate: área gerada ({buffer_area.id}, {radius} m)")
         return ToolResult(
-            content=get_tool_result_text(
-                "property_tools", "start_buffer_registration_by_coordinate",
-                "confirm_buffer_area", area_details=result_text,
+            content=(
+                "Pergunte ao usuário se a seguinte área é a correta:\n"
+                f"{result_text}"
             ),
             images=[Image(content=img_bytes)]
             )
     except Exception as e:
         log_error(f"start_buffer_registration_by_coordinate: {e}")
-        return ToolResult(content=get_tool_result_text("property_tools", "start_buffer_registration_by_coordinate", "error", error=e))
+        return ToolResult(content=_unexpected_error(e))
 
 
-@tool(description=get_tool_description("property_tools", "start_buffer_registration_by_url"))
+@tool()
 def start_buffer_registration_by_url(run_context: RunContext, url: str, radius: int = _DEFAULT_RADIUS_METERS) -> ToolResult:
     """
-    Inicia o registro de uma nova área de buffer baseando-se na URL de
+    Iniciar o registro de uma nova área de buffer baseando-se na URL de
     compartilhamento do Google Maps e em um raio em metros, gerando um buffer
     circular ao redor do ponto indicado na URL.
 
     Use esta ferramenta quando o usuário fornecer uma URL de compartilhamento
     do Google Maps e quiser registrar a área ao redor do ponto, sem possuir um
-    código CAR. Nenhuma busca no CAR é realizada; a área é gerada localmente.
+    código CAR e sem imóvel registrado na base do SICAR. Nenhuma busca no SICAR
+    é realizada; a área é gerada localmente.
 
     Args:
         url (str): URL de compartilhamento do Google Maps.
@@ -398,7 +425,7 @@ def start_buffer_registration_by_url(run_context: RunContext, url: str, radius: 
     """
     log_debug(f"start_buffer_registration_by_url: url={url}, radius={radius}")
     try:
-        invalid_radius = _validate_buffer_radius(radius, "start_buffer_registration_by_url")
+        invalid_radius = _validate_buffer_radius(radius)
         if invalid_radius is not None:
             return invalid_radius
 
@@ -407,11 +434,16 @@ def start_buffer_registration_by_url(run_context: RunContext, url: str, radius: 
         if latitude is None or longitude is None:
             log_warning(f"Não foi possível extrair coordenadas da URL: {url}")
             return ToolResult(
-                content=get_tool_result_text("property_tools", "start_buffer_registration_by_url", "url_coords_not_extracted"),
+                content=(
+                    "Peça desculpas ao usuário e informe que não foi possível extrair "
+                    "coordenadas geográficas válidas deste link.\nSugira ao usuário que "
+                    "envie o link novamente (verificando se é um link de "
+                    "compartilhamento do Google Maps)"
+                ),
             )
     except Exception as error:
         log_error(f"start_buffer_registration_by_url (url parse): {error}")
-        return ToolResult(content=get_tool_result_text("property_tools", "start_buffer_registration_by_url", "error", error=error))
+        return ToolResult(content=_unexpected_error(error))
 
     try:
         buffer_area, img_bytes = _register_buffer_candidate(run_context, latitude=latitude, longitude=longitude, radius=radius)
@@ -420,18 +452,18 @@ def start_buffer_registration_by_url(run_context: RunContext, url: str, radius: 
 
         log_debug(f"start_buffer_registration_by_url: área gerada ({buffer_area.id}, {radius} m)")
         return ToolResult(
-            content=get_tool_result_text(
-                "property_tools", "start_buffer_registration_by_url",
-                "confirm_buffer_area", area_details=result_text,
+            content=(
+                "Pergunte ao usuário se a seguinte área é a correta:\n"
+                f"{result_text}"
             ),
             images=[Image(content=img_bytes)]
             )
     except Exception as e:
         log_error(f"start_buffer_registration_by_url: {e}")
-        return ToolResult(content=get_tool_result_text("property_tools", "start_buffer_registration_by_url", "error", error=e))
+        return ToolResult(content=_unexpected_error(e))
 
 
-@tool(description=get_tool_description("property_tools", "start_registration_by_url"))
+@tool()
 def start_registration_by_url(run_context: RunContext, url: str) -> ToolResult:
     """
     Inicia o processo de registro de uma nova propriedade rural baseando-se na URL de compartilhamento do Google Maps.
@@ -451,11 +483,16 @@ def start_registration_by_url(run_context: RunContext, url: str) -> ToolResult:
         if latitude is None or longitude is None:
             log_warning(f"Não foi possível extrair coordenadas da URL: {url}")
             return ToolResult(
-                content=get_tool_result_text("property_tools", "start_registration_by_url", "url_coords_not_extracted"),
+                content=(
+                    "Peça desculpas ao usuário e informe que não foi possível extrair "
+                    "coordenadas geográficas válidas deste link.\nSugira ao usuário que "
+                    "envie o link novamente (verificando se é um link de "
+                    "compartilhamento do Google Maps)"
+                ),
             )
     except Exception as error:
         log_error(f"start_registration_by_url (url parse): {error}")
-        return ToolResult(content=get_tool_result_text("property_tools", "start_registration_by_url", "error", error=error))
+        return ToolResult(content=_unexpected_error(error))
 
     try:
         properties = fetch_property_by_coordinates(latitude=latitude, longitude=longitude)
@@ -463,10 +500,16 @@ def start_registration_by_url(run_context: RunContext, url: str) -> ToolResult:
         if not properties:
             log_warning(f"Nenhuma propriedade encontrada para lat={latitude}, lon={longitude}")
             return ToolResult(
-                content=get_tool_result_text(
-                    "property_tools", "start_registration_by_url",
-                    _SICAR_MISS_SUGGEST_BUFFER_TOOL_KEY,
-                    url=url,
+                content=(
+                    "Nenhuma propriedade foi encontrada na base do SICAR para esta "
+                    "localização.\nNÃO inicie nenhum registro automaticamente.\n"
+                    "Informe ao usuário que não há imóvel registrado no SICAR neste "
+                    "ponto e pergunte se ele deseja registrar uma área de buffer ao "
+                    "redor dele (raio entre 50 e 1000 metros, padrão 200 metros).\n"
+                    "Se o usuário aceitar, chame a ferramenta "
+                    f"`start_buffer_registration_by_url` com a URL {url} (e o raio "
+                    "escolhido, se o usuário informar).\n"
+                    "Se o usuário recusar, encerre a operação."
                 ),
             )
 
@@ -493,9 +536,9 @@ def start_registration_by_url(run_context: RunContext, url: str) -> ToolResult:
 
             log_debug("start_registration_by_url: 1 propriedade encontrada")
             return ToolResult(
-                content=get_tool_result_text(
-                    "property_tools", "start_registration_by_url",
-                    "confirm_single_property", property_details=result_text,
+                content=(
+                    "Pergunte ao usuário se a seguinte propriedade é a correta:\n"
+                    f"{result_text}"
                 ),
                 images=[Image(content=buffer.getvalue())]
                 )
@@ -513,18 +556,18 @@ def start_registration_by_url(run_context: RunContext, url: str) -> ToolResult:
 
             log_debug(f"start_registration_by_url: {len(properties)} propriedades encontradas")
             return ToolResult(
-                content=get_tool_result_text(
-                    "property_tools", "start_registration_by_url",
-                    "confirm_multiple_options", options=result_text,
+                content=(
+                    "Pergunte ao usuário qual das seguinte propriedades é a correta:\n"
+                    f"{result_text}"
                 ),
                 images=[Image(content=buffer.getvalue())]
                 )
     except Exception as e:
         log_error(f"start_registration_by_url: {e}")
-        return ToolResult(content=get_tool_result_text("property_tools", "start_registration_by_url", "error", error=e))
+        return ToolResult(content=_unexpected_error(e))
 
 
-@tool(description=get_tool_description("property_tools", "select_car_from_list"))
+@tool()
 def select_car_from_list(run_context: RunContext, selection: int):
     """
     Seleciona uma propriedade específica quando a busca retorna múltiplos resultados.
@@ -540,14 +583,18 @@ def select_car_from_list(run_context: RunContext, selection: int):
 
         if not candidate_properties:
             log_warning("select_car_from_list chamado sem busca prévia")
-            return ToolResult(content=get_tool_result_text("property_tools", "select_car_from_list", "no_search_yet"))
+            return ToolResult(
+                content="Nenhuma busca foi realizada ainda. Informe uma localização primeiro."
+            )
 
         if selection < 1 or selection > len(candidate_properties):
             log_warning(f"Seleção fora do intervalo: {selection} (1..{len(candidate_properties)})")
-            return ToolResult(content=get_tool_result_text(
-                "property_tools", "select_car_from_list", "selection_out_of_range",
-                max_selection=len(candidate_properties),
-            ))
+            return ToolResult(
+                content=(
+                    "Seleção inválida. Escolha um número válido entre 1 e "
+                    f"{len(candidate_properties)}."
+                )
+            )
 
         selected_property = candidate_properties[selection - 1]
         run_context.session_state['candidate_properties'] = [selected_property]
@@ -557,14 +604,15 @@ def select_car_from_list(run_context: RunContext, selection: int):
         selected_id = Feature.model_validate(selected_property).id
         log_debug(f"select_car_from_list: feição {selected_id} selecionada")
         return ToolResult(
-            content=get_tool_result_text(
-                "property_tools", "select_car_from_list", "success_registered_prompt_name",
-                feature_id=selected_id,
+            content=(
+                f"A propriedade de identificador {selected_id} foi registrada com "
+                "sucesso. Seja proativo, pergunte ao usuário se ele gostaria de "
+                "atribuir um nome para a propriedade."
             )
         )
     except Exception as e:
         log_error(f"select_car_from_list: {e}")
-        return ToolResult(content=get_tool_result_text("property_tools", "select_car_from_list", "error", error=e))
+        return ToolResult(content=_unexpected_error(e))
 
 
 def _persist_registration(run_context: RunContext, candidate_properties: list, name: str) -> ToolResult:
@@ -612,20 +660,28 @@ def _persist_registration(run_context: RunContext, candidate_properties: list, n
     registered_id = registered_feature.id
     log_debug(f"_persist_registration: registro concluído ({registered_id}, {len(pending_paddocks)} piquetes)")
     return ToolResult(
-        content=get_tool_result_text(
-            "property_tools", "complete_registration", "success_registration_complete",
-            name=name, feature_id=registered_id,
+        content=(
+            "Propriedade registrada com sucesso.\n"
+            f"Nome: {name}\n"
+            f"Feature ID: {registered_id}\n\n"
+            "INSTRUÇÃO AO AGENTE: O cadastro foi concluído. Agora você deve entregar "
+            "ao usuário o primeiro diagnóstico da propriedade."
         )
     )
 
 
-@tool(description=get_tool_description("property_tools", "confirm_car_selection"))
+@tool()
 def confirm_car_selection(run_context: RunContext, name: Optional[str] = None):
     """
     Confirma a propriedade encontrada quando a busca retorna apenas um resultado único.
 
     Use esta ferramenta quando a ferramenta 'query_car' encontrar apenas 1 imóvel e o usuário confirmar que está correto (ex: dizendo "Sim", "É essa mesmo").
-    Se o usuário já disser o nome desejado NA MESMA mensagem da confirmação (ex: "Sim, confirmo. Pode chamar de Fazenda Boa Vista"), passe esse nome no parâmetro `name` — conclui o cadastro imediatamente, sem precisar de outro turno.
+
+    Se o usuário já disser o nome desejado NA MESMA mensagem da confirmação
+    (ex: "Sim, confirmo. Pode chamar de Fazenda Boa Vista"), passe esse nome
+    no parâmetro `name` — o cadastro é concluído imediatamente, sem esperar
+    outro turno. Sem isso, o usuário fica sem acesso às ferramentas de
+    análise (boletim, mapas etc.) até responder de novo com o nome.
     """
     log_debug(f"confirm_car_selection: name={name}")
     try:
@@ -633,7 +689,12 @@ def confirm_car_selection(run_context: RunContext, name: Optional[str] = None):
 
         if not candidate_properties:
             log_warning("confirm_car_selection chamado sem propriedade pendente")
-            return ToolResult(content=get_tool_result_text("property_tools", "confirm_car_selection", "no_pending_property"))
+            return ToolResult(
+                content=(
+                    "Não há propriedade pendente de confirmação. Realize uma busca "
+                    "primeiro."
+                )
+            )
 
         if name:
             return _persist_registration(run_context, candidate_properties, name)
@@ -646,17 +707,18 @@ def confirm_car_selection(run_context: RunContext, name: Optional[str] = None):
         selected_id = Feature.model_validate(selected_property).id
         log_debug(f"confirm_car_selection: feição {selected_id} confirmada")
         return ToolResult(
-            content=get_tool_result_text(
-                "property_tools", "confirm_car_selection", "success_registered_prompt_name",
-                feature_id=selected_id,
+            content=(
+                f"A propriedade de identificador {selected_id} foi registrada com "
+                "sucesso. Seja proativo, pergunte ao usuário se ele gostaria de "
+                "atribuir um nome para a propriedade."
             )
         )
     except Exception as e:
         log_error(f"confirm_car_selection: {e}")
-        return ToolResult(content=get_tool_result_text("property_tools", "confirm_car_selection", "error", error=e))
+        return ToolResult(content=_unexpected_error(e))
 
 
-@tool(description=get_tool_description("property_tools", "complete_registration"))
+@tool()
 def complete_registration(run_context: RunContext, name: str):
     """
     Concluir cadastro com o nome da propriedade.
@@ -669,10 +731,10 @@ def complete_registration(run_context: RunContext, name: str):
         return _persist_registration(run_context, candidate_properties, name)
     except Exception as e:
         log_error(f"complete_registration: {e}")
-        return ToolResult(content=get_tool_result_text("property_tools", "complete_registration", "error", error=e))
+        return ToolResult(content=_unexpected_error(e))
 
 
-@tool(description=get_tool_description("property_tools", "cancel_registration"))
+@tool()
 def cancel_registration(run_context: RunContext):
     """
     Cancela a seleção ou rejeita os resultados encontrados.
@@ -686,13 +748,15 @@ def cancel_registration(run_context: RunContext):
         run_context.session_state["pending_paddocks"] = None
 
         log_debug("cancel_registration: seleção cancelada")
-        return ToolResult(content=get_tool_result_text("property_tools", "cancel_registration", "cancelled_apology"))
+        return ToolResult(
+            content="Peça desculpas por não ter encontrado a propriedade correta."
+        )
     except Exception as e:
         log_error(f"cancel_registration: {e}")
-        return ToolResult(content=get_tool_result_text("property_tools", "cancel_registration", "error", error=e))
+        return ToolResult(content=_unexpected_error(e))
 
 
-@tool(description=get_tool_description("property_tools", "set_property_name"))
+@tool()
 def set_property_name(run_context: RunContext, feature_id: str, name: str):
     """
     Atualizar o nome propriedade registrada no sistema.
@@ -708,7 +772,9 @@ def set_property_name(run_context: RunContext, feature_id: str, name: str):
         target = registered_features.find_by_any(feature_id)
         if target is None:
             log_warning(f"Propriedade não encontrada para renomear: {feature_id}")
-            return ToolResult(content=get_tool_result_text("property_tools", "set_property_name", "property_not_found"))
+            return ToolResult(
+                content="Não foi possível registrar o nome da propriedade."
+            )
 
         # The new name is stored as metadata; feature_id is stable.
         index = registered_features.features.index(target)
@@ -719,14 +785,17 @@ def set_property_name(run_context: RunContext, feature_id: str, name: str):
 
         log_debug(f"set_property_name: nome atualizado ({feature_id} -> {name})")
         return ToolResult(
-            content=get_tool_result_text("property_tools", "set_property_name", "success_renamed")
+            content=(
+                "O nome da propriedade foi alterado com sucesso.\nInforme ao usuário "
+                "que ele já pode pedir, em uma nova mensagem, análises da propriedade."
+            )
         )
     except Exception as e:
         log_error(f"set_property_name: {e}")
-        return ToolResult(content=get_tool_result_text("property_tools", "set_property_name", "error", error=e))
+        return ToolResult(content=_unexpected_error(e))
 
 
-@tool(description=get_tool_description("property_tools", "remove_property"))
+@tool()
 def remove_property(feature_id: str, run_context: RunContext) -> str:
     """
     Remove a propriedade selecionada do sistema.
@@ -742,7 +811,7 @@ def remove_property(feature_id: str, run_context: RunContext) -> str:
 
         if removed_feature is None:
             log_warning(f"Propriedade não encontrada para remoção: {feature_id}")
-            return get_tool_result_text("property_tools", "remove_property", "property_not_found")
+            return "A propriedade não foi encontrada no sistema."
 
         remaining_features = [
             feature
@@ -761,13 +830,13 @@ def remove_property(feature_id: str, run_context: RunContext) -> str:
                 )
 
         log_debug(f"remove_property: feição {feature_id} removida")
-        return get_tool_result_text("property_tools", "remove_property", "success_removed")
+        return "A propriedade foi removida com sucesso."
     except Exception as e:
         log_error(f"remove_property: {e}")
-        return get_tool_result_text("property_tools", "remove_property", "error", error=e)
+        return _unexpected_error(e)
 
 
-@tool(description=get_tool_description("property_tools", "remove_all_properties"))
+@tool()
 def remove_all_properties(run_context: RunContext) -> str:
     """
     Remove todas as propriedades registradas no sistema.
@@ -778,7 +847,7 @@ def remove_all_properties(run_context: RunContext) -> str:
         run_context.session_state['selected_property'] = None
 
         log_debug("remove_all_properties: todas as propriedades removidas")
-        return get_tool_result_text("property_tools", "remove_all_properties", "success_removed_all")
+        return "Todas as propriedades foram removidas com sucesso."
     except Exception as e:
         log_error(f"remove_all_properties: {e}")
-        return get_tool_result_text("property_tools", "remove_all_properties", "error", error=e)
+        return _unexpected_error(e)

@@ -1,7 +1,7 @@
 """Shared test setup.
 
-Domain tool modules resolve their descriptions at import time via the
-semente prompts loader, which needs the app's prompts dir. At runtime
+The built-in agent configs (e.g. ``single_agent``) are resolved at import time
+via the semente prompts loader, which needs the app's prompts dir. At runtime
 ``semente.build.build_app`` applies it from the manifest; in tests, apply it
 here before any domain import.
 """
