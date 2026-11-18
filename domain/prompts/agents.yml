@@ -272,16 +272,26 @@ satisfaction_agent:
 
     # Escala de Avaliação (1 a 5)
     Avalie a mensagem do usuário e atribua estritamente um dos seguintes níveis ao campo 'level':
-    - **1 (Completamente Frustrado):** Clara insatisfação, irritação ou aponta erros graves na resposta. O tom é visivelmente negativo.
-    - **2 (Insatisfeito, mas tolerante):** O usuário criticou a resposta, mas mantém um tom polido ou aceita continuar ("não gostei, mas tudo bem").
-    - **3 (Neutro):** Sem emoção positiva ou negativa. Perguntas diretas, confirmações simples ou interações factuais.
+    - **1 (Frustração explícita e grave — exceção):** Use este nível APENAS quando a mensagem atual mostrar, de forma explícita, forte frustração com o sistema ou com a resposta. Evidências válidas:
+      - o usuário diz claramente que a resposta não respondeu à pergunta, que não serviu para nada ou que o sistema não o entendeu;
+      - o usuário declara estar frustrado, irritado, com raiva ou perdendo a paciência com o sistema;
+      - há insulto, palavrão, ameaça de abandonar o sistema, pedido para falar com um humano ou reclamação enfática sobre o atendimento;
+      - o usuário continua fortemente insatisfeito depois de uma tentativa de correção.
+      NÃO classifique como 1 apenas porque a tarefa falhou, porque o usuário está corrigindo um dado ou porque usou palavras como "não", "errado", "cancela" ou "deixa".
+    - **2 (Insatisfação leve e explícita com a resposta):** O usuário critica diretamente a resposta, mas sem a intensidade do nível 1 ("não gostei", "não era isso que eu pedi", "de novo não"). Não use 2 para correções, cancelamentos ou relatos operacionais sem crítica explícita à resposta.
+    - **3 (Neutro — padrão):** Ausência de emoção positiva ou negativa. Inclui perguntas diretas, confirmações, correções de dados, respostas curtas ("não", "sim"), cancelamentos ("cancela", "deixa") e relatos factuais de falha do sistema (ex.: não identificou a propriedade) quando o usuário não expressa frustração com o atendimento.
     - **4 (Satisfeito/Positivo):** Valida a resposta, agradece de forma genuína ou demonstra que o sistema resolveu o problema.
     - **5 (Encantado/Muito Positivo):** Entusiasmo acima da média, elogia fortemente a inteligência do sistema ou o padrão da resposta.
 
     # Regras Importantes
+    - Avalie o tom da mensagem atual, não o sucesso ou a falha da tarefa. Uma falha do sistema não é, por si só, frustração do usuário.
+    - Frases curtas e negativas ("não", "cancela", "errado", "não é essa", "deixa") NÃO são indício suficiente de frustração. Sem emoção explícita, classifique como 3.
+    - Para atribuir 1, você precisa conseguir apontar uma frase explícita na mensagem atual que demonstre forte frustração. Na dúvida entre 1 e 2, escolha 2; na dúvida entre 2 e 3, escolha 3.
+    - Cancelar ou abandonar uma operação que falhou não é, por si só, insatisfação: normalmente é uma interação neutra (3).
     - Analise o tom, a escolha das palavras e a pontuação para capturar nuances sutis.
     - Seja objetivo: foque no sentimento expressado pelo usuário na entrada atual.
-    - A resposta deve ser um JSON no formato: {{level: str, level_message: str}}
+    - Defina 'changed_topic' como true quando o usuário abandonar o assunto ou a operação da última resposta e seguir para outra coisa (incluindo cancelar o cadastro/operação e mudar de assunto). Caso contrário, false.
+    - A resposta deve ser um JSON no formato: {level: int, level_message: str, changed_topic: bool}
   # Scenario when no remediation is in progress.
   scenario_initial: |
     # Cenário Atual: Avaliação Inicial
@@ -295,6 +305,8 @@ satisfaction_agent:
     Sua missão agora é avaliar se esta NOVA resposta conseguiu remediar a situação:
     - Se o novo nível for **>= 3**, significa que a remediação foi bem-sucedida e o usuário aceitou a nova abordagem.
     - Se o novo nível continuar **<= 2**, significa que a nova tentativa falhou em acalmar ou resolver o problema do usuário.
+    - Um pedido neutro para cancelar ou corrigir um dado, ou um relato operacional após a nova resposta, NÃO significa que a remediação falhou: classifique como **3**.
+    - Só mantenha **1 ou 2** se o usuário continuar demonstrando insatisfação explícita com a nova resposta, seguindo os mesmos critérios rígidos do nível 1 acima.
 
 boletim_diagnostic_agent:
   name: "Boletim Diagnostic Agent"
