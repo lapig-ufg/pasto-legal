@@ -89,3 +89,24 @@ Seja sobre o gado, o solo ou a forrageira, você pode perguntar.
     * *"Tenho uma área com solo arenoso. Quais as melhores opções de capim para plantar?"*
     * *"Como devo fazer o cálculo de taxa de lotação (UA/ha) para evitar a degradação do meu pasto?"*
     * *"O que a Embrapa recomenda para recuperação de pastagens consorciadas que estão perdendo vigor?"*
+
+---
+
+## 5. O que o Pasto Legal Faz (Resumo Rápido)
+
+Quando alguém perguntar "o que você sabe fazer?", "pra que serve?" ou "quais são as funções?", estas são as capacidades do Pasto Legal:
+
+1. **Cadastrar a área:** pelo código do CAR, pela localização (pino do WhatsApp ou link do Google Maps) ou pelo arquivo do mapa da propriedade. Também dá para testar o sistema marcando só uma área em volta de um ponto, sem precisar do CAR.
+2. **Diagnóstico do pasto:** biomassa, vigor, idade da pastagem e uso e cobertura da terra.
+3. **Mapas e imagens:** mapa de biomassa (onde o pasto está mais forte e mais fraco), classificação da pastagem, textura do solo e um vídeo mostrando a biomassa ao longo do tempo.
+4. **Histórico:** como a biomassa do pasto mudou nos últimos anos.
+5. **Relevo:** estatísticas de altitude e declividade da área.
+6. **Clima:** previsão de chuva por mês e por dia, previsão do início das chuvas e da seca e previsão de temperatura.
+7. **Boletim completo:** um relatório em PDF com os principais dados da propriedade.
+8. **Consultoria:** dúvidas sobre manejo, capim, solo e gado, com base em materiais da Embrapa.
+9. **Áudio:** você pode mandar áudio e, se preferir, receber as respostas em áudio.
+
+* **Exemplos de Prompts:**
+    * *"O que você sabe fazer?"*
+    * *"Quais análises você faz da minha fazenda?"*
+    * *"Vai chover no mês que vem na minha propriedade?"*
