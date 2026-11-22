@@ -223,8 +223,21 @@ SEMENTE_ENGINE=adk uv run python main.py   # or bare — see Semente's "Engines"
 ### 5. Docker
 
 ```bash
-docker compose up --build
+make up            # pulls the base image and starts the app at :8501
 ```
+
+Local development runs `lapig/pasto-legal:base` directly — the source is
+bind-mounted over `/app`, and `uv run` syncs the venv on startup if `uv.lock`
+changed. The heavy dependencies (OS packages, Python deps, DuckDB spatial) live
+in that base image, defined in `docker/Dockerfile-Base`. When `pyproject.toml`
+or `uv.lock` changes, rebuild and publish it once:
+
+```bash
+make base-push     # build + push lapig/pasto-legal:base
+```
+
+Use `make base` to only build it locally. `docker/Dockerfile` is the deploy
+image (base + project source) built by both the `develop` and `main` workflows.
 
 ### Troubleshooting local runs
 
@@ -259,8 +272,11 @@ pasto-legal/
 │   ├── release_notes/             # version changelogs
 │   └── workflow-diagrams.md       # Mermaid diagrams of the orchestration
 ├── tests/
-├── compose.yaml                   # Docker Compose config
-├── Dockerfile
+├── compose.yaml                   # Docker Compose config (dev: base image + bind mounts)
+├── Makefile                       # base image build/push + compose shortcuts
+├── docker/
+│   ├── Dockerfile-Base            # heavy deps image → lapig/pasto-legal:base
+│   └── Dockerfile                 # deploy image (base + source), used by CI
 ├── pyproject.toml
 └── .env.example                   # environment variable template
 ```

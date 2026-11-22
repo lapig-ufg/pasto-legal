@@ -38,7 +38,7 @@ jobs:
           docker build \
           -t lapig/$APPLICATION_NAME:${DOCKER_PATH}_${LAST_COMMIT_HASH} \
           -t lapig/$APPLICATION_NAME:${DOCKER_PATH}_latest  \
-          -f docker/$DOCKER_PATH/Dockerfile . --no-cache
+          -f docker/Dockerfile . --no-cache
 
       - name: Login to Docker Registry
         run: echo "${{ secrets.DOCKERHUB_PASS }}" | docker login -u "lapig" --password-stdin

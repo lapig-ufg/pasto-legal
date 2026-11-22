@@ -1,6 +1,9 @@
 services:
   streamlit_app:
-    build: .
+    # Development runs the base image directly: the source is bind-mounted over
+    # /app, so no app image build is needed. `uv run` syncs the venv on start if
+    # the lock changed since the base image was published.
+    image: ${BASE_IMAGE:-lapig/pasto-legal:base}
     command: uv run semente launch streamlit
     volumes:
       - .:/app
