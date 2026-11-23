@@ -178,11 +178,19 @@ Ferramentas para integração com o Cadastro Ambiental Rural (CAR).
 - **`query_feature_by_car`**: Localiza propriedades rurais a partir do registro CAR.
 - **`confirm_car_selection` / `select_car_from_list` / `reject_car_selection`**: Gerenciam a seleção da propriedade correta pelo usuário.
 
-### 5.2 GEE Tools (`gee_tools.py`)
-Integração com Google Earth Engine para análise de dados geoespaciais.
-- **`query_pasture`**: Retorna dados de biomassa, degradação e vigor da pastagem, idade da pastagem e uso e cobertura da terra.
+### 5.2 Analysis Tools (`domain/tools/analysis_tools.py`)
+Integração com Google Earth Engine para análise de dados geoespaciais. Cada
+indicador usa a estimativa mais recente e, quando ela não pode ser calculada,
+o mapeamento estático do MapBiomas.
+- **`get_pasture_stats`**: Retorna biomassa, idade, vigor e uso/cobertura do solo.
+- **`get_pasture_age`**: Retorna a idade da pastagem e um mapa por faixa de idade.
+- **`get_pasture_vigor`**: Retorna o vigor da pastagem e um mapa por classe.
+- **`get_pasture_biomass_history`**: Retorna a série histórica de biomassa (GPW).
+- **`generate_pasture_classification_image`**: Cria o mapa de pasto x não-pasto.
 - **`generate_property_image`**: Cria imagens de satélite com o contorno da propriedade.
-- **`generate_property_biomass_image`**: Cria imagem de satélite com a distribuição de biomassa da propriedade.
+- **`generate_biomass_image` / `generate_biomass_video`**: Mapa e vídeo de biomassa.
+- **`generate_soil_texture_image` / `get_topographic_stats`**: Solo e topografia.
+- **`generate_property_boletim`**: Gera o boletim completo em PDF.
 
 ### 5.3 Audio Tools (`audioTTS.py`)
 Interface de comunicação por voz.

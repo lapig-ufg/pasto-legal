@@ -26,19 +26,13 @@ from domain.services.geospatial.pasture_biomass import (
     _latest_gpw_year,
     resolve_gpw_biomass_year,
 )
-from domain.schemas.property_stats import PropertyStats, PastureStats, TopographicStats
 from domain.schemas.property_stats import (
-    Value, 
     BiomassStats,
-    AgeData,
-    AgeStats,
-    VigorData,
-    VigorStats,
-    LULCData,
-    LULCStats,
     SoilData,
-    SoilStats
-    )
+    SoilStats,
+    TopographicStats,
+    Value,
+)
 
 
 _FEATURE_BUFFER = 256
@@ -612,15 +606,12 @@ def _get_pasture_mask_array(
     feature_key: str,
     grid: RasterGrid,
 ) -> np.ndarray:
+    # The mask service already falls back to the static MapBiomas map. Do not
+    # silently replace a failed mask with an all-ones array: that would compute
+    # biomass over the entire property, including non-pasture pixels.
     from domain.services.geospatial.pasture_mask import get_pasture_mask_array
 
-    try:
-        return get_pasture_mask_array(roi=roi, feature_key=feature_key, grid=grid)
-    except Exception as error:
-        log_warning(
-            f"pasture mask indisponível, usando a área da propriedade sem máscara: {error}"
-        )
-        return np.ones((grid.height, grid.width), dtype=np.int16)
+    return get_pasture_mask_array(roi=roi, feature_key=feature_key, grid=grid)
 
 
 def retrieve_t2g_biomass_image(
@@ -1120,72 +1111,6 @@ def retrieve_feature_soil_texture_image(
         )
 
 
-def retrieve_pasture_vigor_image(
-    coords: List[List[List[List[float]]]],
-    year: int = 2024,
-    feature_key: Optional[str] = None,
-) -> PIL.Image:
-    """
-    Gera uma imagem de satélite com a camada de vigor de pastagem sobreposta,
-    baseada na geometria da propriedade rural fornecida.
-
-    O raster de classes é cacheado em zarr e renderizado localmente.
-    """
-    try:
-        class_colors = {1: "#d7191c", 2: "#fdae61", 3: "#1a9641"}
-        class_labels = {1: "Baixo", 2: "Médio", 3: "Alto"}
-
-        roi = ee.Geometry.MultiPolygon(coords)
-        feature_key = feature_key or raster_layers.feature_key_from_coords(coords)
-        grid = grid_for_roi(roi, scale=10, buffer_m=_FEATURE_BUFFER)
-
-        def _vigor_image() -> ee.Image:
-            asset = ee.Image(
-                "projects/mapbiomas-public/assets/brazil/lulc/collection10/"
-                "mapbiomas_brazil_collection10_pasture_vigor_v3"
-            )
-            return asset.select(year - 2000).rename("vigor_class")
-
-        key = raster_layers.layer_cache_key([year], grid, "v1")
-        values, grid = raster_layers.get_layer_array(
-            roi=roi,
-            feature_key=feature_key,
-            kind="vigor_static",
-            key=key,
-            image_factory=_vigor_image,
-            band_name="vigor_class",
-            grid=grid,
-            scale=10,
-        )
-
-        values = np.nan_to_num(values, nan=0).astype(int)
-        base_rgb = raster_layers.get_base_raster(
-            roi=roi, feature_key=feature_key, grid=grid
-        )
-        return raster_render.render_discrete_map(
-            base_rgb=base_rgb,
-            values=values,
-            coords=coords,
-            grid=grid,
-            class_colors=class_colors,
-            class_labels=class_labels,
-            title="Vigor da Pastagem",
-            dimension=_IMAGE_DIMENSION,
-        )
-
-    except ee.EEException as error:
-        log_error(traceback.format_exc())
-        raise RuntimeError(
-            f"Falha ao processar as coordenadas no satélite. "
-            f"Verifique se as coordenadas da área estão corretas. Detalhes: {str(error)}"
-        )
-    except Exception as error:
-        log_error(traceback.format_exc())
-        raise RuntimeError(
-            f"Ocorreu um erro inesperado ao gerar a imagem da fazenda. Detalhes: {str(error)}"
-        )
-
-
 def get_biomass(
     roi: ee.Geometry,
     month: int,
@@ -1323,182 +1248,6 @@ def get_biomass(
         )
 
 
-def _latest_asset_year(asset_id: str, base_year: int = 2000) -> int:
-    """
-    Último ano disponível num asset MapBiomas cujas bandas são indexadas por
-    posição (banda 0 = base_year, banda 1 = base_year+1, ...) — caso do
-    pasture_age_v2, pasture_vigor_v3 e integration_v2 usados abaixo.
-    """
-    band_count = ee.Image(asset_id).bandNames().size().getInfo()
-    return base_year + band_count - 1
-
-
-_AGE_ASSET = 'projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_age_v2'
-_VIGOR_ASSET = 'projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_vigor_v3'
-_LULC_ASSET = 'projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_integration_v2'
-
-# Banda 0 desses dois assets é classification_1985 (não 2000, como no de vigor) —
-# usado tanto pro clamp de "último ano disponível" quanto pra seleção de banda por índice.
-_AGE_ASSET_BASE_YEAR = 1985
-_LULC_ASSET_BASE_YEAR = 1985
-
-
-def get_pasture_age(roi: ee.Geometry, year: int, month: int = None) -> AgeStats:
-    """
-    Computes pasture area (ha) per age class via MapBiomas (Collection 10).
-
-    Raw ages are reclassified into 4 ranges (1-10, 10-20, 20-30, 30-40 years)
-    plus a 5th class for pixels that hit the asset's sentinel value (pasture
-    already mature at the start of the series, real age unknown and possibly
-    much older than 40) — kept separate so a precisely computed 30-40 is never
-    mixed with a censored, indeterminate age.
-
-    Args:
-        roi (ee.Geometry): Region of interest (farm polygon).
-        year (int): Reference year of the mapping (band `year - 1985`).
-        month (int, optional): Ignored; kept for signature compatibility.
-
-    Returns:
-        AgeStats: Observation year and list of areas per age range (ha).
-    """
-    AGE_DICT = {'1':'1-10', '2':'10-20', '3':'20-30', '4':'30-40', '5':'≥40 (idade real indeterminada)'}
-
-    target_year = min(year, _latest_asset_year(_AGE_ASSET, base_year=_AGE_ASSET_BASE_YEAR))
-    age_asset = ee.Image(_AGE_ASSET)
-    raw_age = age_asset.select(target_year - _AGE_ASSET_BASE_YEAR).subtract(200)
-    is_censored = raw_age.eq(-100)
-
-    last_age = raw_age.where(is_censored, 40)
-    last_age = (last_age.where(last_age.gte(1).And(last_age.lte(10)), 1)
-                        .where(last_age.gt(10).And(last_age.lte(20)), 2)
-                        .where(last_age.gt(20).And(last_age.lte(30)), 3)
-                        .where(last_age.gt(30).And(last_age.lte(40)), 4)
-                        .where(is_censored, 5)
-                ).rename('Anos')
-
-    areaImg = ee.Image.pixelArea().divide(10000).addBands(last_age)
-
-    stats = areaImg.reduceRegion(
-        reducer=ee.Reducer.sum().group(groupField=1, groupName='class'),
-        geometry=roi,
-        scale=30,
-        maxPixels=1e13
-    )
-
-    groups_info = stats.get('groups').getInfo()
-    age_data_list: List[AgeData] = []
-
-    if groups_info:
-        for group in groups_info:
-            class_id = str(int(group['class']))
-            class_name = AGE_DICT.get(class_id)
-            area_value = round(float(group['sum']))
-
-            age_data_list.append(AgeData(age=class_name, amount=Value(value=area_value, unity="hectares (ha)")))
-
-    return AgeStats(observation_year=target_year, data=age_data_list)
-
-def get_pasture_vigor(roi: ee.Geometry, year: int, month: int = None) -> VigorStats:
-    """
-    Computes pasture area (ha) per vigor class via MapBiomas (Collection 10).
-
-    Classes: 1 = Low (severe degradation, potentially biological),
-    2 = Medium (moderate degradation), 3 = High (high vegetative vigor).
-
-    Args:
-        roi (ee.Geometry): Region of interest (farm polygon).
-        year (int): Reference year of the mapping (band `year - 2000`).
-        month (int, optional): Ignored; kept for signature compatibility.
-
-    Returns:
-        VigorStats: Observation year and list of areas per vigor class (ha).
-    """
-    VIGOR_DICT = {
-        '1':'Baixo: pastagens com baixo vigor vegetativo e indícios de degradação severa, potencialmente biológica.',
-        '2':'Médio: pastagens com médio vigor vegativo e indícios de degração moderada.',
-        '3':'Alto: pastagens com alto vigor vegetativo.'
-    }
-
-    target_year = min(year, _latest_asset_year(_VIGOR_ASSET))
-    vigor_asset = ee.Image(_VIGOR_ASSET)
-    last_vigor = vigor_asset.select(target_year - 2000)
-
-    areaImg = ee.Image.pixelArea().divide(10000).addBands(last_vigor)
-
-    stats = areaImg.reduceRegion(
-        reducer=ee.Reducer.sum().group(groupField=1, groupName='class'),
-        geometry=roi,
-        scale=30,
-        maxPixels=1e13
-    )
-
-    groups_info = stats.get('groups').getInfo()
-    vigor_data_list: List[VigorData] = []
-
-    if groups_info:
-        for group in groups_info:
-            class_id = str(int(group['class']))
-            vigor_name = VIGOR_DICT.get(class_id)
-            area_value = round(float(group['sum']), 2)
-
-            vigor_data_list.append(VigorData(vigor=vigor_name, amount=Value(value=area_value, unity="hectares (ha)")))
-
-    return VigorStats(observation_year=target_year, data=vigor_data_list)
-
-def get_land_use_land_cover(roi: ee.Geometry, year: int, month: int = None) -> LULCStats:
-    """
-    Computes area (ha) per land use and land cover class via MapBiomas
-    (Collection 10, annual integration).
-
-    Args:
-        roi (ee.Geometry): Region of interest (farm polygon).
-        year (int): Reference year of the mapping (band `year - 1985`).
-        month (int, optional): Ignored; kept for signature compatibility.
-
-    Returns:
-        LULCStats: Observation year and list of areas per LULC class (ha).
-    """
-    CLASSES = {
-        '3':'Formação Florestal', '4':'Formação Savânica', '5':'Mangue',
-        '6':'Floresta Alagável', '9':'Silvicultura', '11':'Campo Alagado e Área Pantanosa',
-        '12':'Formação Campestre', '15':'Pastagem', '19':'Lavoura Temporária',
-        '20':'Cana', '29':'Afloramento Rochoso', '39':'Soja', '46':'Café',
-        '32':'Apicum', '35':'Dendê', '36':'Lavoura Perene', '40':'Arroz',
-        '41':'Outras Lavouras Temporárias', '47':'Citrus',
-        '48':'Outras Lavouras Perenes', '49':'Restinga Arbórea', '50':'Restinga Herbácea',
-        '62':'Algodão', '21':'Mosaico de Usos', '23':'Praia, Duna e Areal',
-        '24':'Área Urbanizada', '30':'Mineração', '75':'Usina Fotovoltaica (beta)',
-        '25':'Outras Áreas não Vegetadas', '26':"Corpo D'água", '33':'Rio, Lago e Oceano',
-        '31':'Aquicultura', '27':'Não observado'
-    }
-
-    target_year = min(year, _latest_asset_year(_LULC_ASSET, base_year=_LULC_ASSET_BASE_YEAR))
-    class_asset = ee.Image(_LULC_ASSET)
-    last_class = class_asset.select(target_year - _LULC_ASSET_BASE_YEAR)
-
-    areaImg = ee.Image.pixelArea().divide(10000).addBands(last_class)
-
-    stats = areaImg.reduceRegion(
-        reducer=ee.Reducer.sum().group(groupField=1, groupName='class'),
-        geometry=roi,
-        scale=30,
-        maxPixels=1e13
-    )
-
-    groups_info = stats.get('groups').getInfo()
-    lulc_class_data_list: List[LULCData] = []
-
-    if groups_info:
-        for group in groups_info:
-            class_id = str(int(group['class']))
-            class_name = CLASSES.get(class_id)
-            area_value = round(float(group['sum']), 2)
-            
-            lulc_class_data_list.append(LULCData(lulc_class=class_name, amount=Value(value=area_value, unity="hectares")))
-
-    return LULCStats(observation_year=target_year, data=lulc_class_data_list)
-
-
 _SOIL_TEXTURE_ASSET = "projects/mapbiomas-public/assets/brazil/soil/collection3/mapbiomas_brazil_collection3_soil_textural_group_v1"
 
 _SOIL_TEXTURE_CLASSES = {
@@ -1547,84 +1296,6 @@ def get_soil_texture_stats(roi: ee.Geometry) -> SoilStats:
 
     return SoilStats(observation_year=datetime.date.today().year, data=soil_data_list)
 
-
-def query_pasture_statistics(
-    coords: List[List[List[List[float]]]],
-    month: int,
-    year: int,
-    pasture_mask: Optional[ee.Image] = None,
-    feature_key: Optional[str] = None,
-) -> PropertyStats:
-    """
-    Extracts pasture statistics (biomass, age, vigor and land use/land cover).
-
-    Args:
-        coords: List of coordinates representing the farm MultiPolygon.
-        month (int): Reference month (biomass is accumulated for this month).
-        year (int): Reference year.
-        pasture_mask (ee.Image, optional): Deprecated EE mask.
-        feature_key (str, optional): Stable cache key for the property.
-
-    Returns:
-        PropertyStats: PastureStats object combining BiomassStats, AgeStats,
-        VigorStats and LULCStats.
-
-    Raises:
-        RuntimeError: On processing, server, connection or unexpected failures
-            (with a message ready to be relayed to the user).
-    """
-    try:
-        roi = ee.Geometry.MultiPolygon(coords)
-
-        biomass_stats = get_biomass(
-            roi, month, year, pasture_mask=pasture_mask, feature_key=feature_key
-        )
-        # cada função clampa sozinha pro último ano publicado no respectivo asset MapBiomas
-        # (não trava mais em 2024 — avança automaticamente quando a MapBiomas atualizar)
-        age_stats = get_pasture_age(roi, year, month)
-        vigor_stats = get_pasture_vigor(roi, year, month)
-        lulc_stats = get_land_use_land_cover(roi, year, month)
-
-        result = PastureStats(
-            biomass_stats=biomass_stats,
-            age_stats=age_stats,
-            vigor_stats=vigor_stats,
-            lulc_stats=lulc_stats
-        )
-
-        return result
-
-    except ValueError:
-        log_error(traceback.format_exc())
-        raise RuntimeError(
-            "Peça desculpas e informe que houve um erro.\n"
-            "Peça ao usuário que tente novamente mais tarde."
-        )
-    except ee.EEException:
-        log_error(traceback.format_exc())
-        raise RuntimeError(
-            "Peça desculpas e informe que houve uma falha de processamento.\n"
-            "Peça ao usuário que tente novamente mais tarde."
-        )
-    except requests.exceptions.HTTPError:
-        log_error(traceback.format_exc())
-        raise RuntimeError(
-            "Peça desculpas e informe que o servidor de imagens do satélite falhou.\n"
-            "Peça ao usuário que tente novamente mais tarde."
-        )
-    except requests.exceptions.RequestException:
-        log_error(traceback.format_exc())
-        raise RuntimeError(
-            "Peça desculpas e informe que houve um problema de conexão ao baixar o mapa de biomassa.\n"
-            "Peça ao usuário que tente novamente mais tarde."
-        )
-    except Exception:
-        log_error(traceback.format_exc())
-        raise RuntimeError(
-            "Peça desculpas e informe que houve um erro inesperado.\n"
-            "Peça ao usuário que tente novamente mais tarde."
-        )
-    
 
 def query_topographic_stats(coords: List[List[List[List[float]]]]) -> TopographicStats:
     """

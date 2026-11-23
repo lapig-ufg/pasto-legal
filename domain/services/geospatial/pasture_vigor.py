@@ -2,7 +2,8 @@ import math
 import time
 import traceback
 
-from typing import Dict, List, Tuple
+from dataclasses import dataclass
+from typing import List, Literal, Optional, Tuple
 
 import ee
 import numpy as np
@@ -11,19 +12,24 @@ import xarray as xr
 
 from semente.logging import log_error, log_info, log_warning
 
+from domain.schemas.property_stats import Value, VigorData, VigorStats
 from domain.services.geospatial import raster_layers, raster_render
 from domain.services.geospatial.gee import _FEATURE_BUFFER, _IMAGE_DIMENSION
+from domain.services.geospatial.mapbiomas import (
+    CLASSIFICATION_ASSET,
+    PASTURE_CLASS,
+    VIGOR_ASSET,
+    VIGOR_ASSET_BASE_YEAR,
+    VIGOR_CLASSES,
+    latest_asset_year,
+    latest_classification_year,
+)
 from domain.services.geospatial.pasture_cache import (
     dataset_exists,
     load_dataset,
     save_cache,
 )
-from domain.services.geospatial.pasture_classification import (
-    _MAPBIOMAS_ASSET,
-    _PASTURE_CLASS,
-    _classify,
-    _latest_mapbiomas_year,
-)
+from domain.services.geospatial.pasture_classification import _classify_cached
 from domain.services.geospatial.xee_grid import (
     _native_crs,
     _utm_grid,
@@ -32,8 +38,6 @@ from domain.services.geospatial.xee_grid import (
     source_grid_from_dataset,
 )
 
-
-_MAPBIOMAS_VIGOR_ASSET = "projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_vigor_v3"
 
 _S2_ASSET = "COPERNICUS/S2_SR_HARMONIZED"
 
@@ -54,12 +58,6 @@ _CACHE_VERSION = "v2"
 # MapBiomas presentes) — estimativa grosseira p/ pastagem no Cerrado, não substitui
 # a metodologia oficial do MapBiomas.
 _FALLBACK_AMPLITUDE_THRESHOLDS = [0.08, 0.18]
-
-_VIGOR_DICT = {
-    1: "Baixo: pastagens com baixo vigor vegetativo e indícios de degradação severa, potencialmente biológica.",
-    2: "Médio: pastagens com médio vigor vegativo e indícios de degração moderada.",
-    3: "Alto: pastagens com alto vigor vegetativo.",
-}
 
 _VIGOR_PALETTE = ["#d7191c", "#fdae61", "#1a9641"]
 
@@ -177,7 +175,7 @@ def _calibrate_thresholds(
     return best_thresholds, best_order, best_metric_name, "calibrated"
 
 
-def _area_by_vigor_class(vigor_class: np.ndarray) -> Dict[str, float]:
+def _area_by_vigor_class(vigor_class: np.ndarray) -> dict[str, float]:
     valid = vigor_class[~np.isnan(vigor_class)]
     pixel_area_ha = (_SCALE ** 2) / 1e4
 
@@ -185,7 +183,7 @@ def _area_by_vigor_class(vigor_class: np.ndarray) -> Dict[str, float]:
     for class_id in (1, 2, 3):
         count = int((valid == class_id).sum())
         if count:
-            result[_VIGOR_DICT[class_id]] = round(count * pixel_area_ha, 4)
+            result[VIGOR_CLASSES[class_id]] = round(count * pixel_area_ha, 4)
     return result
 
 
@@ -219,16 +217,156 @@ def _render_vigor_image(
     )
 
 
-def estimate_pasture_vigor_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int = None, train_year: int = None) -> Dict:
-    """
-    Vigor de pastagem on-the-fly: heurística baseada em regressão harmônica sobre
-    NDVI (Sentinel-2 + Cloud Score+), calibrada por propriedade contra o asset
-    estático do MapBiomas (`pasture_vigor_v3`) no ano de treino, e aplicada à
-    classificação de pastagem on-the-fly do ano seguinte.
+@dataclass
+class VigorAnalysis:
+    """Pasture vigor result, from either source."""
 
-    IMPORTANTE: é uma estimativa própria, não a metodologia oficial do MapBiomas —
-    quando não há pixels suficientes por classe pra calibrar dentro da propriedade,
-    cai num limiar fixo aproximado (`calibration_status == "fallback"`).
+    stats: VigorStats
+    image: Optional["PIL.Image.Image"]
+    pred_year: int
+    train_year: Optional[int]
+    source: Literal["on_the_fly", "mapbiomas"]
+    cached: bool = False
+    calibration_metric: Optional[str] = None
+    calibration_status: Optional[str] = None
+
+
+def _vigor_stats_from_areas(area_by_class: dict[str, float], observation_year: int) -> VigorStats:
+    return VigorStats(
+        observation_year=observation_year,
+        data=[
+            VigorData(vigor=vigor_label, amount=Value(value=area, unity="hectares (ha)"))
+            for vigor_label, area in area_by_class.items()
+        ],
+    )
+
+
+def get_pasture_vigor(roi: ee.Geometry, year: int, month: int = None) -> VigorStats:
+    """
+    Static pasture vigor (ha per class) via MapBiomas Collection 10.
+
+    Classes: 1 = Low (severe degradation, potentially biological),
+    2 = Medium (moderate degradation), 3 = High (high vegetative vigor).
+
+    Args:
+        roi (ee.Geometry): Region of interest (farm polygon).
+        year (int): Reference year of the mapping.
+        month (int, optional): Ignored; kept for signature compatibility.
+
+    Returns:
+        VigorStats: Observation year and list of areas per vigor class (ha).
+    """
+    target_year = max(
+        VIGOR_ASSET_BASE_YEAR,
+        min(year, latest_asset_year(VIGOR_ASSET, base_year=VIGOR_ASSET_BASE_YEAR)),
+    )
+    vigor_asset = ee.Image(VIGOR_ASSET)
+    last_vigor = vigor_asset.select(target_year - VIGOR_ASSET_BASE_YEAR)
+
+    area_img = ee.Image.pixelArea().divide(10000).addBands(last_vigor)
+    stats = area_img.reduceRegion(
+        reducer=ee.Reducer.sum().group(groupField=1, groupName="class"),
+        geometry=roi,
+        scale=30,
+        maxPixels=1e13,
+    )
+
+    groups_info = stats.get("groups").getInfo()
+    vigor_data_list: list[VigorData] = []
+
+    if groups_info:
+        for group in groups_info:
+            class_id = int(group["class"])
+            vigor_name = VIGOR_CLASSES.get(class_id)
+            if vigor_name is None:
+                continue
+            area_value = round(float(group["sum"]), 2)
+            vigor_data_list.append(
+                VigorData(vigor=vigor_name, amount=Value(value=area_value, unity="hectares (ha)"))
+            )
+
+    return VigorStats(observation_year=target_year, data=vigor_data_list)
+
+
+def retrieve_pasture_vigor_image(
+    coords: List[List[List[List[float]]]],
+    year: int = None,
+    feature_key: Optional[str] = None,
+) -> PIL.Image:
+    """
+    Static MapBiomas vigor map over the satellite base. Used as the fallback
+    when the estimated vigor is unavailable.
+    """
+    try:
+        class_colors = {1: "#d7191c", 2: "#fdae61", 3: "#1a9641"}
+        class_labels = {1: "Baixo", 2: "Médio", 3: "Alto"}
+
+        roi = ee.Geometry.MultiPolygon(coords)
+        feature_key = feature_key or raster_layers.feature_key_from_coords(coords)
+        grid = grid_for_roi(roi, scale=_SCALE, buffer_m=_FEATURE_BUFFER)
+
+        latest_year = latest_asset_year(VIGOR_ASSET, base_year=VIGOR_ASSET_BASE_YEAR)
+        target_year = max(
+            VIGOR_ASSET_BASE_YEAR, min(year or latest_year, latest_year)
+        )
+
+        def _vigor_image() -> ee.Image:
+            return (
+                ee.Image(VIGOR_ASSET)
+                .select(target_year - VIGOR_ASSET_BASE_YEAR)
+                .rename("vigor_class")
+            )
+
+        key = raster_layers.layer_cache_key([target_year], grid, "v1")
+        values, grid = raster_layers.get_layer_array(
+            roi=roi,
+            feature_key=feature_key,
+            kind="vigor_static",
+            key=key,
+            image_factory=_vigor_image,
+            band_name="vigor_class",
+            grid=grid,
+            scale=10,
+        )
+
+        values = np.nan_to_num(values, nan=0).astype(int)
+        base_rgb = raster_layers.get_base_raster(
+            roi=roi, feature_key=feature_key, year=target_year, grid=grid
+        )
+        return raster_render.render_discrete_map(
+            base_rgb=base_rgb,
+            values=values,
+            coords=coords,
+            grid=grid,
+            class_colors=class_colors,
+            class_labels=class_labels,
+            title="Vigor da Pastagem",
+            dimension=_IMAGE_DIMENSION,
+        )
+
+    except ee.EEException as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Falha ao processar as coordenadas no satélite. "
+            f"Verifique se as coordenadas da área estão corretas. Detalhes: {str(error)}"
+        )
+    except Exception as error:
+        log_error(traceback.format_exc())
+        raise RuntimeError(
+            f"Ocorreu um erro inesperado ao gerar a imagem da fazenda. Detalhes: {str(error)}"
+        )
+
+
+def estimate_pasture_vigor(roi: ee.Geometry, car_code: str, pred_year: int = None, train_year: int = None) -> VigorAnalysis:
+    """
+    Estimated pasture vigor: harmonic regression over NDVI (Sentinel-2 +
+    Cloud Score+), calibrated per property against the static MapBiomas vigor
+    asset at the training year, then applied to the next year's pasture
+    classification.
+
+    IMPORTANT: this is our own heuristic, not MapBiomas' official methodology.
+    When there are not enough pixels per class to calibrate, it falls back to
+    fixed thresholds (`calibration_status == "fallback"`).
 
     Args:
         roi (ee.Geometry): Geometria do imóvel (MultiPolygon).
@@ -237,11 +375,11 @@ def estimate_pasture_vigor_on_the_fly(roi: ee.Geometry, car_code: str, pred_year
         train_year (int, optional): Ano-base (calibração). Default: ano mais recente disponível no MapBiomas.
 
     Returns:
-        Dict: {"area_by_vigor_class_ha", "calibration_metric", "calibration_status",
-        "pred_year", "train_year", "cached", "imagem"}
+        VigorAnalysis: stats, map image, reference years, cache status and
+        calibration metadata.
     """
     try:
-        train_year = train_year or _latest_mapbiomas_year()
+        train_year = train_year or latest_classification_year()
         pred_year = pred_year or (train_year + 1)
         cache_key = f"{pred_year}_{_CACHE_VERSION}"
 
@@ -258,26 +396,35 @@ def estimate_pasture_vigor_on_the_fly(roi: ee.Geometry, car_code: str, pred_year
                 coords=roi.coordinates().getInfo(),
             )
             log_info(f"[{car_code}] pasture vigor cache hit ({pred_year})")
-            return {
-                "imagem": image,
-                "area_by_vigor_class_ha": _area_by_vigor_class(vigor_class),
-                "calibration_metric": dataset.attrs.get("calibration_metric"),
-                "calibration_status": dataset.attrs.get("calibration_status"),
-                "pred_year": pred_year,
-                "train_year": train_year,
-                "cached": True,
-            }
+            return VigorAnalysis(
+                stats=_vigor_stats_from_areas(_area_by_vigor_class(vigor_class), pred_year),
+                image=image,
+                pred_year=pred_year,
+                train_year=train_year,
+                source="on_the_fly",
+                cached=True,
+                calibration_metric=dataset.attrs.get("calibration_metric"),
+                calibration_status=dataset.attrs.get("calibration_status"),
+            )
 
         start = time.perf_counter()
 
-        classified, embedding_check = _classify(roi=roi, train_year=train_year, pred_year=pred_year)
+        classified, embedding_check = _classify_cached(
+            roi=roi, car_code=car_code, train_year=train_year, pred_year=pred_year
+        )
         crs = _native_crs(embedding_check)
         transform, width, height = _utm_grid(roi=roi, crs=crs, scale=_SCALE)
 
         was_pasture_train = (
-            ee.Image(_MAPBIOMAS_ASSET).select(f"classification_{train_year}").eq(_PASTURE_CLASS)
+            ee.Image(CLASSIFICATION_ASSET)
+            .select(f"classification_{train_year}")
+            .eq(PASTURE_CLASS)
         )
-        static_vigor_train = ee.Image(_MAPBIOMAS_VIGOR_ASSET).select(train_year - 2000).rename("static_class")
+        static_vigor_train = (
+            ee.Image(VIGOR_ASSET)
+            .select(train_year - VIGOR_ASSET_BASE_YEAR)
+            .rename("static_class")
+        )
         metrics_train = _vigor_metrics_image(roi=roi, year=train_year)
 
         calibration_image = (
@@ -333,19 +480,20 @@ def estimate_pasture_vigor_on_the_fly(roi: ee.Geometry, car_code: str, pred_year
         save_cache(car_code, cache_key, dataset, image, kind="vigor")
 
         log_info(
-            f"[{car_code}] estimate_pasture_vigor_on_the_fly {pred_year}: "
+            f"[{car_code}] estimate_pasture_vigor {pred_year}: "
             f"calibração={calibration_status}/{metric_name} em {time.perf_counter() - start:.2f}s"
         )
 
-        return {
-            "imagem": image,
-            "area_by_vigor_class_ha": _area_by_vigor_class(vigor_class),
-            "calibration_metric": metric_name,
-            "calibration_status": calibration_status,
-            "pred_year": pred_year,
-            "train_year": train_year,
-            "cached": False,
-        }
+        return VigorAnalysis(
+            stats=_vigor_stats_from_areas(_area_by_vigor_class(vigor_class), pred_year),
+            image=image,
+            pred_year=pred_year,
+            train_year=train_year,
+            source="on_the_fly",
+            cached=False,
+            calibration_metric=metric_name,
+            calibration_status=calibration_status,
+        )
 
     except ValueError as error:
         log_error(traceback.format_exc())
@@ -356,3 +504,36 @@ def estimate_pasture_vigor_on_the_fly(roi: ee.Geometry, car_code: str, pred_year
     except Exception as error:
         log_error(traceback.format_exc())
         raise RuntimeError(f"[{car_code}] Erro inesperado ao estimar vigor da pastagem: {error}")
+
+
+def analyze_pasture_vigor(roi: ee.Geometry, car_code: str, year: int = None) -> VigorAnalysis:
+    """Resolve the best available pasture vigor (estimated → MapBiomas)."""
+    try:
+        return estimate_pasture_vigor(roi=roi, car_code=car_code, pred_year=year)
+    except Exception as error:
+        log_warning(
+            f"[{car_code}] vigor estimado indisponível ({error}); "
+            "usando o mapeamento estático do MapBiomas"
+        )
+        latest_year = latest_asset_year(VIGOR_ASSET, base_year=VIGOR_ASSET_BASE_YEAR)
+        target_year = max(
+            VIGOR_ASSET_BASE_YEAR, min(year or latest_year, latest_year)
+        )
+        stats = get_pasture_vigor(roi=roi, year=target_year)
+        try:
+            image = retrieve_pasture_vigor_image(
+                coords=roi.coordinates().getInfo(),
+                year=target_year,
+                feature_key=car_code,
+            )
+        except Exception as image_error:
+            log_warning(f"[{car_code}] mapa estático de vigor indisponível: {image_error}")
+            image = None
+        return VigorAnalysis(
+            stats=stats,
+            image=image,
+            pred_year=target_year,
+            train_year=None,
+            source="mapbiomas",
+            cached=False,
+        )

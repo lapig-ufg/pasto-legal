@@ -17,20 +17,20 @@ from domain.services.video import gif_bytes_to_mp4_bytes
 from domain.services.geospatial.image import append_continuous_colorbar, draw_corner_label
 from domain.services.geospatial.gee import (
     BIOMASS_VIDEO_PALETTE,
+    get_biomass,
     retrieve_feature_images,
     retrieve_gpw_biomass_image,
     retrieve_t2g_biomass_image,
     retrieve_t2g_biomass_video,
-    retrieve_pasture_vigor_image,
     retrieve_feature_soil_texture_image,
     get_soil_texture_stats,
-    query_pasture_statistics,
     query_topographic_stats,
     )
-from domain.services.geospatial.pasture_classification import classify_pasture_on_the_fly, get_on_the_fly_pasture_mask
+from domain.services.geospatial.land_use import get_land_use_land_cover
+from domain.services.geospatial.pasture_classification import analyze_pasture_classification
 from domain.services.geospatial.pasture_biomass import estimate_pasture_biomass_history
-from domain.services.geospatial.pasture_age import estimate_pasture_age_on_the_fly
-from domain.services.geospatial.pasture_vigor import estimate_pasture_vigor_on_the_fly
+from domain.services.geospatial.pasture_age import analyze_pasture_age
+from domain.services.geospatial.pasture_vigor import analyze_pasture_vigor
 from domain.services.geospatial.season_forecast import get_rain_onset, get_dry_season_onset
 from domain.services.geospatial.climate_outlook import estimate_monthly_precipitation_outlook, estimate_temperature_outlook
 from domain.services.boletim_scripts import build_boletim_chat_summary, build_boletim_story, generate_boletim_diagnostic
@@ -397,13 +397,9 @@ def generate_biomass_video(
 @tool(tool_hooks=[_require_registered_property])
 def generate_pasture_classification_image(run_context: RunContext, feature_id: str) -> ToolResult:
     """
-    Gera o mapa de classificação de pastagem (pasto x não-pasto) da propriedade rural,
-    calculado sob demanda ("on-the-fly") para o ano mais recente disponível.
-
-    Diferente de `get_pasture_stats` (que usa o mapeamento oficial do MapBiomas, sempre
-    com pelo menos um ano de atraso), esta ferramenta classifica a propriedade em tempo real
-    usando o ano de satélite mais recente disponível, útil quando o usuário quer o mapeamento
-    de uso do solo mais atualizado possível.
+    Gera o mapa de classificação de pastagem (pasto x não-pasto) da propriedade
+    rural para o ano mais recente disponível. Usa a classificação mais atual e,
+    quando ela não pode ser calculada, o mapeamento oficial do MapBiomas.
 
     params:
         feature_id (str): Identificador (id) da feição registrada.
@@ -419,16 +415,26 @@ def generate_pasture_classification_image(run_context: RunContext, feature_id: s
             return ToolResult(content=_feature_not_found(feature_id))
 
         roi = ee.Geometry.MultiPolygon(selected_property.get_coords())
-        result = classify_pasture_on_the_fly(roi=roi, car_code=_cache_key_for(selected_property))
+        result = analyze_pasture_classification(
+            roi=roi, car_code=_cache_key_for(selected_property)
+        )
 
         buffer = BytesIO()
-        result["imagem"].save(buffer, format="PNG")
+        result.image.save(buffer, format="PNG")
 
-        log_debug(f"generate_pasture_classification_image: classificação gerada ({selected_property.id}, {result['area_pasto_ha']} ha)")
+        source_note = (
+            "estimativa mais recente"
+            if result.source == "on_the_fly"
+            else "mapeamento oficial do MapBiomas"
+        )
+        log_debug(
+            f"generate_pasture_classification_image: classificação gerada "
+            f"({selected_property.id}, {result.area_pasto_ha} ha, {result.source})"
+        )
         return ToolResult(
             content=(
-                f"Área de pastagem classificada (ano {result['pred_year']}): "
-                f"{result['area_pasto_ha']} hectares. Legenda: Verde (Pastagem)."
+                f"Área de pastagem classificada (ano {result.pred_year}, {source_note}): "
+                f"{result.area_pasto_ha} hectares. Legenda: Verde (Pastagem)."
             ),
             images=[Image(content=buffer.getvalue())]
         )
@@ -481,7 +487,11 @@ def generate_soil_texture_image(run_context: RunContext, feature_id: str) -> Too
 @tool(tool_hooks=[_require_registered_property])
 def get_pasture_stats(run_context: RunContext, feature_id: str):
     """
-    Recupera estatísticas de bimoassa, vigor vegetativo, idade da pastagem e classificação de uso do solo mais recentes.
+    Recupera estatísticas de biomassa, vigor vegetativo, idade da pastagem e
+    classificação de uso do solo para a referência mais recente disponível. Cada
+    indicador usa a estimativa mais atual e, quando ela não pode ser calculada,
+    o mapeamento oficial do MapBiomas.
+
     Use esta ferramenta quando o usuário perguntar sobre:
     - Saúde ou qualidade da pastagem (degradação, vigor).
     - Quantidade de biomassa disponível.
@@ -502,12 +512,22 @@ def get_pasture_stats(run_context: RunContext, feature_id: str):
             return ToolResult(content=_feature_not_found(feature_id))
 
         today = datetime.date.today()
+        coords = selected_property.get_coords()
+        roi = ee.Geometry.MultiPolygon(coords)
+        feature_key = _cache_key_for(selected_property)
 
-        new_pasture_stats: PastureStats = query_pasture_statistics(
-            coords=selected_property.get_coords(),
-            month=today.month,
-            year=today.year,
-            feature_key=_cache_key_for(selected_property),
+        biomass_stats = get_biomass(
+            roi, today.month, today.year, feature_key=feature_key
+        )
+        age_analysis = analyze_pasture_age(roi=roi, car_code=feature_key)
+        vigor_analysis = analyze_pasture_vigor(roi=roi, car_code=feature_key)
+        lulc_stats = get_land_use_land_cover(roi, today.year, today.month)
+
+        new_pasture_stats = PastureStats(
+            biomass_stats=biomass_stats,
+            age_stats=age_analysis.stats,
+            vigor_stats=vigor_analysis.stats,
+            lulc_stats=lulc_stats,
         )
 
         log_debug(f"get_pasture_stats: stats recuperadas ({selected_property.id})")
@@ -551,7 +571,7 @@ def _pil_to_png_bytes(img) -> bytes:
 
 def _cache_key_for(selected_property: Feature) -> str:
     """
-    Chave estável pros caches de `classify_pasture_on_the_fly`/`estimate_pasture_*`
+    Chave estável pros caches de `classify_pasture`/`estimate_pasture_*`
     (`app/services/geospatial/pasture_cache.py`) — usa o código CAR real
     (imutável, único por propriedade) em vez de `selected_property.id`
     (o NOME escolhido pelo usuário, mutável e nada único: duas propriedades
@@ -560,11 +580,6 @@ def _cache_key_for(selected_property: Feature) -> str:
     feições sem CAR (ex.: buffer_area registrada por coordenada/URL).
     """
     return selected_property.get_metadata("car_code") or selected_property.id
-
-
-def _pasture_mask(selected_property: Feature):
-    """Máscara on-the-fly da biomassa Time2Graze; None cai pro mapa GPW."""
-    return get_on_the_fly_pasture_mask(ee.Geometry.MultiPolygon(selected_property.get_coords()))
 
 
 def _safe_fetch_image(label: str, fetch_fn):
@@ -612,19 +627,39 @@ def generate_property_boletim(run_context: RunContext, feature_id: str) -> ToolR
         today = datetime.date.today()
 
         feature_key = _cache_key_for(selected_property)
-        pasture_stats = query_pasture_statistics(
-            coords=coords,
-            month=today.month,
-            year=today.year,
-            feature_key=feature_key,
+        roi = ee.Geometry.MultiPolygon(coords)
+
+        biomass_stats = get_biomass(
+            roi, today.month, today.year, feature_key=feature_key
         )
-        stats = PropertyStats(car_code=selected_property.id or selected_property.get_metadata("car_code") or "", list_pasture_stats=[pasture_stats])
+        age_analysis = _safe_fetch_image(
+            "idade da pastagem",
+            lambda: analyze_pasture_age(roi=roi, car_code=feature_key),
+        )
+        vigor_analysis = _safe_fetch_image(
+            "vigor da pastagem",
+            lambda: analyze_pasture_vigor(roi=roi, car_code=feature_key),
+        )
+        lulc_stats = _safe_fetch_image(
+            "uso e cobertura do solo",
+            lambda: get_land_use_land_cover(roi, today.year, today.month),
+        )
+
+        pasture_stats = PastureStats(
+            biomass_stats=biomass_stats,
+            age_stats=age_analysis.stats if age_analysis else None,
+            vigor_stats=vigor_analysis.stats if vigor_analysis else None,
+            lulc_stats=lulc_stats,
+        )
+        car_code = selected_property.get_metadata("car_code") or selected_property.id or ""
+        stats = PropertyStats(car_code=car_code, list_pasture_stats=[pasture_stats])
 
         location_image = retrieve_feature_images(coords)[0]
 
-        roi = ee.Geometry.MultiPolygon(coords)
-        pasture_result = classify_pasture_on_the_fly(roi=roi, car_code=_cache_key_for(selected_property))
-        pasture_map_image = pasture_result["imagem"]
+        pasture_result = analyze_pasture_classification(
+            roi=roi, car_code=feature_key
+        )
+        pasture_map_image = pasture_result.image
 
         def _fetch_biomass_image():
             result = retrieve_t2g_biomass_image(
@@ -636,10 +671,7 @@ def generate_property_boletim(run_context: RunContext, feature_id: str) -> ToolR
             return retrieve_gpw_biomass_image(coords, feature_key=feature_key)[0]
 
         biomass_map_image = _safe_fetch_image("mapa de biomassa", _fetch_biomass_image)
-        vigor_map_image = _safe_fetch_image(
-            "mapa de vigor",
-            lambda: retrieve_pasture_vigor_image(coords, feature_key=feature_key),
-        )
+        vigor_map_image = vigor_analysis.image if vigor_analysis else None
         soil_map_image = _safe_fetch_image(
             "mapa de textura do solo",
             lambda: retrieve_feature_soil_texture_image(coords, feature_key=feature_key),
@@ -728,7 +760,9 @@ def get_pasture_biomass_history(run_context: RunContext, feature_id: str) -> Too
             return ToolResult(content=_feature_not_found(feature_id))
 
         roi = ee.Geometry.MultiPolygon(selected_property.get_coords())
-        result = estimate_pasture_biomass_history(roi=roi, car_code=selected_property.id)
+        result = estimate_pasture_biomass_history(
+            roi=roi, car_code=_cache_key_for(selected_property)
+        )
 
         lines = [
             f"- {year}: {value} t/ha" if not math.isnan(value) else f"- {year}: sem pastagem mapeada"
@@ -752,19 +786,19 @@ def get_pasture_biomass_history(run_context: RunContext, feature_id: str) -> Too
 
 
 @tool(tool_hooks=[_require_registered_property])
-def get_pasture_age_on_the_fly(run_context: RunContext, feature_id: str) -> ToolResult:
+def get_pasture_age(run_context: RunContext, feature_id: str) -> ToolResult:
     """
-    Estima a idade da pastagem (em anos) on-the-fly para o ano mais recente possível,
-    combinando a idade do MapBiomas no último ano disponível com a classificação de
-    pastagem on-the-fly do ano seguinte (áreas que continuam pastagem ganham +1 ano;
-    pastagem nova começa em 1 ano). Gera um mapa colorido por faixa de idade — inclui
-    uma classe "≥40 (idade real indeterminada)" pra pixels cujo dado de origem é
-    censurado (pastagem já madura antes do início da série, idade real desconhecida).
+    Retorna a idade da pastagem (em anos) para a referência mais recente
+    disponível. Usa a estimativa mais atual e, quando ela não pode ser
+    calculada, o mapeamento oficial do MapBiomas.
 
-    Use quando o usuário perguntar pela idade da pastagem e quiser o dado mais atual
-    possível, não travado no último ano do MapBiomas. Resolução nativa do asset de
-    idade é 30m, reamostrada pra grade de 10m — não inventa precisão espacial por
-    talhão maior que a da fonte.
+    A idade é dividida em faixas (1-10, 10-20, 20-30, 30-40 e ≥40 anos) e
+    inclui uma classe "≥40 (idade real indeterminada)" para pixels cujo dado
+    de origem é censurado (pastagem já madura antes do início da série).
+
+    Use quando o usuário perguntar pela idade da pastagem. Resolução nativa do
+    asset de idade é 30m, reamostrada pra grade de 10m — não inventa precisão
+    espacial por talhão maior que a da fonte.
 
     params:
         feature_id (str): Identificador (id) da feição registrada.
@@ -772,7 +806,7 @@ def get_pasture_age_on_the_fly(run_context: RunContext, feature_id: str) -> Tool
     Return:
         ToolResult: Área (ha) por faixa de idade e um mapa PNG da propriedade.
     """
-    log_debug(f"get_pasture_age_on_the_fly: feature_id={feature_id}")
+    log_debug(f"get_pasture_age: feature_id={feature_id}")
     try:
         selected_property = resolve_feature(run_context, feature_id)
         if selected_property is None:
@@ -780,38 +814,49 @@ def get_pasture_age_on_the_fly(run_context: RunContext, feature_id: str) -> Tool
             return ToolResult(content=_feature_not_found(feature_id))
 
         roi = ee.Geometry.MultiPolygon(selected_property.get_coords())
-        result = estimate_pasture_age_on_the_fly(roi=roi, car_code=selected_property.id)
+        result = analyze_pasture_age(
+            roi=roi, car_code=_cache_key_for(selected_property)
+        )
 
-        lines = [f"- {age_range} anos: {area} ha" for age_range, area in sorted(result["area_by_age_class_ha"].items())]
+        lines = [
+            f"- {item.age} anos: {item.amount.value} ha"
+            for item in result.stats.data
+        ]
+        source_note = (
+            "estimativa mais recente"
+            if result.source == "on_the_fly"
+            else "mapeamento oficial do MapBiomas"
+        )
         content = (
-            f"Idade da pastagem estimada para {result['pred_year']} "
-            f"(base MapBiomas {result['train_year']} + classificação on-the-fly):\n"
+            f"Idade da pastagem para {result.pred_year} ({source_note}):\n"
             + ("\n".join(lines) if lines else "Nenhuma área de pastagem mapeada.")
         )
 
-        buffer = BytesIO()
-        result["imagem"].save(buffer, format="PNG")
+        images = []
+        if result.image is not None:
+            buffer = BytesIO()
+            result.image.save(buffer, format="PNG")
+            images.append(Image(content=buffer.getvalue()))
 
-        log_debug(f"get_pasture_age_on_the_fly: idade gerada ({selected_property.id})")
-        return ToolResult(content=content, images=[Image(content=buffer.getvalue())])
+        log_debug(f"get_pasture_age: idade gerada ({selected_property.id}, {result.source})")
+        return ToolResult(content=content, images=images or None)
 
     except Exception as e:
-        log_error(f"get_pasture_age_on_the_fly: {e}")
+        log_error(f"get_pasture_age: {e}")
         return ToolResult(content=_unexpected_error(e))
 
 
 @tool(tool_hooks=[_require_registered_property])
-def get_pasture_vigor_on_the_fly(run_context: RunContext, feature_id: str) -> ToolResult:
+def get_pasture_vigor(run_context: RunContext, feature_id: str) -> ToolResult:
     """
-    Estima o vigor da pastagem (Baixo/Médio/Alto) on-the-fly para o ano mais recente
-    possível, usando regressão harmônica sobre NDVI (Sentinel-2 + Cloud Score+)
-    calibrada, dentro da própria propriedade, contra o asset estático de vigor do
-    MapBiomas no último ano disponível. É uma estimativa heurística própria, não a
-    metodologia oficial do MapBiomas — avise o usuário disso ao entregar o resultado,
-    especialmente se a calibração cair no modo de limiar fixo (fallback).
+    Retorna o vigor da pastagem (Baixo/Médio/Alto) para a referência mais
+    recente disponível. Usa a estimativa mais atual e, quando ela não pode ser
+    calculada, o mapeamento oficial do MapBiomas.
 
-    Use quando o usuário perguntar pelo vigor da pastagem e quiser o dado mais atual
-    possível, não travado no último ano do MapBiomas.
+    A estimativa própria usa regressão harmônica sobre NDVI (Sentinel-2 +
+    Cloud Score+) calibrada contra o asset estático de vigor do MapBiomas. Não é
+    a metodologia oficial do MapBiomas — avise o usuário disso ao entregar o
+    resultado, especialmente se a calibração cair no modo de limiar fixo.
 
     params:
         feature_id (str): Identificador (id) da feição registrada.
@@ -819,7 +864,7 @@ def get_pasture_vigor_on_the_fly(run_context: RunContext, feature_id: str) -> To
     Return:
         ToolResult: Área (ha) por classe de vigor e um mapa PNG da propriedade.
     """
-    log_debug(f"get_pasture_vigor_on_the_fly: feature_id={feature_id}")
+    log_debug(f"get_pasture_vigor: feature_id={feature_id}")
     try:
         selected_property = resolve_feature(run_context, feature_id)
         if selected_property is None:
@@ -827,27 +872,41 @@ def get_pasture_vigor_on_the_fly(run_context: RunContext, feature_id: str) -> To
             return ToolResult(content=_feature_not_found(feature_id))
 
         roi = ee.Geometry.MultiPolygon(selected_property.get_coords())
-        result = estimate_pasture_vigor_on_the_fly(roi=roi, car_code=selected_property.id)
-
-        lines = [f"- {vigor_label}: {area} ha" for vigor_label, area in result["area_by_vigor_class_ha"].items()]
-        disclaimer = (
-            "\n\nAVISO: estimativa heurística própria (não é a metodologia oficial do MapBiomas)."
-            if result["calibration_status"] == "fallback"
-            else "\n\nEstimativa heurística própria, calibrada com o dado oficial do MapBiomas para esta propriedade."
+        result = analyze_pasture_vigor(
+            roi=roi, car_code=_cache_key_for(selected_property)
         )
+
+        lines = [
+            f"- {item.vigor}: {item.amount.value} ha"
+            for item in result.stats.data
+        ]
+
+        if result.source == "mapbiomas":
+            source_note = "mapeamento oficial do MapBiomas"
+            disclaimer = ""
+        else:
+            source_note = "estimativa mais recente"
+            disclaimer = (
+                "\n\nAVISO: estimativa heurística própria (não é a metodologia oficial do MapBiomas)."
+                if result.calibration_status == "fallback"
+                else "\n\nEstimativa heurística própria, calibrada com o dado oficial do MapBiomas para esta propriedade."
+            )
+
         content = (
-            f"Vigor da pastagem estimado para {result['pred_year']} "
-            f"(base MapBiomas {result['train_year']} + classificação on-the-fly):\n"
+            f"Vigor da pastagem para {result.pred_year} ({source_note}):\n"
             + ("\n".join(lines) if lines else "Nenhuma área de pastagem mapeada.")
             + disclaimer
         )
 
-        buffer = BytesIO()
-        result["imagem"].save(buffer, format="PNG")
+        images = []
+        if result.image is not None:
+            buffer = BytesIO()
+            result.image.save(buffer, format="PNG")
+            images.append(Image(content=buffer.getvalue()))
 
-        log_debug(f"get_pasture_vigor_on_the_fly: vigor gerado ({selected_property.id})")
-        return ToolResult(content=content, images=[Image(content=buffer.getvalue())])
+        log_debug(f"get_pasture_vigor: vigor gerado ({selected_property.id}, {result.source})")
+        return ToolResult(content=content, images=images or None)
 
     except Exception as e:
-        log_error(f"get_pasture_vigor_on_the_fly: {e}")
+        log_error(f"get_pasture_vigor: {e}")
         return ToolResult(content=_unexpected_error(e))

@@ -1,17 +1,23 @@
 import time
 import traceback
 
-from typing import Dict, Optional, Tuple
+from dataclasses import dataclass
+from typing import Literal, Optional, Tuple
 
 import ee
 import numpy as np
 import PIL
 import xarray as xr
 
-from semente.logging import log_error, log_info
+from semente.logging import log_error, log_info, log_warning
 
 from domain.services.geospatial import raster_layers, raster_render
 from domain.services.geospatial.gee import _FEATURE_BUFFER, _IMAGE_DIMENSION
+from domain.services.geospatial.mapbiomas import (
+    CLASSIFICATION_ASSET,
+    PASTURE_CLASS,
+    latest_classification_year,
+)
 from domain.services.geospatial.pasture_cache import (
     dataset_exists,
     load_dataset,
@@ -27,9 +33,6 @@ from domain.services.geospatial.xee_grid import (
 
 
 _EMBEDDING_ASSET = "GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL"
-_MAPBIOMAS_ASSET = "projects/mapbiomas-public/assets/brazil/lulc_10m/collection3/mapbiomas_10m_collection3_integration_v1"
-
-_PASTURE_CLASS = 15
 
 _SAMPLE_BUFFER_DISTANCE = 3000
 
@@ -85,9 +88,9 @@ def _samples(roi: ee.Geometry, train_year: int) -> Tuple[ee.FeatureCollection, e
         ("pasto" band + embedding bands) and the list of embedding band names.
     """
     label = (
-        ee.Image(_MAPBIOMAS_ASSET)
+        ee.Image(CLASSIFICATION_ASSET)
         .select(f"classification_{train_year}")
-        .eq(_PASTURE_CLASS)
+        .eq(PASTURE_CLASS)
         .rename("pasto")
     )
     embedding = _embedding(roi=roi, year=train_year)
@@ -102,18 +105,6 @@ def _samples(roi: ee.Geometry, train_year: int) -> Tuple[ee.FeatureCollection, e
         geometries=False,
     )
     return feature_collection, embedding.bandNames()
-
-
-def _latest_mapbiomas_year() -> int:
-    """
-    Most recent year with a 'classification_YYYY' band available in the MapBiomas asset.
-
-    Returns:
-        int: Highest year found among the classification bands.
-    """
-    bands = ee.Image(_MAPBIOMAS_ASSET).bandNames().getInfo()
-    years = [int(band.replace("classification_", "")) for band in bands if band.startswith("classification_")]
-    return max(years)
 
 
 def _area_ha_from_pasto(pasto: xr.DataArray) -> float:
@@ -185,7 +176,47 @@ def _classify(roi: ee.Geometry, train_year: int, pred_year: int) -> Tuple[ee.Ima
     return classified, embedding_check
 
 
-def classify_pasture_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int = None, train_year: int = None) -> Dict:
+# Small in-process cache so age, vigor, biomass mask and classification share a
+# single RandomForest training for the same property/year inside one request.
+# Keyed by the stable property key + years (never by the user-facing name).
+_CLASSIFY_CACHE: dict[tuple[str, int, int], Tuple[ee.Image, ee.Image]] = {}
+_CLASSIFY_CACHE_MAX = 8
+
+
+def _classify_cached(
+    roi: ee.Geometry, car_code: str, train_year: int, pred_year: int
+) -> Tuple[ee.Image, ee.Image]:
+    key = (car_code, int(train_year), int(pred_year))
+    if key in _CLASSIFY_CACHE:
+        # Refresh the insertion order (simple LRU).
+        _CLASSIFY_CACHE[key] = _CLASSIFY_CACHE.pop(key)
+        return _CLASSIFY_CACHE[key]
+
+    result = _classify(roi=roi, train_year=train_year, pred_year=pred_year)
+    _CLASSIFY_CACHE[key] = result
+    if len(_CLASSIFY_CACHE) > _CLASSIFY_CACHE_MAX:
+        _CLASSIFY_CACHE.pop(next(iter(_CLASSIFY_CACHE)))
+    return result
+
+
+def clear_classify_cache() -> None:
+    """Clear the in-process classification cache (mainly for tests)."""
+    _CLASSIFY_CACHE.clear()
+
+
+@dataclass
+class ClassificationAnalysis:
+    """Pasture classification result, from either source."""
+
+    area_pasto_ha: float
+    image: "PIL.Image.Image"
+    pred_year: int
+    train_year: Optional[int]
+    source: Literal["on_the_fly", "mapbiomas"]
+    cached: bool = False
+
+
+def classify_pasture(roi: ee.Geometry, car_code: str, pred_year: int = None, train_year: int = None) -> ClassificationAnalysis:
     """
     Classify pasture/not-pasture for the most recent available year and map the property.
 
@@ -204,11 +235,10 @@ def classify_pasture_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int 
         train_year (int, optional): Training year (MapBiomas samples + embedding). Defaults to the most recent year available in MapBiomas.
 
     Returns:
-        Dict: {"area_pasto_ha", "pred_year", "train_year", "cached", "imagem"} —
-        "imagem" is a PIL.Image.Image ready to be sent.
+        ClassificationAnalysis: area, map image, reference years and cache status.
     """
     try:
-        train_year = train_year or _latest_mapbiomas_year()
+        train_year = train_year or latest_classification_year()
         pred_year = pred_year or (train_year + 1)
         cache_key = f"{pred_year}_{_CACHE_VERSION}"
 
@@ -226,17 +256,20 @@ def classify_pasture_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int 
                 coords=roi.coordinates().getInfo(),
             )
             log_info(f"[{car_code}] pasture cache hit ({pred_year}): {area_ha} ha")
-            return {
-                "imagem": image,
-                "area_pasto_ha": round(area_ha, 4),
-                "pred_year": pred_year,
-                "train_year": train_year,
-                "cached": True, 
-            }
+            return ClassificationAnalysis(
+                area_pasto_ha=round(area_ha, 4),
+                image=image,
+                pred_year=pred_year,
+                train_year=train_year,
+                source="on_the_fly",
+                cached=True,
+            )
 
         start = time.perf_counter()
 
-        classified, embedding_check = _classify(roi=roi, train_year=train_year, pred_year=pred_year)
+        classified, embedding_check = _classify_cached(
+            roi=roi, car_code=car_code, train_year=train_year, pred_year=pred_year
+        )
 
         ts = ee.Date(f"{pred_year}-01-01").millis()
         collection = ee.ImageCollection([classified.set("system:time_start", ts)])
@@ -263,15 +296,16 @@ def classify_pasture_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int 
         )
         save_cache(car_code, cache_key, dataset, image)
 
-        log_info(f"[{car_code}] classify_pasture_on_the_fly {pred_year}: {area_ha} ha em {time.perf_counter() - start:.2f}s")
+        log_info(f"[{car_code}] classify_pasture {pred_year}: {area_ha} ha em {time.perf_counter() - start:.2f}s")
 
-        return {
-            "imagem": image,
-            "area_pasto_ha": round(area_ha, 4),
-            "pred_year": pred_year,
-            "train_year": train_year,
-            "cached": False, 
-        }
+        return ClassificationAnalysis(
+            area_pasto_ha=round(area_ha, 4),
+            image=image,
+            pred_year=pred_year,
+            train_year=train_year,
+            source="on_the_fly",
+            cached=False,
+        )
 
     except ValueError as error:
         log_error(traceback.format_exc())
@@ -283,19 +317,79 @@ def classify_pasture_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int 
         log_error(traceback.format_exc())
         raise RuntimeError(f"[{car_code}] Unexpected error while classifying pasture: {error}")
 
-def get_on_the_fly_pasture_mask(roi: ee.Geometry, pred_year: int = None, train_year: int = None) -> Optional[ee.Image]:
-    """
-    Classificação de pastagem on-the-fly (mesmos anos padrão do mapa) como máscara binária
-    lazy, sem download nem cache, para aplicar em outras camadas (ex.: biomassa Time2Graze).
 
-    Returns:
-        Optional[ee.Image]: Máscara (1 = pastagem), ou None se a classificação estiver
-        indisponível — o chamador deve cair pro mapa de pastagem estático do GPW.
+def _static_pasture_image(roi: ee.Geometry, year: int) -> ee.Image:
+    """Binary MapBiomas pasture mask (class 15) for the given year."""
+    return (
+        ee.Image(CLASSIFICATION_ASSET)
+        .select(f"classification_{year}")
+        .eq(PASTURE_CLASS)
+        .rename("pasto")
+        .clip(roi)
+    )
+
+
+def get_pasture_classification_static(roi: ee.Geometry, car_code: str, year: int = None) -> ClassificationAnalysis:
+    """MapBiomas static fallback for the pasture classification."""
+    latest_year = latest_classification_year()
+    target_year = min(year or latest_year, latest_year)
+
+    image_ee = _static_pasture_image(roi, target_year)
+    grid = grid_for_roi(roi, scale=_SCALE, buffer_m=_FEATURE_BUFFER)
+    dataset = raster_layers.download_image_dataset(
+        image_ee, grid, band_name="pasto", dtype="int16"
+    )
+
+    pasto = dataset["pasto"].isel(time=0)
+    area_ha = _area_ha_from_pasto(pasto)
+    source_grid = source_grid_from_dataset(dataset, "pasto")
+    image = _render_classification_image(
+        roi=roi,
+        pasto=pasto,
+        source_grid=source_grid,
+        car_code=car_code,
+        base_year=target_year,
+        coords=roi.coordinates().getInfo(),
+    )
+
+    log_info(f"[{car_code}] pasture classification static fallback ({target_year}): {area_ha} ha")
+    return ClassificationAnalysis(
+        area_pasto_ha=round(area_ha, 4),
+        image=image,
+        pred_year=target_year,
+        train_year=None,
+        source="mapbiomas",
+        cached=False,
+    )
+
+
+def analyze_pasture_classification(roi: ee.Geometry, car_code: str, year: int = None) -> ClassificationAnalysis:
+    """Resolve the best available pasture classification (on-the-fly → MapBiomas)."""
+    try:
+        return classify_pasture(roi=roi, car_code=car_code, pred_year=year)
+    except Exception as error:
+        log_warning(
+            f"[{car_code}] classificação estimada indisponível ({error}); "
+            "usando o mapeamento estático do MapBiomas"
+        )
+        return get_pasture_classification_static(roi=roi, car_code=car_code, year=year)
+
+
+def get_pasture_mask_image(roi: ee.Geometry, pred_year: int = None, train_year: int = None) -> Optional[ee.Image]:
+    """
+    Binary pasture mask (1 = pasture) as a lazy EE image, for applying to other
+    layers (e.g. Time2Graze biomass). Falls back to the MapBiomas map when the
+    on-the-fly classification is unavailable.
     """
     try:
-        train_year = train_year or _latest_mapbiomas_year()
+        train_year = train_year or latest_classification_year()
         classified, _ = _classify(roi=roi, train_year=train_year, pred_year=pred_year or (train_year + 1))
         return classified.gte(1)
     except Exception as error:
-        log_error(f"get_on_the_fly_pasture_mask: classificação indisponível, usando o mapa GPW ({error})")
-        return None
+        log_warning(f"pasture mask image: classificação indisponível ({error}); usando MapBiomas")
+        try:
+            latest_year = latest_classification_year()
+            return _static_pasture_image(roi, min(pred_year or latest_year, latest_year))
+        except Exception as fallback_error:
+            log_error(f"pasture mask image: fallback estático também falhou ({fallback_error})")
+            return None

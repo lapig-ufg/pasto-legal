@@ -191,7 +191,7 @@ def test_pasture_mask_reuses_cached_classification(monkeypatch):
     monkeypatch.setattr(pasture_mask, "load_dataset", lambda *args, **kwargs: dataset)
     monkeypatch.setattr(
         pasture_mask,
-        "_classify",
+        "_classify_cached",
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("must not classify")),
     )
 
@@ -699,7 +699,7 @@ def test_get_pasture_mask_array_cleans_and_caches_the_download(monkeypatch):
 
     monkeypatch.setattr(pasture_mask, "dataset_exists", lambda *a, **k: False)
     monkeypatch.setattr(pasture_mask, "_cached_pasture_array", lambda *a, **k: None)
-    monkeypatch.setattr(pasture_mask, "_classify", lambda **k: (_FakeImage(), None))
+    monkeypatch.setattr(pasture_mask, "_classify_cached", lambda **k: (_FakeImage(), None))
     monkeypatch.setattr(
         pasture_mask, "download_image_dataset", lambda *a, **k: dataset.copy(deep=True)
     )

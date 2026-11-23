@@ -10,11 +10,14 @@ from typing import Optional
 import ee
 import numpy as np
 
+from semente.logging import log_warning
+
 from domain.services.geospatial.pasture_cache import (
     dataset_exists,
     load_dataset,
     save_dataset,
 )
+from domain.services.geospatial.mapbiomas import latest_classification_year
 from domain.services.geospatial.xee_grid import (
     RasterGrid,
     grid_for_roi,
@@ -25,8 +28,8 @@ from domain.services.geospatial.raster_layers import download_image_dataset, lay
 from domain.services.geospatial.raster_render import clean_mask
 from domain.services.geospatial.pasture_classification import (
     _CACHE_VERSION,
-    _classify,
-    _latest_mapbiomas_year,
+    _classify_cached,
+    _static_pasture_image,
 )
 
 _MASK_CACHE_VERSION = "v2"
@@ -49,6 +52,39 @@ def _cached_pasture_array(
         return None
 
 
+def _static_pasture_mask_array(
+    roi: ee.Geometry,
+    feature_key: str,
+    pred_year: int,
+    grid: RasterGrid,
+) -> np.ndarray:
+    """MapBiomas static pasture mask on the canonical grid."""
+    latest_year = latest_classification_year()
+    target_year = min(pred_year, latest_year)
+    mask_key = layer_cache_key([f"static_{target_year}"], grid, _MASK_CACHE_VERSION)
+
+    if dataset_exists(feature_key, mask_key, kind="pasture_mask"):
+        dataset = load_dataset(feature_key, mask_key, kind="pasture_mask")
+        return dataset["pasto"].isel(time=0).values == 1
+
+    mask_image = _static_pasture_image(roi, target_year).rename("pasto")
+    dataset = download_image_dataset(mask_image, grid, band_name="pasto", dtype="int16")
+    cleaned = clean_mask(dataset["pasto"].isel(time=0).values)
+    cleaned_data = cleaned.astype("int16")[np.newaxis, :, :]
+    dataset = dataset.assign(pasto=dataset["pasto"].copy(data=cleaned_data))
+    dataset.attrs.update(
+        {
+            "pred_year": int(target_year),
+            "train_year": None,
+            "grid_hash": grid.hash,
+            "cleaned": True,
+            "source": "mapbiomas",
+        }
+    )
+    save_dataset(feature_key, mask_key, dataset, kind="pasture_mask")
+    return cleaned
+
+
 def get_pasture_mask_array(
     roi: ee.Geometry,
     feature_key: str,
@@ -58,11 +94,13 @@ def get_pasture_mask_array(
 ) -> np.ndarray:
     """Returns the binary pasture mask on the canonical grid.
 
-    Reuses the classification zarr produced by ``classify_pasture_on_the_fly``
-    when available, resampling it to the canonical grid if necessary. Otherwise
-    computes the classification once and caches the mask itself.
+    Reuses the classification zarr produced by ``classify_pasture`` when
+    available, resampling it to the canonical grid if necessary. Otherwise
+    computes the classification once and caches the mask itself. If the
+    on-the-fly classification is unavailable, falls back to the static
+    MapBiomas pasture map instead of returning an all-ones mask.
     """
-    train_year = train_year or _latest_mapbiomas_year()
+    train_year = train_year or latest_classification_year()
     pred_year = pred_year or (train_year + 1)
     grid = grid or grid_for_roi(roi, scale=10)
 
@@ -81,11 +119,20 @@ def get_pasture_mask_array(
         # Stored masks are already cleaned (see below).
         return dataset["pasto"].isel(time=0).values == 1
 
-    classified, _embedding = _classify(
-        roi=roi,
-        train_year=train_year,
-        pred_year=pred_year,
-    )
+    try:
+        classified, _embedding = _classify_cached(
+            roi=roi,
+            car_code=feature_key,
+            train_year=train_year,
+            pred_year=pred_year,
+        )
+    except Exception as error:
+        log_warning(
+            f"[{feature_key}] máscara de pastagem indisponível ({error}); "
+            "usando o mapeamento estático do MapBiomas"
+        )
+        return _static_pasture_mask_array(roi, feature_key, pred_year, grid)
+
     mask_image = classified.gte(1).rename("pasto")
     dataset = download_image_dataset(mask_image, grid, band_name="pasto", dtype="int16")
     cleaned = clean_mask(dataset["pasto"].isel(time=0).values)
@@ -97,6 +144,7 @@ def get_pasture_mask_array(
             "train_year": int(train_year),
             "grid_hash": grid.hash,
             "cleaned": True,
+            "source": "on_the_fly",
         }
     )
     save_dataset(feature_key, mask_key, dataset, kind="pasture_mask")

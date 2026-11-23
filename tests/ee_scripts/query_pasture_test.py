@@ -1,8 +1,18 @@
 import pytest
 from pydantic import ValidationError
 
-from domain.schemas.property_stats import AgeData, AgeStats, LULCData, LULCStats, VigorData, VigorStats
-from domain.services.geospatial.gee import BiomassStats, PastureStats, PropertyStats, Value
+from domain.schemas.property_stats import (
+    AgeData,
+    AgeStats,
+    BiomassStats,
+    LULCData,
+    LULCStats,
+    PastureStats,
+    PropertyStats,
+    Value,
+    VigorData,
+    VigorStats,
+)
 
 
 def test_value_model_creation():

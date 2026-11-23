@@ -1,28 +1,34 @@
 import time
 import traceback
 
-from typing import Dict
+from dataclasses import dataclass
+from typing import Literal, Optional
 
 import ee
 import numpy as np
 import PIL.Image
 import xarray as xr
 
-from semente.logging import log_error, log_info
+from semente.logging import log_error, log_info, log_warning
 
+from domain.schemas.property_stats import AgeData, AgeStats, Value
 from domain.services.geospatial import raster_layers, raster_render
 from domain.services.geospatial.gee import _FEATURE_BUFFER, _IMAGE_DIMENSION
+from domain.services.geospatial.mapbiomas import (
+    AGE_ASSET,
+    AGE_ASSET_BASE_YEAR,
+    AGE_CLASSES,
+    PASTURE_CLASS,
+    CLASSIFICATION_ASSET,
+    latest_asset_year,
+    latest_classification_year,
+)
 from domain.services.geospatial.pasture_cache import (
     dataset_exists,
     load_dataset,
     save_cache,
 )
-from domain.services.geospatial.pasture_classification import (
-    _MAPBIOMAS_ASSET,
-    _PASTURE_CLASS,
-    _classify,
-    _latest_mapbiomas_year,
-)
+from domain.services.geospatial.pasture_classification import _classify_cached
 from domain.services.geospatial.xee_grid import (
     _native_crs,
     _utm_grid,
@@ -32,21 +38,11 @@ from domain.services.geospatial.xee_grid import (
 )
 
 
-_MAPBIOMAS_AGE_ASSET = "projects/mapbiomas-public/assets/brazil/lulc/collection10/mapbiomas_brazil_collection10_pasture_age_v2"
-
 _SCALE = 10
 
 # Bump sempre que a lógica de cálculo mudar — invalida cache antigo incompatível
 # com o novo formato/semântica em vez de servir resultado stale.
-_CACHE_VERSION = "v2"
-
-# 30-40 = idade calculada com precisão nesse intervalo. ≥40 = pixel bateu no teto
-# do encoding do asset (sentinela "já madura ao início da série", idade real
-# desconhecida e possivelmente bem maior que 40) OU chegou em 40 pelo próprio +1
-# ano projetado — depois do .min(40) as duas situações ficam indistinguíveis, e
-# ambas significam a mesma coisa na prática: "pelo menos ~40 anos, sem precisão
-# além disso". Não misturamos isso com a faixa 30-40 medida com precisão.
-_AGE_DICT = {1: "1-10", 2: "10-20", 3: "20-30", 4: "30-40", 5: "≥40 (idade real indeterminada)"}
+_CACHE_VERSION = "v3"
 
 _AGE_PALETTE = ["#ffffcc", "#a1dab4", "#41b6c4", "#2c7fb8", "#253494"]
 
@@ -55,17 +51,17 @@ def _age_years_image(roi: ee.Geometry, year: int) -> ee.Image:
     """
     Idade da pastagem (anos), decodificada da banda `year` do asset MapBiomas.
 
-    Mesmo decode usado em `gee.py::get_pasture_age` (offset de 200 + sentinela
-    -100 = pastagem já madura, tratada como 40 anos), mas SEM o bucketing final
-    em classes — mantemos o valor contínuo para poder somar +1 ano depois.
+    Mesmo decode usado em `get_pasture_age` (offset de 200 + sentinela -100 =
+    pastagem já madura, tratada como 40 anos), mas SEM o bucketing final em
+    classes — mantemos o valor contínuo para poder somar +1 ano depois.
     """
-    age_asset = ee.Image(_MAPBIOMAS_AGE_ASSET).select(year - 2000)
+    age_asset = ee.Image(AGE_ASSET).select(year - AGE_ASSET_BASE_YEAR)
     age = age_asset.subtract(200)
     age = age.where(age.eq(-100), 40)
     return age.clip(roi).rename("idade_anos")
 
 
-def _area_by_age_class(age_years: "xr.DataArray") -> Dict[str, float]:
+def _area_by_age_class(age_years: "xr.DataArray") -> dict[str, float]:
     values = age_years.values
     valid = values[~np.isnan(values)]
     if valid.size == 0:
@@ -81,12 +77,12 @@ def _area_by_age_class(age_years: "xr.DataArray") -> Dict[str, float]:
     for class_id in (1, 2, 3, 4, 5):
         count = int((classes == class_id).sum())
         if count:
-            result[_AGE_DICT[class_id]] = round(count * pixel_area_ha, 4)
+            result[AGE_CLASSES[class_id]] = round(count * pixel_area_ha, 4)
     return result
 
 
 def _bucket_age_class(age_years: ee.Image) -> ee.Image:
-    """Classe 1-5 (mesmos limites de `_AGE_DICT`) a partir da idade contínua, para visualização."""
+    """Classe 1-5 (mesmos limites de `AGE_CLASSES`) a partir da idade contínua, para visualização."""
     return (
         age_years.where(age_years.gte(1).And(age_years.lte(10)), 1)
         .where(age_years.gt(10).And(age_years.lte(20)), 2)
@@ -145,16 +141,109 @@ def _render_age_image(
     )
 
 
-def estimate_pasture_age_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: int = None, train_year: int = None) -> Dict:
-    """
-    Idade da pastagem on-the-fly: idade do MapBiomas no ano de treino + 1 ano nas
-    áreas que continuam pastagem na classificação on-the-fly do ano seguinte;
-    pastagem nova (não era pastagem no ano de treino) começa com 1 ano.
+@dataclass
+class AgeAnalysis:
+    """Pasture age result, from either source."""
 
-    Estratégia igual às demais camadas on-the-fly: toda a combinação (downsample
-    implícito do asset 30m para a grade de 10m, soma de +1 ano, máscaras) roda no
-    GEE server-side numa única banda; Xee só baixa o resultado final e persiste em
-    zarr — cache local (`tmp/`) ou S3 conforme `config.APP_ENV`.
+    stats: AgeStats
+    image: Optional["PIL.Image.Image"]
+    pred_year: int
+    train_year: Optional[int]
+    source: Literal["on_the_fly", "mapbiomas"]
+    cached: bool = False
+
+
+def _age_stats_from_areas(area_by_class: dict[str, float], observation_year: int) -> AgeStats:
+    return AgeStats(
+        observation_year=observation_year,
+        data=[
+            AgeData(age=age_range, amount=Value(value=area, unity="hectares (ha)"))
+            for age_range, area in area_by_class.items()
+        ],
+    )
+
+
+def get_pasture_age(roi: ee.Geometry, year: int, month: int = None) -> AgeStats:
+    """
+    Static pasture age (ha per age class) via MapBiomas Collection 10.
+
+    Raw ages are reclassified into the same 5 classes used by the estimated
+    layer (1-10, 10-20, 20-30, 30-40 and the censored ≥40 class).
+
+    Args:
+        roi (ee.Geometry): Region of interest (farm polygon).
+        year (int): Reference year of the mapping.
+        month (int, optional): Ignored; kept for signature compatibility.
+
+    Returns:
+        AgeStats: Observation year and areas per age range (ha).
+    """
+    target_year = max(
+        AGE_ASSET_BASE_YEAR,
+        min(year, latest_asset_year(AGE_ASSET, base_year=AGE_ASSET_BASE_YEAR)),
+    )
+    age_asset = ee.Image(AGE_ASSET)
+    raw_age = age_asset.select(target_year - AGE_ASSET_BASE_YEAR).subtract(200)
+    is_censored = raw_age.eq(-100)
+
+    last_age = raw_age.where(is_censored, 40)
+    last_age = (
+        last_age.where(last_age.gte(1).And(last_age.lte(10)), 1)
+        .where(last_age.gt(10).And(last_age.lte(20)), 2)
+        .where(last_age.gt(20).And(last_age.lte(30)), 3)
+        .where(last_age.gt(30).And(last_age.lte(40)), 4)
+        .where(is_censored, 5)
+    ).rename("Anos")
+
+    area_img = ee.Image.pixelArea().divide(10000).addBands(last_age)
+    stats = area_img.reduceRegion(
+        reducer=ee.Reducer.sum().group(groupField=1, groupName="class"),
+        geometry=roi,
+        scale=30,
+        maxPixels=1e13,
+    )
+
+    groups_info = stats.get("groups").getInfo()
+    age_data_list: list[AgeData] = []
+
+    if groups_info:
+        for group in groups_info:
+            class_id = int(group["class"])
+            class_name = AGE_CLASSES.get(class_id)
+            if class_name is None:
+                continue
+            area_value = round(float(group["sum"]), 2)
+            age_data_list.append(
+                AgeData(age=class_name, amount=Value(value=area_value, unity="hectares (ha)"))
+            )
+
+    return AgeStats(observation_year=target_year, data=age_data_list)
+
+
+def _render_static_age_image(
+    roi: ee.Geometry, year: int, car_code: str
+) -> "PIL.Image.Image":
+    """Render the static MapBiomas age classes over the satellite base."""
+    grid = grid_for_roi(roi, scale=_SCALE, buffer_m=_FEATURE_BUFFER)
+    dataset = raster_layers.download_image_dataset(
+        _age_years_image(roi, year), grid, band_name="idade_anos", dtype="float32"
+    )
+    source_grid = source_grid_from_dataset(dataset, "idade_anos")
+    return _render_age_image(
+        roi=roi,
+        age_years=dataset["idade_anos"].isel(time=0),
+        source_grid=source_grid,
+        car_code=car_code,
+        base_year=year,
+        coords=roi.coordinates().getInfo(),
+    )
+
+
+def estimate_pasture_age(roi: ee.Geometry, car_code: str, pred_year: int = None, train_year: int = None) -> AgeAnalysis:
+    """
+    Estimated pasture age: MapBiomas age at the training year + 1 year on areas
+    that remain pasture in the next year's classification; new pasture starts
+    at 1 year. Keeps the continuous age so the +1 projection is possible.
 
     Args:
         roi (ee.Geometry): Geometria do imóvel (MultiPolygon).
@@ -163,10 +252,10 @@ def estimate_pasture_age_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: 
         train_year (int, optional): Ano-base do MapBiomas. Default: ano mais recente disponível.
 
     Returns:
-        Dict: {"area_by_age_class_ha", "pred_year", "train_year", "cached", "imagem"}
+        AgeAnalysis: stats, map image, reference years and cache status.
     """
     try:
-        train_year = train_year or _latest_mapbiomas_year()
+        train_year = train_year or latest_classification_year()
         pred_year = pred_year or (train_year + 1)
         cache_key = f"{pred_year}_{_CACHE_VERSION}"
 
@@ -184,20 +273,25 @@ def estimate_pasture_age_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: 
                 coords=roi.coordinates().getInfo(),
             )
             log_info(f"[{car_code}] pasture age cache hit ({pred_year})")
-            return {
-                "imagem": image,
-                "area_by_age_class_ha": area_by_class,
-                "pred_year": pred_year,
-                "train_year": train_year,
-                "cached": True,
-            }
+            return AgeAnalysis(
+                stats=_age_stats_from_areas(area_by_class, pred_year),
+                image=image,
+                pred_year=pred_year,
+                train_year=train_year,
+                source="on_the_fly",
+                cached=True,
+            )
 
         start = time.perf_counter()
 
-        classified, embedding_check = _classify(roi=roi, train_year=train_year, pred_year=pred_year)
+        classified, embedding_check = _classify_cached(
+            roi=roi, car_code=car_code, train_year=train_year, pred_year=pred_year
+        )
 
         was_pasture_train = (
-            ee.Image(_MAPBIOMAS_ASSET).select(f"classification_{train_year}").eq(_PASTURE_CLASS)
+            ee.Image(CLASSIFICATION_ASSET)
+            .select(f"classification_{train_year}")
+            .eq(PASTURE_CLASS)
         )
         age_train = _age_years_image(roi=roi, year=train_year)
 
@@ -234,15 +328,16 @@ def estimate_pasture_age_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: 
         )
         save_cache(car_code, cache_key, dataset, image, kind="age")
 
-        log_info(f"[{car_code}] estimate_pasture_age_on_the_fly {pred_year}: {time.perf_counter() - start:.2f}s")
+        log_info(f"[{car_code}] estimate_pasture_age {pred_year}: {time.perf_counter() - start:.2f}s")
 
-        return {
-            "imagem": image,
-            "area_by_age_class_ha": area_by_class,
-            "pred_year": pred_year,
-            "train_year": train_year,
-            "cached": False,
-        }
+        return AgeAnalysis(
+            stats=_age_stats_from_areas(area_by_class, pred_year),
+            image=image,
+            pred_year=pred_year,
+            train_year=train_year,
+            source="on_the_fly",
+            cached=False,
+        )
 
     except ValueError as error:
         log_error(traceback.format_exc())
@@ -253,3 +348,32 @@ def estimate_pasture_age_on_the_fly(roi: ee.Geometry, car_code: str, pred_year: 
     except Exception as error:
         log_error(traceback.format_exc())
         raise RuntimeError(f"[{car_code}] Erro inesperado ao estimar idade da pastagem: {error}")
+
+
+def analyze_pasture_age(roi: ee.Geometry, car_code: str, year: int = None) -> AgeAnalysis:
+    """Resolve the best available pasture age (estimated → MapBiomas)."""
+    try:
+        return estimate_pasture_age(roi=roi, car_code=car_code, pred_year=year)
+    except Exception as error:
+        log_warning(
+            f"[{car_code}] idade estimada indisponível ({error}); "
+            "usando o mapeamento estático do MapBiomas"
+        )
+        latest_year = latest_asset_year(AGE_ASSET, base_year=AGE_ASSET_BASE_YEAR)
+        target_year = max(
+            AGE_ASSET_BASE_YEAR, min(year or latest_year, latest_year)
+        )
+        stats = get_pasture_age(roi=roi, year=target_year)
+        try:
+            image = _render_static_age_image(roi=roi, year=target_year, car_code=car_code)
+        except Exception as image_error:
+            log_warning(f"[{car_code}] mapa estático de idade indisponível: {image_error}")
+            image = None
+        return AgeAnalysis(
+            stats=stats,
+            image=image,
+            pred_year=target_year,
+            train_year=None,
+            source="mapbiomas",
+            cached=False,
+        )

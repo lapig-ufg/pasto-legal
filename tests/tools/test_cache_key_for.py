@@ -1,6 +1,6 @@
 """
 Teste de `_cache_key_for` (`domain/tools/analysis_tools.py`) — regressão do bug
-em que os caches de `classify_pasture_on_the_fly`/`estimate_pasture_*`
+em que os caches de `classify_pasture`/`estimate_pasture_*`
 (`pasture_cache.py`) eram chaveados por um identificador mutável/não único: duas
 propriedades diferentes chamadas "Fazenda Jaraguá" colidiam no mesmo arquivo de
 cache, e uma mostrava silenciosamente o mapa/histórico da outra. O código CAR
