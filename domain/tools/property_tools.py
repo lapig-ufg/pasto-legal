@@ -606,8 +606,11 @@ def select_car_from_list(run_context: RunContext, selection: int):
         return ToolResult(
             content=(
                 f"A propriedade de identificador {selected_id} foi registrada com "
-                "sucesso. Seja proativo, pergunte ao usuário se ele gostaria de "
-                "atribuir um nome para a propriedade."
+                "sucesso, mas o cadastro ainda NÃO foi concluído. O usuário PRECISA "
+                "escolher um nome para a propriedade. Peça que ele informe o nome "
+                "desejado — não pergunte se ele 'gostaria' de dar um nome, deixe "
+                "claro que o nome é obrigatório para finalizar. Se ele pedir, você "
+                "pode escolher/sugerir um nome para ele."
             )
         )
     except Exception as e:
@@ -709,8 +712,11 @@ def confirm_car_selection(run_context: RunContext, name: Optional[str] = None):
         return ToolResult(
             content=(
                 f"A propriedade de identificador {selected_id} foi registrada com "
-                "sucesso. Seja proativo, pergunte ao usuário se ele gostaria de "
-                "atribuir um nome para a propriedade."
+                "sucesso, mas o cadastro ainda NÃO foi concluído. O usuário PRECISA "
+                "escolher um nome para a propriedade. Peça que ele informe o nome "
+                "desejado — não pergunte se ele 'gostaria' de dar um nome, deixe "
+                "claro que o nome é obrigatório para finalizar. Se ele pedir, você "
+                "pode escolher/sugerir um nome para ele."
             )
         )
     except Exception as e:

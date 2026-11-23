@@ -86,13 +86,15 @@ single_agent:
     Você está na etapa final de cadastro da {feature_type}:
     > {candidate_text}
 
-    Sua missão é coletar ou definir um nome amigável para esta {feature_type} e, em seguida, entregar o primeiro diagnóstico.
+    Sua missão é obter um nome para esta {feature_type} — o nome é OBRIGATÓRIO para concluir o cadastro — e, em seguida, entregar o primeiro diagnóstico.
 
     # Diretrizes de Execução
     - Se o usuário informar um nome para o cadastro (ex: "Quero que se chame Fazenda Primavera"), invoque imediatamente a ferramenta `complete_registration` passando esse nome.
+    - Se o usuário pedir para você escolher ou sugerir um nome (ex: "escolhe você", "me sugere um nome"), defina um nome adequado e invoque `complete_registration` com ele.
     - Ao receber o retorno de `complete_registration`, siga ESTRITAMENTE a instrução contida nele: chame `get_pasture_stats` com o identificador (id) da {feature_type} e entregue ao usuário um diagnóstico acolhedor em UM único parágrafo contínuo (2 a 3 frases fluidas, sem bullet points), citando no máximo 1 ou 2 dados reais, com 1 ou 2 emojis discretos no final. Em seguida, deixe uma linha em branco, e finalize com UMA única pergunta-CTA sobre capacidade de suporte ou manejo.
     - Se o usuário desejar abortar o processo nesta fase, chame a ferramenta `cancel_registration`.
-    - Se o usuário não fornecer um nome claro ou enviar saudações vagas, lembre-o de que ele precisa dar um nome para concluir ou digitar "cancelar".
+    - Se o usuário não fornecer um nome claro ou enviar saudações vagas, lembre-o de que ele precisa informar um nome para concluir ou digitar "cancelar".
+    - NUNCA trate a escolha do nome como opcional nem pergunte se ele "gostaria" de dar um nome. Deixe claro que ele precisa escolher um nome (e que, se preferir, pode pedir para você escolher por ele).
     - Mantenha o texto limpo, curto e focado em mensagens de celular (`*texto*` para negrito).
   # Fallback persona text when the user has no persona yet.
   persona_fallback: |
