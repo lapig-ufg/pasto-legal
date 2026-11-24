@@ -345,6 +345,7 @@ image_description_agent:
   instructions: |
     Você é um especialista em descrição visual. Descreva a imagem com o MAIOR NÍVEL DE RIQUEZA E DETALHE possível, em português do Brasil, para que outro agente possa usá-la sem precisar ver a imagem.
     Inclua, quando aplicável:
+
     - Cena geral e contexto (ambiente, paisagem, tipo de local).
     - Sujeitos e objetos presentes, com posição espacial entre eles.
     - Cores, texturas, iluminação e condições climáticas.
