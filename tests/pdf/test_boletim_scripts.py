@@ -28,22 +28,16 @@ from pypdf import PdfReader  # noqa: E402
 
 from domain.schemas.feature import Feature, FeatureMetadata  # noqa: E402
 from domain.schemas.property_stats import (  # noqa: E402
-    AgeData,
-    AgeStats,
-    PastureStats,
     SoilData,
     SoilStats,
     TopographicStats,
     Value,
-    VigorData,
-    VigorStats,
 )
 from domain.services.boletim_scripts import (  # noqa: E402
     _format_season_onset,
     _rows_with_percentage,
     build_boletim_story,
     build_placeholder_property_stats,
-    compute_property_score,
 )
 from domain.services.pdf_scripts import render_document  # noqa: E402
 
@@ -168,7 +162,7 @@ def test_build_boletim_story_shows_location_image_without_diagnostic_text():
     assert "Imagem de satélite com o limite do CAR" in text
     assert len(reader.pages[0].images) >= 1
     assert "2. Dados de Pastagem" in text
-    # Diagnóstico ausente: a seção (e as estrelas) some inteira.
+    # Diagnóstico ausente: a seção some inteira.
     assert "Diagnóstico do Pasto Legal" not in text
 
 
@@ -186,7 +180,7 @@ def test_build_boletim_story_includes_diagnostic_section_when_provided():
 
     assert "Diagnóstico do Pasto Legal" in text
     assert "Esta propriedade apresenta bom vigor geral." in text
-    assert "Nota Geral da Propriedade" in text
+    assert "Nota Geral da Propriedade" not in text #181: sem nota no boletim
     # A localização continua na seção 1 mesmo com o diagnóstico presente.
     assert "1. Localização da Propriedade" in text
 
@@ -355,73 +349,3 @@ def test_format_season_onset_translates_known_messages():
 
 def test_format_season_onset_passes_through_none():
     assert _format_season_onset(None) is None
-
-
-def _vigor_stats(alto_ha=0.0, medio_ha=0.0, baixo_ha=0.0) -> VigorStats:
-    data = []
-    if alto_ha:
-        data.append(VigorData(vigor="Alto: pastagens com alto vigor vegetativo.", amount=Value(value=alto_ha, unity="ha")))
-    if medio_ha:
-        data.append(VigorData(vigor="Médio: pastagens com médio vigor vegativo.", amount=Value(value=medio_ha, unity="ha")))
-    if baixo_ha:
-        data.append(VigorData(vigor="Baixo: pastagens com baixo vigor vegetativo.", amount=Value(value=baixo_ha, unity="ha")))
-    return VigorStats(observation_year=2024, data=data)
-
-
-def _age_stats(**by_range) -> AgeStats:
-    return AgeStats(observation_year=2024, data=[
-        AgeData(age=age_range, amount=Value(value=ha, unity="ha")) for age_range, ha in by_range.items()
-    ])
-
-
-def _soil_stats(**by_class) -> SoilStats:
-    return SoilStats(observation_year=2026, data=[
-        SoilData(soil_class=soil_class, amount=Value(value=ha, unity="hectares")) for soil_class, ha in by_class.items()
-    ])
-
-
-def test_compute_property_score_defaults_to_floor_without_any_data():
-    score = compute_property_score(None, None)
-
-    assert score.stars == 3
-    assert "insuficientes" in score.rationale
-
-
-def test_compute_property_score_never_goes_below_3_even_in_worst_case():
-    pasture_stats = PastureStats(vigor_stats=_vigor_stats(baixo_ha=20.0), age_stats=_age_stats(**{"≥40 (idade real indeterminada)": 20.0}))
-    soil_stats = _soil_stats(Arenoso=20.0)
-
-    score = compute_property_score(pasture_stats, soil_stats)
-
-    assert score.stars == 3
-
-
-def test_compute_property_score_rewards_high_vigor():
-    pasture_stats = PastureStats(vigor_stats=_vigor_stats(alto_ha=20.0))
-
-    score = compute_property_score(pasture_stats, None)
-
-    assert score.stars == 5
-    assert "100%" in score.rationale
-
-
-def test_compute_property_score_caps_at_5_in_best_case():
-    pasture_stats = PastureStats(vigor_stats=_vigor_stats(alto_ha=20.0), age_stats=_age_stats(**{"1-10": 20.0}))
-    soil_stats = _soil_stats(Argila=20.0)
-
-    score = compute_property_score(pasture_stats, soil_stats)
-
-    assert score.stars == 5
-
-
-def test_build_boletim_story_renders_score_alongside_diagnostic():
-    rural_property = _build_sample_property()
-    stats = build_placeholder_property_stats(rural_property.get_metadata("car_code"))
-
-    story = _build_full_story(rural_property, stats, diagnostic_text="Esta propriedade apresenta bom vigor geral.")
-    pdf_bytes = render_document(story)
-
-    reader = PdfReader(BytesIO(pdf_bytes))
-    text = reader.pages[0].extract_text()
-
-    assert "Nota Geral da Propriedade" in text

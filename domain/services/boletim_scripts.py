@@ -43,65 +43,6 @@ def _format_season_onset(value: Optional[str]) -> Optional[str]:
         return value
 
 
-class PropertyScore(NamedTuple):
-    stars: int
-    rationale: str
-
-
-_SOIL_TEXTURE_FAVORABLE = {"Argila", "Muito Argiloso", "Médio", "Siltoso"}
-
-
-def _area_fraction(data, matches) -> Optional[float]:
-    """Fração da área total (0-1) dos itens cujo rótulo satisfaz `matches`, ou None se a lista estiver vazia."""
-    total = sum(item.amount.value for item in data)
-    if total <= 0:
-        return None
-    return sum(item.amount.value for item in data if matches(item)) / total
-
-
-def compute_property_score(pasture_stats: Optional[PastureStats], soil_stats: Optional[SoilStats]) -> PropertyScore:
-    """
-    Nota geral da propriedade, de 3 a 5 estrelas — ferramenta didática pra dar
-    uma noção rápida ao produtor, NUNCA um veredito alarmista: o piso é
-    sempre 3 estrelas, mesmo quando os indicadores são ruins (problemas reais
-    continuam detalhados no texto do diagnóstico, não escondidos aqui).
-
-    Considera, com pesos decrescentes: vigor vegetativo (indicador mais
-    direto da saúde atual da pastagem), idade da pastagem (mais jovem tende
-    a ser mais produtiva) e textura do solo (classes mais favoráveis à
-    retenção de água/nutrientes puxam a nota pra cima).
-    """
-    score = 3.0
-    notes: List[str] = []
-
-    if pasture_stats and pasture_stats.vigor_stats and pasture_stats.vigor_stats.data:
-        data = pasture_stats.vigor_stats.data
-        pct_alto = _area_fraction(data, lambda item: item.vigor.startswith("Alto")) or 0.0
-        pct_baixo = _area_fraction(data, lambda item: item.vigor.startswith("Baixo")) or 0.0
-        score += pct_alto * 1.5 - pct_baixo * 1.2
-        notes.append(f"{pct_alto:.0%} da área de pastagem com vigor alto e {pct_baixo:.0%} com vigor baixo")
-
-    if pasture_stats and pasture_stats.age_stats and pasture_stats.age_stats.data:
-        data = pasture_stats.age_stats.data
-        pct_jovem = _area_fraction(data, lambda item: item.age in ("1-10", "10-20"))
-        if pct_jovem is not None:
-            score += pct_jovem * 0.5
-            notes.append(f"{pct_jovem:.0%} da pastagem com até 20 anos")
-
-    if soil_stats and soil_stats.data:
-        data = soil_stats.data
-        pct_favoravel = _area_fraction(data, lambda item: item.soil_class in _SOIL_TEXTURE_FAVORABLE)
-        if pct_favoravel is not None:
-            score += (pct_favoravel - 0.5) * 0.4
-            notes.append(f"{pct_favoravel:.0%} da área com textura de solo favorável ao manejo")
-
-    # Arredondamento "meio pra cima" (não o "half to even" do round() nativo) —
-    # mais intuitivo pra uma nota (4.5 vira 5, não 4).
-    stars = max(3, min(5, int(score + 0.5)))
-    rationale = "; ".join(notes) if notes else "dados insuficientes para uma análise detalhada da nota"
-    return PropertyScore(stars=stars, rationale=rationale)
-
-
 def build_placeholder_property_stats(car_code: str) -> PropertyStats:
     """Monta um PropertyStats com dados de exemplo (placeholder), no formato real esperado pela issue #126."""
     current_year = date.today().year
@@ -170,15 +111,9 @@ def generate_boletim_diagnostic(pasture_stats: Optional[PastureStats], soil_stat
     if pasture_stats is None:
         return None
 
-    score = compute_property_score(pasture_stats, soil_stats)
-
     summary_parts = [str(pasture_stats)]
     if soil_stats:
         summary_parts.append(str(soil_stats))
-    summary_parts.append(
-        f"Nota geral já calculada para esta propriedade: {score.stars} de 5 estrelas. "
-        f"Motivos considerados no cálculo: {score.rationale}."
-    )
     summary = "\n\n".join(summary_parts)
 
     # Import local pelo mesmo motivo do agente acima.
@@ -410,18 +345,15 @@ def build_boletim_story(
         pdf.spacer(4),
     ]
 
-    # Diagnóstico do Pasto Legal (texto do LLM + nota em estrelas) — a visão
+    # Diagnóstico do Pasto Legal (texto do LLM, sem nota/classificação — #181) — a visão
     # geral da propriedade NÃO vive aqui: tem seção numerada própria (a 1.),
     # então a imagem de localização nunca conflita com o diagnóstico vazio
     # (o agente LLM está desabilitado temporariamente).
     if diagnostic_text:
-        score = compute_property_score(latest_pasture_stats, soil_stats)
         story.append(pdf.section_header(
             "Diagnóstico do Pasto Legal",
-            pdf.score_row(score.stars, f"Nota Geral da Propriedade: {score.stars} de 5"),
+            pdf.body_text(diagnostic_text),
         ))
-        story.append(pdf.spacer(3))
-        story.append(pdf.body_text(diagnostic_text))
         story.append(pdf.spacer(4))
 
     if location_image_bytes:
