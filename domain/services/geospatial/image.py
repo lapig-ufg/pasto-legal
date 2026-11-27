@@ -1,5 +1,3 @@
-import PIL
-
 from PIL import Image, ImageDraw, ImageFont, ImageColor
 from typing import Dict, List, Tuple, Union
 

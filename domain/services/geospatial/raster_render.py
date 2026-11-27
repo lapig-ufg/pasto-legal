@@ -395,13 +395,3 @@ def render_discrete_map(
     )
     legend = {class_labels[key]: class_colors[key] for key in class_labels if key in class_colors}
     return append_discrete_legend(image, title, legend)
-
-
-def resize_nearest(values: np.ndarray, target_shape: Tuple[int, int]) -> np.ndarray:
-    """Nearest-neighbour resize for 2-D masks (used when grids differ)."""
-    height, width = target_shape
-    rows = (np.arange(height) * values.shape[0] / height).astype(int)
-    cols = (np.arange(width) * values.shape[1] / width).astype(int)
-    rows = np.clip(rows, 0, values.shape[0] - 1)
-    cols = np.clip(cols, 0, values.shape[1] - 1)
-    return values[np.ix_(rows, cols)]

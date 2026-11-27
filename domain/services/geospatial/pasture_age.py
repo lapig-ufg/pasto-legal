@@ -67,9 +67,9 @@ def _area_by_age_class(age_years: "xr.DataArray") -> dict[str, float]:
     if valid.size == 0:
         return {}
 
-    # right=True (bins[i-1] < x <= bins[i]) pra bater exatamente com os limites usados
-    # em _bucket_age_class (.gt(30).And(.lt(40)) -> 4, .gte(40) -> 5): x=30 cai na
-    # classe 3, só (30,40) cai na 4, >=40 (teto do encoding) vira a 5 "indeterminada".
+    # right=True (bins[i-1] < x <= bins[i]) para bater exatamente com
+    # `_bucket_age_values`: x=30 cai na classe 3, só (30,40) cai na 4,
+    # >=40 (teto do encoding) vira a 5 "indeterminada".
     classes = np.digitize(valid, [0, 10, 20, 30, 40 - 1e-9, float("inf")], right=True)
     pixel_area_ha = (_SCALE ** 2) / 1e4
 
@@ -79,17 +79,6 @@ def _area_by_age_class(age_years: "xr.DataArray") -> dict[str, float]:
         if count:
             result[AGE_CLASSES[class_id]] = round(count * pixel_area_ha, 4)
     return result
-
-
-def _bucket_age_class(age_years: ee.Image) -> ee.Image:
-    """Classe 1-5 (mesmos limites de `AGE_CLASSES`) a partir da idade contínua, para visualização."""
-    return (
-        age_years.where(age_years.gte(1).And(age_years.lte(10)), 1)
-        .where(age_years.gt(10).And(age_years.lte(20)), 2)
-        .where(age_years.gt(20).And(age_years.lte(30)), 3)
-        .where(age_years.gt(30).And(age_years.lt(40)), 4)
-        .where(age_years.gte(40), 5)
-    )
 
 
 def _bucket_age_values(values: np.ndarray) -> np.ndarray:

@@ -22,7 +22,6 @@ from domain.services.geospatial.xee_grid import RasterGrid, grid_for_roi
 from domain.services.geospatial.pasture_biomass import (
     DRY_BIOMASS_FACTOR,
     _annual_biomass_image,
-    _grassland_mask,
     _latest_gpw_year,
     resolve_gpw_biomass_year,
 )
@@ -158,24 +157,6 @@ def _get_base_image(roi: ee.Geometry, year: int = None) -> ee.Image:
         )
 
 
-def _draw_feature_boundaries(roi) -> ee.Image:
-    """
-    Draws a red outline of a polygon on an empty image.
-
-    Args:
-        roi (ee.Geometry): Region of interest to be outlined.
-
-    Returns:
-        ee.Image: RGB image containing only the outline (red, 3px width).
-    """
-    empty = ee.Image().byte()
-    outline = empty.paint(ee.FeatureCollection([ee.Feature(roi)]), 1, 3)
-    outline = outline.updateMask(outline)
-    outline_rgb = outline.visualize(**{"palette":['FF0000']})
-
-    return outline_rgb
-
-
 def retrieve_feature_images(coords: List[List[List[List[float]]]]) -> List[PIL.Image]:
     """
     Gera imagens de satélite individuais para cada polígono da propriedade rural.
@@ -201,38 +182,6 @@ def retrieve_feature_images(coords: List[List[List[List[float]]]]) -> List[PIL.I
                 width=3,
             )
             result_imgs.append(image)
-
-        return result_imgs
-
-    except ee.EEException as error:
-        log_error(traceback.format_exc())
-        raise RuntimeError(
-            f"Falha ao processar as coordenadas no satélite. "
-            f"Verifique se as coordenadas da área estão corretas. Detalhes: {str(error)}"
-        )
-    except Exception as error:
-        log_error(traceback.format_exc())
-        raise RuntimeError(
-            f"Ocorreu um erro inesperado ao gerar a imagem da fazenda. Detalhes: {str(error)}"
-        )
-
-
-def retrieve_plain_satellite_image(coords: List[List[List[List[float]]]]) -> List[PIL.Image]:
-    """
-    Gera imagens de satélite individuais para cada polígono da propriedade rural,
-    sem contorno ou qualquer sobreposição (imagem "crua"), a partir do cache zarr.
-    """
-    try:
-        result_imgs = []
-        for _coords in coords:
-            roi = ee.Geometry.MultiPolygon([_coords])
-            grid = grid_for_roi(roi, scale=10, buffer_m=_FEATURE_BUFFER)
-            feature_key = raster_layers.feature_key_from_coords([_coords])
-            base_rgb = raster_layers.get_base_raster(
-                roi=roi, feature_key=feature_key, grid=grid
-            )
-            image = PIL.Image.fromarray(base_rgb, mode="RGB")
-            result_imgs.append(raster_render.resize_map(image, _IMAGE_DIMENSION))
 
         return result_imgs
 

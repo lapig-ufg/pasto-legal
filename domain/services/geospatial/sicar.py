@@ -6,10 +6,10 @@ import requests
 import urllib3
 
 from pathlib import Path
-from typing import List, Dict
+from typing import List
 from requests.adapters import HTTPAdapter
 
-from semente.logging import log_debug, log_error
+from semente.logging import log_error
 
 from domain.schemas.feature import Feature, FeatureMetadata
 from semente.configs.config import config

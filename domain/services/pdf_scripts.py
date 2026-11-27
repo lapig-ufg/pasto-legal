@@ -10,7 +10,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.graphics.shapes import Drawing, Polygon
 from reportlab.platypus import (
-    Flowable, Image as RLImage, KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+    Flowable, Image as RLImage, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
 )
 from svglib.svglib import svg2rlg
 
@@ -326,10 +326,6 @@ def section_header(title: str, *content: Flowable) -> KeepTogether:
     anterior e o conteúdo começando "do nada" na página seguinte.
     """
     return KeepTogether([section_title(title), spacer(3), *content])
-
-
-def page_break() -> PageBreak:
-    return PageBreak()
 
 
 def spacer(height_mm: float = 4) -> Spacer:

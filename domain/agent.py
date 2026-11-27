@@ -14,7 +14,6 @@ from semente.logging import log_debug
 
 from semente.agents.build_agent import context_blocks, persona_text
 from semente.configs.prompts import get_agent_config
-from semente.schemas.user_persona import UserPersona
 from semente.tools.tts_tools import generate_speech
 
 from domain.schemas.feature import Feature
