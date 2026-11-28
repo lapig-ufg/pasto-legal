@@ -13,6 +13,9 @@ features:
     enable: true
     file: docs/knowledge/termos_de_uso.md
     url: https://pasto.legal/termos-de-uso
+  onboarding-video:
+    file: assets/onboarding/tutorial_mock.mp4
+    send-to-existing: true
 models:
   primary: { provider: google, id: gemini-3.5-flash-lite }
   fallback: { provider: ollama, id: gemma4:31b-cloud }
